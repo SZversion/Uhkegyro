@@ -2,7 +2,7 @@
 
 ## 현재 구현 단계
 
-현재는 기반 골조 단계다. Pydantic 요청/선택 계약, 정적 term ID 카드, 축/역할 검증, Pinterest URL 생성, `/health`만 구현한다. OpenAI, Langfuse, FastMCP 카탈로그, UI, 배포는 아직 구현하거나 호출하지 않는다.
+현재는 기반 골조 단계다. Pydantic 요청/선택 계약, 정적 term ID 카드, 축/역할 검증, Pinterest URL 생성, `/health`, Getty AAT 용어 후보 조회 MCP를 구현한다. OpenAI, Langfuse, 권리 검토된 자체 카탈로그, UI, 배포는 아직 구현하거나 호출하지 않는다.
 
 ## 책임 분리
 
@@ -10,7 +10,7 @@
 | --- | --- |
 | LLM (향후) | 일상어를 허용 term ID·근거·대안으로 구조화 |
 | 결정론 코드 | 허용 ID, 축/하위 역할 일치, 역할 순서, 검색어와 URL 인코딩 검증 |
-| FastMCP (향후) | 권리 검토된 카탈로그의 구조화 출처 메타데이터 조회 |
+| FastMCP | Getty AAT SPARQL에서 용어 후보 URI·label을 조회하고, 향후 권리 검토된 자체 카탈로그의 구조화 출처 메타데이터를 조회 |
 | UI (향후) | 용어·근거·한계·외부 링크만 표시 |
 
 ## 기반 계약
@@ -19,6 +19,13 @@
 - 내부 선택은 `body | pose | composition | detail` 축과 정적 `term_id`를 가지며, 구도는 `view | perspective | layout` kind를 사용한다.
 - 검색 역할은 `body → pose → view → perspective → layout` 순서다. 실제로 선택된 역할만 만든다.
 - 역할별 링크와 통합 링크는 `urllib.parse.urlencode`로 생성한다. Pinterest에 요청하거나 결과를 저장하지 않는다.
+
+## Getty AAT 용어 보완
+
+- 용어 카드에 없는 표현 또는 저신뢰도 해석은 Getty AAT SPARQL의 용어 후보를 조회해 사람 검토에 보낸다. Getty는 이미지 레퍼런스·Pinterest 결과·자체 카탈로그를 대체하지 않는다.
+- 후보 조회 결과는 AAT subject URI, label, Getty 출처 URL만 가진다. Metropolitan Museum API와 Getty Museum Collection API는 사용하지 않는다.
+- `confidence=low`와 limitation이 모두 있을 때만 `pending_human_review` term 카드 초안을 만든다. 사람 승인과 평가셋 회귀 확인 없이는 정적 카드·Skill에 자동 반영하지 않는다.
+- Langfuse 도입 후에는 원문 요청 대신 해시, confidence, limitation code, Getty 후보 수·URI만 기록한다. 이 단계에서는 실제 Langfuse 호출을 하지 않는다.
 
 ## 다음 단계 전제
 

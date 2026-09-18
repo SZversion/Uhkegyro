@@ -8,6 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 Axis = Literal["body", "pose", "composition", "detail"]
 CompositionKind = Literal["view", "perspective", "layout"]
 Role = Literal["body", "pose", "view", "perspective", "layout"]
+Confidence = Literal["low", "medium", "high"]
+GettyLookupStatus = Literal["ok", "unavailable"]
 
 
 class AgentRequest(BaseModel):
@@ -66,3 +68,36 @@ class SearchPlan(BaseModel):
 
     combined_pinterest_search: PinterestSearch | None = None
     reference_plan: list[ReferencePlanItem] = Field(default_factory=list)
+
+
+class GettyAatTerm(BaseModel):
+    """A vocabulary candidate returned by Getty AAT, not an image reference."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    subject_uri: str = Field(min_length=1, max_length=500)
+    label: str = Field(min_length=1, max_length=240)
+    source_name: Literal["Getty AAT"] = "Getty AAT"
+    source_url: str = Field(min_length=1, max_length=500)
+
+
+class GettyAatLookup(BaseModel):
+    """A safe result shape for a Getty AAT vocabulary lookup."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: GettyLookupStatus
+    terms: list[GettyAatTerm] = Field(default_factory=list)
+    limitations: list[str] = Field(default_factory=list)
+
+
+class TermCardReviewDraft(BaseModel):
+    """A human-review-only proposal; it never mutates static term cards."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["pending_human_review"] = "pending_human_review"
+    confidence: Literal["low"] = "low"
+    candidate_phrase: str = Field(min_length=1, max_length=80)
+    limitations: list[str] = Field(min_length=1, max_length=5)
+    getty_candidates: list[GettyAatTerm] = Field(default_factory=list)
