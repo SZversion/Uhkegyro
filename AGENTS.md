@@ -1,29 +1,45 @@
 # AGENTS.md
 
-AI 코딩 에이전트(Claude Code, Codex, Cursor 등)가 이 저장소에서 작업할 때 따르는 공통 지침입니다. 어떤 도구를 쓰든 이 문서를 기준으로 합니다.
+These are the shared instructions for AI coding agents (Claude Code, Codex, Cursor, and others) working in this repository. Follow this document regardless of which tool you use.
 
-## 프로젝트 개요
+## Project Overview
 
-(조에서 작성: 무엇을 만드는 프로젝트인지 한 줄)
+(To be completed by the team: a one-line description of what this project builds.)
 
-## 기술 스택
+## Tech Stack
 
-(조에서 작성: 언어·프레임워크·주요 라이브러리)
+(To be completed by the team: languages, frameworks, and primary libraries.)
 
-## Spec 먼저, 구현은 그다음
+## Language for User-Facing Responses
 
-기능을 에이전트에게 시키기 전에 `docs/specs/{기능명}.md`에 Spec을 먼저 작성하세요. 형식은 `docs/specs/_example.md` 참고 — 다섯 섹션(Why · Goal · What · How · AC)이 다 있어야 에이전트에게 그대로 넘길 수 있습니다.
+All user-facing explanations, questions, progress updates, and completion reports must be written in Korean. Keep code, commands, file paths, error messages, API names, library names, and other proper nouns in their original form when translating them would reduce precision.
 
-- **Why**: 페르소나·상황·문제·측정 지표
-- **Goal**: 숫자로 된 성공 기준 + Out of Scope
-- **What**: Happy Path + Edge Case
-- **How**: API·데이터·제약 (에이전트가 임의 결정할 여지를 없앤다)
-- **AC**: Given-When-Then 형식, 테스트 코드로 바로 옮길 수 있어야 함
+## Spec First, Then Implementation
 
-## Out of Scope 원칙
+Before asking an agent to build a feature, create its Spec at `docs/specs/{feature-name}.md`. Use `docs/specs/_example.md` as the format reference. It must contain all five sections (Why, Goal, What, How, and AC) before it can be handed to an agent as-is.
 
-에이전트는 Spec에 없는 기능을 임의로 추가하지 않습니다. "이왕이면"으로 범위를 넓히지 않습니다.
+- **Why**: persona, situation, problem, and metrics
+- **Goal**: measurable success criteria and out-of-scope items
+- **What**: happy path and edge cases
+- **How**: API, data, and constraints that leave no room for arbitrary agent decisions
+- **AC**: Given-When-Then format that can be translated directly into tests
 
-## 완료 기준
+## Documentation for Every Feature
 
-테스트(AC 기준) 통과 없이 "완료"라고 보고하지 않습니다.
+Every feature must have its own document at `docs/specs/{feature-name}.md`, including a small API endpoint, UI interaction, data workflow, or user-visible behavior. Create and complete that document before writing implementation code; do not combine unrelated features in one document.
+
+If implementation changes a feature's contract, scope, edge cases, or acceptance criteria, update its document in the same change. A feature is not complete until its document and implementation describe the same behavior.
+
+## GitHub Pull Request Authority
+
+Only when the user explicitly authorizes GitHub changes for the current task, an agent may commit and push its own branch and create a pull request. After creating the pull request, the agent must stop and wait for a human team member.
+
+Agents must never approve, merge, enable auto-merge, dismiss reviews, alter branch protection, or otherwise finalize another pull request. Human team members remain solely responsible for review, approval, and merge decisions.
+
+## Out-of-Scope Principle
+
+Agents must not add features that are not defined in the Spec. Do not expand the scope because something seems convenient to add.
+
+## Definition of Done
+
+Do not report work as complete until tests based on the acceptance criteria pass.
