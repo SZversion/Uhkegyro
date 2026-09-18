@@ -18,6 +18,13 @@
 5. Getty가 후보를 찾지 못하거나 timeout·5xx·비정상 응답이면 `source=term_cards`와 정적 카드 label·관찰 기준을 사용한다.
 6. 코드가 검증된 정적 카드의 `query_fragment`로 역할별·통합 Pinterest 링크를 만든다. Getty의 동적 label은 링크 생성에 사용하지 않는다.
 
+## How
+
+- **책임 분리**: LLM은 허용된 `Selection` 구조만 만들고, `validate_selection`이 축·kind·프로젝트 `term_id`를 먼저 검증한다. `resolve_reference_plan`은 Getty 결과와 정적 카드 폴백을 결정하며, 기존 `build_search_plan`은 검증된 카드로 Pinterest URL만 생성한다. FastMCP의 `resolve_illustration_reference_plan`은 이 서비스를 호출하는 경계다.
+- **입력 계약**: 도구 입력은 `axis`, 선택적 `kind`, `term_id`, 하나 이상의 `evidence`를 가진 `Selection` 목록이다. 역할 중복, 축 불일치, 알 수 없는 term ID는 Getty 요청 전에 오류로 거부한다.
+- **출력 계약**: `ReferenceResolution`은 역할별 `TermResolution` 목록과 `SearchPlan`을 반환한다. 성공한 항목은 `resolution_source=getty_aat` 및 `VocabularyTerm`의 `subject_uri`, `label`, `source_name`, `source_url`을 포함한다. 폴백 항목은 `resolution_source=term_cards`와 `getty_aat_term_not_found` 또는 `getty_aat_unavailable` limitation을 포함한다.
+- **외부 연동과 제약**: `GettyAatClient`만 Getty SPARQL endpoint에 최대 한 건을 POST로 조회하며, timeout·HTTP 오류·비정상 JSON은 `status=unavailable`으로 변환한다. Getty label·URI는 Pinterest 검색어를 바꾸거나 LLM 프롬프트·RAG에 자동 주입하지 않는다. 이미지·소장품·Pinterest HTTP 요청은 하지 않는다.
+
 ## Out of Scope
 
 - 실제 OpenAI 또는 다른 LLM 호출
