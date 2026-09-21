@@ -2,21 +2,21 @@
 
 ## 현재 구현 단계
 
-현재는 기반 골조 단계다. Pydantic 요청/선택 계약, 정적 term ID 카드, 축/역할 검증, Pinterest URL 생성, `/health`, Getty AAT 용어 조회와 정적 카드 폴백 FastMCP 파이프라인을 구현한다. OpenAI, Langfuse, 권리 검토된 자체 카탈로그, UI, 배포는 아직 구현하거나 호출하지 않는다.
+현재는 기반 골조 단계다. Pydantic 요청/선택 계약, 정적 term ID 카드, 역할 검증, Pinterest URL 생성, `/health`, Getty AAT 용어 조회와 정적 카드 폴백 FastMCP 파이프라인을 구현한다. OpenAI, Langfuse, 권리 검토된 자체 카탈로그, UI, 배포는 아직 구현하거나 호출하지 않는다.
 
 ## 책임 분리
 
 | 계층 | 책임 |
 | --- | --- |
 | LLM (향후) | 일상어를 허용 term ID·근거·대안으로 구조화 |
-| 결정론 코드 | 허용 ID, 축/하위 역할 일치, 역할 순서, 검색어와 URL 인코딩 검증 |
+| 결정론 코드 | 허용 ID, 역할 일치, 역할 순서, 검색어와 URL 인코딩 검증 |
 | FastMCP | LLM이 선택한 허용 term ID를 검증하고, Getty AAT SPARQL 조회 성공 시 URI·label·출처를 반환한다. 후보 없음·장애 시 정적 `TERM_CARDS`로 폴백한 뒤 Pinterest 검색 계획을 반환한다. 향후 권리 검토된 자체 카탈로그의 구조화 출처 메타데이터를 조회한다. |
 | UI (향후) | 용어·근거·한계·외부 링크만 표시 |
 
 ## 기반 계약
 
 - 요청 모델은 `request_text` 1~500자와 UUID 형식 `anonymous_user_id`, `session_id`만 허용한다.
-- 내부 선택은 `body | pose | composition | detail` 축과 정적 `term_id`를 가지며, 구도는 `view | perspective | layout` kind를 사용한다.
+- 내부 선택은 `body`, `pose`, `view`, `perspective`, `layout` 역할과 정적 `term_id`를 가진다.
 - 검색 역할은 `body → pose → view → perspective → layout` 순서다. 실제로 선택된 역할만 만든다.
 - 역할별 링크와 통합 링크는 `urllib.parse.urlencode`로 생성한다. Pinterest에 요청하거나 결과를 저장하지 않는다.
 
@@ -30,8 +30,8 @@
 
 ## Getty 조회와 정적 카드 폴백 실험
 
-- 실제 LLM 호출 전에는 `Selection`이 LLM의 구조화 출력을 나타낸다. MCP는 유효한 프로젝트 `term_id`만 처리하며, 잘못된 축·kind는 Getty에 전달하지 않는다.
-- 각 term ID에서 축 접두사를 제외한 영문 용어(예: `pose_contrapposto` → `contrapposto`)로 Getty AAT를 최대 한 건 조회한다. 성공하면 `getty_aat` 출처와 Getty URI·label·출처 URL을 반환한다.
+- 실제 LLM 호출 전에는 `Selection`이 LLM의 구조화 출력을 나타낸다. MCP는 유효한 프로젝트 `role`·`term_id` 조합만 처리하며, 잘못된 역할 또는 term ID는 Getty에 전달하지 않는다.
+- 각 term ID에서 역할 접두사를 제외한 영문 용어(예: `pose_contrapposto` → `contrapposto`)로 Getty AAT를 최대 한 건 조회한다. 성공하면 `getty_aat` 출처와 Getty URI·label·출처 URL을 반환한다.
 - 후보 없음은 `getty_aat_term_not_found`, timeout·5xx·비정상 응답은 `getty_aat_unavailable` limitation과 함께 `term_cards` 출처로 폴백한다.
 - Pinterest 링크는 Getty의 동적 label이 아닌, 검증된 정적 카드의 `query_fragment`로만 생성한다.
 
