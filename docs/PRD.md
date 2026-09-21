@@ -52,7 +52,7 @@
 
 1. **Given** 유효한 설명과 역할, **When** Agent가 해석하면, **Then** 응답의 모든 `term_id`는 현재 런타임 허용 카드에 존재한다.
 2. **Given** 카드 밖·비활성 카드·잘못된 역할, **When** 결정론 검증을 수행하면, **Then** 해당 값은 응답과 링크에서 제거되고 폴백 또는 실패 응답이 반환된다.
-3. **Given** 카드 선택, **When** Pinterest 링크를 만들면, **Then** 해당 카드의 `query_fragments`만 URL 인코딩해 사용한다.
+3. **Given** 카드 선택, **When** 검색 도구를 호출하면, **Then** 해당 카드의 `query_fragments`만 검색 입력으로 사용하고 역할별 최대 8개의 Pin URL을 반환한다.
 4. **Given** 단서 부족 또는 충돌 입력, **When** 해석하면, **Then** 용어·링크를 추측하지 않고 카드 기반 추가 질문 또는 `pending_human_review`를 반환한다.
 5. **Given** 특정 역할만 선택, **When** 링크를 만들면, **Then** 미선택 역할의 개별 링크는 없다.
 6. **Given** Getty 출처 카드, **When** 결과를 표시하면, **Then** 카드의 Getty AAT URI·label·출처를 함께 표시한다.
