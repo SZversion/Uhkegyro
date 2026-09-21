@@ -85,7 +85,7 @@ Agent 메시지 제출 API(경로·계약 미정)는 사용자 메시지를 저�
 4. LLM adapter는 활성 카드의 ID·role·confidence gate만 근거로 구조화 후보를 생성한다.
 5. resolver는 (a) 선택 역할 여부, (b) 활성 사전 존재 여부, (c) 카드 role 일치, (d) `confidence_gate`, (e) `requires_all_of` 전체 충족, (f) `requires_any_of` 중 하나 충족을 검증한다.
 6. 단서가 없거나 검증을 통과하지 못하면 해당 역할에 카드를 선택하지 않고 카드의 `clarifying_question_ko` 또는 일반 확인 상태를 반환한다.
-7. 유효 카드마다 response assembler가 카드 원문 피드백과 출처를 조립한다. `source_type=getty_aat`이고 `getty_aat`가 존재할 때만 AAT URI·preferred label·attribution을 표시한다.
+7. 유효 카드마다 response assembler가 카드 JSON에 저장된 원문 피드백과 출처를 조립한다. `getty_aat`가 존재하면 해당 카드의 AAT URI·label·attribution을 그대로 표시하며, 외부 조회나 보강은 하지 않는다.
 8. URL builder는 선택 카드의 `query_fragments` 배열만 합쳐 Pinterest 검색 URL을 만든다. `direct_search_disabled_term_ids`에 해당하면 링크를 만들지 않는다.
 9. PinterestSearchProvider가 역할별 결과를 반환하면 삭제된 Pin은 `deleted` 상태로 표시하고 화면에 `이 Pin은 삭제되었습니다`를 남긴 뒤 렌더링 대상에서 제외한다. 0건은 `no_results`, 검색 장애는 `search_error`와 재시도 안내로 구분한다.
 10. 작업이 Cloud Run 종료로 중단되면 job을 `failed`로 기록하고 클라이언트에 상태와 재시도 안내를 반환한다. 자동 재시도는 하지 않는다.
@@ -99,7 +99,7 @@ Agent 메시지 제출 API(경로·계약 미정)는 사용자 메시지를 저�
 | LLM timeout/형식 오류 | 재시도 정책 후 카드 선택 없이 실패/재시도 가능 상태 반환; trace 기록 |
 | 카드 밖 또는 비활성 ID | resolver가 폐기; 링크 생성 금지 |
 | 단서 부족·상충 | 추측 금지, 질문 또는 `pending_human_review` |
-| Getty MCP 실패 | 카드의 기존 출처 정보만 사용하거나 출처 조회 한계를 표시; 새 후보 생성 금지 |
+| 카드 출처 필드 누락 | 해당 카드의 누락을 검증 오류로 기록하고, 외부 출처를 생성·조회하지 않음 |
 | Pinterest URL 생성 불가 | URL 생략 및 사유 표시; 대체 자유 문장 URL 금지 |
 | 검색 결과 0건 | 해당 역할에 `no_results`와 `검색 결과가 없습니다` 표시 |
 | Pin 삭제 | URL은 세션 이력에 남기되 `deleted` 상태와 `이 Pin은 삭제되었습니다` 표시 |
@@ -108,6 +108,6 @@ Agent 메시지 제출 API(경로·계약 미정)는 사용자 메시지를 저�
 
 ## 6. 관측·보안·검증
 
-LLM adapter는 Langfuse에 요청 ID, 모델, 프롬프트 버전, 입력/출력 계약 통과 여부, 토큰 수, 지연, 비용, 재시도를 기록한다. 평가셋은 최소 30건이며 정상·경계·실패 유도를 포함한다. 회귀는 카드 허용 목록, 역할 필터, URL fragment 전용 생성, 모호성 질문, Getty 출처 노출, `/health`를 검증한다.
+LLM adapter는 Langfuse에 요청 ID, 모델, 프롬프트 버전, 입력/출력 계약 통과 여부, 토큰 수, 지연, 비용, 재시도를 기록한다. 평가셋은 최소 30건이며 정상·경계·실패 유도를 포함한다. 회귀는 카드 허용 목록, 역할 필터, URL fragment 전용 생성, 모호성 질문, 카드에 저장된 출처 노출, `/health`를 검증한다.
 
 비밀값은 `.env`와 배포 Secret Manager에만 두며 UI와 git에 노출하지 않는다. 세션 토큰은 서버가 발급하는 불투명 랜덤 값이며 HttpOnly 쿠키로 전달한다. 세션·chat·구조화 결과·Pin URL은 Cloud SQL for PostgreSQL에 1개월 저장하고 Cloud Scheduler가 하루 한 번 만료 데이터를 삭제한다. Cloud Run CORS는 개발 중 localhost와 Vercel 도메인을 허용하고 배포 시 Vercel 도메인만 허용한다. Pinterest 검색 API·비즈니스 계정은 후속 확인 전까지 provider 구현을 교체 가능하게 유지한다. `main`에는 직접 push하지 않고 개인 브랜치·PR·리뷰 흐름을 따른다.
