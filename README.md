@@ -71,10 +71,10 @@
 
 ```text
 사용자 UI
-  -> FastAPI POST /api/sessions/{session_id}/messages
+  -> FastAPI Agent 메시지 API (명세 미정)
     -> LLM: 일상어를 허용된 term_id와 역할로 구조화
     -> 결정론 코드: Pydantic 검증, 역할 순서, 허용 ID, URL 인코딩
-    -> FastMCP: LLM이 필요하다고 판단한 도구 호출(검색·출처 등)
+    -> FastMCP: LLM이 필요하다고 판단한 도구 호출(도구 목록·계약 미정)
     -> PinterestSearchProvider tool: 역할별 최대 8개 Pin URL 반환
     -> UI: 역할별 섹션에 pinit.js embedPin 미리보기 표시
 ```
@@ -83,7 +83,7 @@
 | --- | --- |
 | LLM | 일상어의 의미 해석, 조건 충돌·모호성 인식, 허용된 구조화 선택 생성 |
 | 결정론 코드 | Pydantic 스키마 검증, 허용 `term_id`, 역할 순서, URL 인코딩, 실패 응답 |
-| FastMCP | LLM이 선택한 Pinterest 검색·출처 보강 등 도구 호출 중계와 구조화된 결과 반환 |
+| FastMCP | 향후 확정할 도구들을 담고 LLM이 필요하다고 판단한 호출을 중계 |
 | UI | 입력 안내, 로딩·실패 안내, 용어·한계·외부 링크 표시 |
 
 LLM은 링크를 임의로 만들거나 데이터 출처를 지어내지 않습니다. 링크 생성과 출력 검증은 코드가 맡습니다.
@@ -103,7 +103,7 @@ Pinterest 이미지는 저장하지 않습니다. 검색 도구가 반환한 Pin
 | 항목 | 현재 상태 | 최종 목표 |
 | --- | --- | --- |
 | `GET /health` | 구현됨. `{"status":"ok"}` 반환 | Cloud Run 상태 확인 |
-| `POST /api/sessions/{session_id}/messages` | 미구현 | 사용자 메시지를 저장하고 비동기 `job_id`를 반환하는 유일한 Agent 진입점 |
+| Agent 메시지 API | 명세 미정 | 사용자 메시지를 저장하고 비동기 작업을 생성하는 공개 진입점 |
 | `/docs` | FastAPI 기본 문서에서 확인 가능 | 요청·응답 모델 및 오류 응답 확인 |
 | `/mcp` | 미구현. `example_tool` 골조만 존재 | FastMCP Streamable HTTP endpoint와 도구 호출 증거 |
 | MCP 접근 제어 | 미구현 | 토큰 또는 허용 클라이언트 정책을 문서화하고 적용 |

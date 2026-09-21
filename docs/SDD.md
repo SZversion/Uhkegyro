@@ -11,8 +11,8 @@
 ```text
 React + Vite UI
   -> POST /api/sessions (서버 발급 토큰·HttpOnly 쿠키)
-  -> POST /api/sessions/{session_id}/messages (비동기 job 생성)
-  -> GET /api/jobs/{job_id}
+  -> Agent 메시지 API (명세 미정, 비동기 job 생성)
+  -> 작업 상태 API (명세 미정)
        -> Request validator
        -> LLM adapter (구조화 후보만 생성)
        -> Card resolver (활성 카드·제약 검증)
@@ -23,7 +23,7 @@ React + Vite UI
        -> pinit.js embedPin 렌더링
 
 TERM_CARDS_MASTER_100_DRAFT.json -> Card repository -> Card resolver
-FastMCP -> LLM이 필요하다고 판단한 모든 도구 호출을 중계
+FastMCP -> LLM이 필요하다고 판단한 도구 호출을 중계 (도구 목록·계약 미정)
 Langfuse <- LLM adapter의 요청 ID·모델·토큰·지연·비용·재시도
 ```
 
@@ -35,7 +35,7 @@ Langfuse <- LLM adapter의 요청 ID·모델·토큰·지연·비용·재시도
 | Card repository | JSON 로드, 활성 사전·역할별 인덱스 제공 | 카드 변경, 외부 후보 병합 |
 | Card resolver | ID·역할·confidence/requires 검증 | 의도 추측, 출처 조작 |
 | URL builder | 카드 fragment 순서 보존, 공백·특수문자 URL 인코딩 | 일상어·설명문·추상 intent 추가 |
-| FastMCP | 모든 도구의 실행 틀; Pinterest 검색·Getty AAT 출처 등 현재·미래 도구를 등록하고 호출 중계 | 카드 밖 term 제안, 이미지 파일 저장 |
+| FastMCP | 모든 도구를 담는 실행 틀; 도구 목록·계약 확정 후 등록하고 LLM 요청에 따라 호출 중계 | 카드 밖 term 제안, 이미지 파일 저장 |
 | PinterestSearchProvider | FastMCP에 등록되는 검색 도구 구현. 활성 카드의 `query_fragments`로 검색하고 Pin URL·상태 반환 | 이미지 다운로드·썸네일 저장 |
 | Session repository | chat·구조화 결과·Pin URL·상태를 Cloud SQL에 1개월 저장 | 이미지 바이너리 저장 |
 
@@ -45,15 +45,7 @@ Langfuse <- LLM adapter의 요청 ID·모델·토큰·지연·비용·재시도
 
 ### 엔드포인트
 
-| Method | Path | 역할 |
-| --- | --- | --- |
-| `POST` | `/api/sessions` | 새 세션 생성, 불투명 토큰을 HttpOnly 쿠키로 발급 |
-| `GET` | `/api/sessions` | 현재 토큰이 소유한 세션의 마지막 활동 시각·최근 대화 요약·상태 목록 반환 |
-| `GET` | `/api/sessions/{session_id}` | 세션 대화와 누적 검색 결과 재열람 |
-| `POST` | `/api/sessions/{session_id}/messages` | 자연어 chat 입력으로 비동기 Agent 작업 생성 |
-| `GET` | `/api/jobs/{job_id}` | 작업 상태·역할별 결과·오류 조회 |
-| `DELETE` | `/api/jobs/{job_id}` | 실행 중 작업 취소 요청 |
-| `GET` | `/health` | API 프로세스 상태 확인 |
+공개 API 경로·메서드·필드·상태 코드는 아직 미정이다. 세션 생성/조회, Agent 메시지 제출, 비동기 작업 상태 조회, health check가 필요하다는 수준만 합의했으며, 구현 전 별도 API 명세서에서 확정한다.
 
 모든 세션 API는 HttpOnly 쿠키 토큰을 검증한다. 토큰이 없거나 만료되면 새 세션을 생성하도록 유도하며, 다른 세션 ID를 조회할 수 없다.
 
@@ -73,7 +65,7 @@ Langfuse <- LLM adapter의 요청 ID·모델·토큰·지연·비용·재시도
 
 ### 비동기 작업
 
-`POST /api/sessions/{session_id}/messages`는 유일한 공개 Agent 진입점이다. 사용자 메시지를 저장한 뒤 `job_id`와 `queued` 상태를 즉시 반환한다. FastAPI `BackgroundTasks`가 작업을 수행하고, 각 단계 전환을 Cloud SQL 작업 레코드에 기록한다. 프론트엔드는 `GET /api/jobs/{job_id}`를 조회해 다음 상태를 표시한다.
+Agent 메시지 제출 API(경로·계약 미정)는 사용자 메시지를 저장한 뒤 `job_id`와 `queued` 상태를 즉시 반환해야 한다. FastAPI `BackgroundTasks`가 작업을 수행하고, 각 단계 전환을 Cloud SQL 작업 레코드에 기록한다. 프론트엔드는 작업 상태 API(경로·계약 미정)를 조회해 다음 상태를 표시한다.
 
 `queued → running → validating → searching → rendering → completed`를 정상 흐름으로 사용하며, 예외나 Cloud Run 인스턴스 종료로 작업이 끝나지 않으면 `failed`와 재시도 안내를 반환한다. 자동 재시도는 하지 않는다. 사용자가 후속 chat을 보내면 기존 세션의 전체 대화와 보존된 결과를 LLM 입력 문맥으로 사용한다.
 
