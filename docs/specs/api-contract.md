@@ -1,4 +1,6 @@
-# Agent 공개 API 계약
+# Agent 공개 API 계약 초안 — 보류
+
+> 이 파일은 API 명세서가 아니다. 공개 API 경로·필드·상태·인증 계약은 아직 작성되지 않았으며, 구현자는 이 문서의 예시를 사용하면 안 된다. 제품·설계 기준은 `docs/PRD.md`와 `docs/SDD.md`이고, 별도 API 명세서가 승인될 때까지 해당 문서의 “API 미정” 원칙을 따른다. 아래 내용은 논의 중인 참고안으로만 보존한다.
 
 ## Why
 
@@ -168,8 +170,7 @@ GET /api/jobs/{job_id}
 }
 ```
 
-- `agent_status`는 `success`, `needs_clarification`, `partial_result`, `out_of_scope`, `unsafe_input`, `service_unavailable` 중 하나다.
-- `needs_clarification`, `out_of_scope`, `unsafe_input`일 때 `roles`는 빈 배열이며 `clarifying_question`은 `needs_clarification`에서만 문자열이다.
+- 이 초안의 `agent_status`와 `needs_clarification` 표현은 확정 계약이 아니다. 구현 시에는 SDD의 내부 LLM 출력 규칙을 따른다: `needs_clarification`은 boolean 필드이며, `true`이면 용어·링크 조립을 중단하고 사용자 질문 경로로 전환한다.
 - 역할별 `pins`는 최대 8개다. Pin의 `render_status`는 `active` 또는 `deleted`다. 역할의 `search_status`는 `active`, `no_results`, `search_error` 중 하나다.
 - `deleted` Pin은 URL 이력으로만 반환하고 프론트는 `embedPin`을 만들지 않는다. `no_results`와 `search_error`는 빈 `pins` 및 역할 상태·사용자 안내로 반환한다.
 - `agent_status=service_unavailable` 또는 `job_status=failed`이면 `retryable`은 실패 원인에 따라 결정한다.
