@@ -1,5 +1,7 @@
 # Agent 공개 API 계약
 
+> 이 문서는 공개 API contract의 단일 기준이다. `docs/SDD.md`의 API 참고안보다 우선하며, 별도의 프론트엔드 API 문서는 이 계약을 복제하지 않고 이 문서를 참조해야 한다. 클라이언트는 서버 발급 HttpOnly 쿠키 세션만 사용한다.
+
 ## Why
 
 - **페르소나**: 자연어로 캐릭터 레퍼런스를 찾고, 같은 대화 안에서 결과를 유지하거나 실패한 요청을 다시 시도하려는 일러스트 초보자.
@@ -149,6 +151,7 @@ GET /api/jobs/{job_id}
   "retryable": false,
   "result": {
     "agent_status": "success",
+    "needs_clarification": false,
     "reason_codes": [],
     "clarifying_question": null,
     "roles": [
@@ -168,8 +171,8 @@ GET /api/jobs/{job_id}
 }
 ```
 
-- `agent_status`는 `success`, `needs_clarification`, `partial_result`, `out_of_scope`, `unsafe_input`, `service_unavailable` 중 하나다.
-- `needs_clarification`, `out_of_scope`, `unsafe_input`일 때 `roles`는 빈 배열이며 `clarifying_question`은 `needs_clarification`에서만 문자열이다.
+- `agent_status`는 `success`, `partial_result`, `out_of_scope`, `unsafe_input`, `service_unavailable` 중 하나다. `needs_clarification`은 enum 값이 아니다.
+- `needs_clarification`은 별도 boolean 필드다. `true`이면 `roles`는 빈 배열이고 `clarifying_question`은 하나의 문자열이어야 하며, `false`이면 질문은 `null`이어야 한다.
 - 역할별 `pins`는 최대 8개다. Pin의 `render_status`는 `active` 또는 `deleted`다. 역할의 `search_status`는 `active`, `no_results`, `search_error` 중 하나다.
 - `deleted` Pin은 URL 이력으로만 반환하고 프론트는 `embedPin`을 만들지 않는다. `no_results`와 `search_error`는 빈 `pins` 및 역할 상태·사용자 안내로 반환한다.
 - `agent_status=service_unavailable` 또는 `job_status=failed`이면 `retryable`은 실패 원인에 따라 결정한다.
