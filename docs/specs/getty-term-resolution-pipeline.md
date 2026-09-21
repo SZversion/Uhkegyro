@@ -1,3 +1,5 @@
+> 이 문서는 초기 Getty 용어 파이프라인 Spec입니다. 최신 제품·아키텍처 기준은 `docs/PRD.md`와 `docs/SDD.md`를 우선합니다.
+
 # Getty Term Resolution Pipeline Spec
 
 ## Why

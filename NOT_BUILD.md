@@ -6,7 +6,8 @@
 | --- | --- | --- |
 | Metropolitan Museum API·이미지 API | 이 MVP는 박물관 작품·이미지 검색 서비스가 아니며, 도메인 목표는 초보자 표현을 드로잉 용어와 탐색 계획으로 바꾸는 것이다. | 현재 Getty AAT의 용어 후보 URI·label과 역할별 외부 탐색 링크. 미래 자체 용어 DB는 같은 후보 계약을 구현해 교체할 수 있다. |
 | Getty Museum Collection API | Getty AAT 용어 근거와 미술관 소장품 데이터는 목적·권리·출력 계약이 다르다. | Getty AAT SPARQL의 용어 후보 URI·label·출처를 현재 FastMCP 파이프라인 결과로 반환하고, 사람이 검토한다. |
-| Getty·Pinterest 이미지 수집·저장·재게시 | 이미지 저작권·약관·원본 적합성 보장 문제를 피한다. | 사용자가 원본에서 직접 확인하는 외부 링크 |
+| Getty·Pinterest 이미지 파일·썸네일·메타데이터 수집·저장·재게시 | 이미지 저작권·약관·원본 적합성 보장 문제를 피한다. | Pinterest 검색 결과의 Pin URL만 저장하고, 사용자가 요청한 시점에 공식 `pinit.js` `embedPin`으로 원본 Pin 미리보기를 렌더링한다. 검색 결과는 `body`, `pose`, `view`, `perspective`, `layout` 섹션으로 나눠 역할별 최대 8개를 표시한다. |
+| Pinterest 검색 제공자 확정 | 현재 비즈니스 계정과 API 사용 권한이 없어 검색 API 제공자를 확정할 수 없다. | `PinterestSearchProvider` 교체 인터페이스를 먼저 정의하고, 계정·정책 확인 후 실제 검색 구현을 연결한다. |
 | 자동 term 카드 생성·수정 | 현재 Getty 또는 미래 자체 DB 후보가 도메인 작업 규칙에 맞는다는 보장이 없고, 정적 카드 변경은 평가 회귀를 유발할 수 있다. | `confidence=low`와 limitation 기반의 `pending_human_review` 초안 |
 | 용어 후보 결과의 LLM 프롬프트 자동 주입·RAG | 동적 외부 텍스트를 답변 근거로 주입하면 출처·행동·평가 경계를 흐린다. | 사람이 검토하는 구조화 후보 URI·label |
 | 특정 작가 화풍 복제·업로드 이미지 분석 | 프로젝트의 텍스트 기반 기초 용어 학습 목표를 벗어난다. | 체형/소체·포즈·구도 텍스트 입력 안내 |

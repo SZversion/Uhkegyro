@@ -1,3 +1,5 @@
+> 이 문서는 초기 골조 Spec입니다. 최신 제품·아키텍처 기준은 `docs/PRD.md`와 `docs/SDD.md`를 우선합니다.
+
 # 캐주얼 캐릭터 일러스트 레퍼런스 Agent — 기반 골조 Spec
 
 ## Why
