@@ -45,7 +45,7 @@
 | 쿠키가 없거나 만료됨 | `401`과 `SESSION_REQUIRED`; 브라우저는 새 세션 생성 흐름으로 이동 |
 | 다른 세션의 `session_id` 또는 `job_id` 접근 | 존재 여부를 노출하지 않는 `404` 반환 |
 | 빈 입력 또는 500자 초과 | `422`; LLM·MCP·검색을 호출하지 않음 |
-| 카드로 해석할 단서가 부족함 | 작업 `completed`; 결과의 `agent_status=needs_clarification`과 질문 하나 반환 |
+| 카드로 해석할 단서가 부족함 | 작업 결과에 `needs_clarification=true`와 질문 하나를 담음. 구체 응답 형식은 향후 API 명세서에서 확정 |
 | 역할별 검색 결과가 없음 | 작업 `completed`; 해당 역할 `no_results`와 `검색 결과가 없습니다` 반환 |
 | Pin 삭제 확인 | URL 이력은 저장하고 `deleted`; 렌더링 대상에서는 제외 |
 | 검색 시스템 오류 | 작업 `completed`; 해당 역할 `search_error`와 재시도 안내 반환 |
