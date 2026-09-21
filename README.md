@@ -3,7 +3,7 @@
 > 전문 용어가 낯선 초보자가 텍스트로 묘사한 캐주얼 캐릭터의 **체형/소체, 포즈, 구도**를 기초 드로잉 용어와 역할별 Pinterest 탐색 계획으로 바꾸는 Agent입니다.
 
 > **현재 상태: 기반 골조 구현 중**
-> 현재 API는 `GET /health`만 동작합니다. LLM 기반 해석, `POST /api/agent`, MCP 도구, Langfuse, UI 및 배포는 아직 구현·측정하지 않았습니다. 아래의 목표 구조와 계획 항목은 완료 기능으로 해석하면 안 됩니다.
+> 현재 API는 `GET /health`만 동작합니다. LLM 기반 해석, Agent 메시지 API, MCP 도구, Langfuse, UI 및 배포는 아직 구현·측정하지 않았습니다. 아래의 목표 구조와 계획 항목은 완료 기능으로 해석하면 안 됩니다.
 
 ## 한눈에 보기
 
@@ -20,8 +20,8 @@
 | 이름 | 역할 |
 | --- | --- |
 | 오세창 | 도메인 경험·용어 검토 |
-| 김호섭 | 백앤드 |
-| 윤태현 | 모델 |
+| 김호섭 | MCP, 아키텍처 |
+| 윤태현 | 백엔드, 에이전트 출력 |
 
 ## 문제와 도메인 경험
 
@@ -34,8 +34,9 @@
 1. 사용자가 만들고 싶은 캐릭터를 일상어로 입력합니다.
 2. Agent가 체형/소체, 포즈, 시점, 원근, 배치를 구분해 해석합니다.
 3. 각 조건을 쉬운 말과 드로잉 용어로 설명하고, 확신하지 못한 조건은 질문 또는 한계로 표시합니다.
-4. 선택된 역할에 한해서만 Pinterest 외부 탐색 링크를 제공합니다.
-5. 사용자는 하나의 ‘정답 이미지’가 아니라 역할별 레퍼런스를 조합해 러프를 시작합니다.
+4. Agent가 선택한 역할별로 Pinterest 검색 결과 상위 8개 Pin을 가져와 섹션별 미리보기로 제공합니다.
+5. 미리보기는 Pinterest 공식 `pinit.js` `embedPin`으로 렌더링하며, 서비스는 이미지 파일을 저장하지 않고 Pin URL만 세션에 저장합니다.
+6. 사용자는 하나의 ‘정답 이미지’가 아니라 역할별 레퍼런스를 조합해 러프를 시작합니다.
 
 ### 입력과 목표 출력 예시
 
@@ -53,13 +54,14 @@
 - 1~500자 텍스트 설명의 구조화 해석
 - 체형/소체, 포즈, 구도(`view`, `perspective`, `layout`)의 역할 분리
 - 전문 용어의 초보자용 설명과 불확실성 표시
-- 선택된 역할만 사용하는 Pinterest 외부 탐색 링크 및 통합 탐색 링크
-- Getty AAT 용어 후보 또는 승인된 팀 `TERM_CARDS`의 출처 정보
+- 선택된 역할별 Pinterest Pin 미리보기(기본 최대 8개, 설정으로 변경 가능)
+- 역할별 결과의 Pin URL 세션 저장 및 공식 `pinit.js` `embedPin` 렌더링
+- TERM_CARD JSON에 미리 기록된 용어·출처 정보
 
 ### 제공하지 않을 것
 
 - 이미지 생성, 편집, 업로드 이미지 분석, 특정 작가 화풍 복제
-- Pinterest·Getty 이미지의 수집, 저장, 재게시 또는 스크래핑
+- Pinterest·Getty 이미지 파일·썸네일·메타데이터의 수집, 저장, 재게시 또는 스크래핑
 - 단일 이미지가 모든 조건에 맞는다고 보장하는 추천
 - 문서를 청크로 검색해 답변에 주입하는 RAG
 
@@ -69,18 +71,19 @@
 
 ```text
 사용자 UI
-  -> FastAPI POST /api/agent
+  -> FastAPI Agent 메시지 API (명세 미정)
     -> LLM: 일상어를 허용된 term_id와 역할로 구조화
     -> 결정론 코드: Pydantic 검증, 역할 순서, 허용 ID, URL 인코딩
-    -> FastMCP: Getty AAT 용어 후보 또는 팀 TERM_CARDS 조회
-    -> UI: 용어 설명, 근거/한계, Pinterest 외부 탐색 링크 표시
+    -> FastMCP: LLM이 필요하다고 판단한 도구 호출(도구 목록·계약 미정)
+    -> PinterestSearchProvider tool: 역할별 최대 8개 Pin URL 반환
+    -> UI: 역할별 섹션에 pinit.js embedPin 미리보기 표시
 ```
 
 | 계층 | 담당 책임 |
 | --- | --- |
 | LLM | 일상어의 의미 해석, 조건 충돌·모호성 인식, 허용된 구조화 선택 생성 |
 | 결정론 코드 | Pydantic 스키마 검증, 허용 `term_id`, 역할 순서, URL 인코딩, 실패 응답 |
-| FastMCP | 구조화된 용어 후보·출처 조회와 폴백 결과 반환 |
+| FastMCP | 향후 확정할 도구들을 담고 LLM이 필요하다고 판단한 호출을 중계 |
 | UI | 입력 안내, 로딩·실패 안내, 용어·한계·외부 링크 표시 |
 
 LLM은 링크를 임의로 만들거나 데이터 출처를 지어내지 않습니다. 링크 생성과 출력 검증은 코드가 맡습니다.
@@ -89,18 +92,17 @@ LLM은 링크를 임의로 만들거나 데이터 출처를 지어내지 않습�
 
 | 구분 | 계획된 역할 | 출력에 보이는 정보 |
 | --- | --- | --- |
-| Getty AAT | 미술 용어 후보의 구조화 조회 | 용어 label, AAT URI, Getty 출처 URL |
-| 팀 `TERM_CARDS` | 검토·승인한 기초 드로잉 용어의 정적 폴백 | term ID, 설명, 탐색용 query fragment, 출처 상태 |
-| Pinterest | 사용자가 원본을 직접 확인할 외부 탐색 대상 | 검색 링크만 제공 |
+| TERM_CARD JSON | 검토·승인한 기초 드로잉 용어와 출처의 단일 원본 | term ID, 설명, query fragment, Getty AAT URI·label·출처 |
+| Pinterest | 사용자가 원본을 직접 확인할 외부 탐색 대상 | Pin URL 저장 및 공식 위젯 미리보기 |
 
-Pinterest는 API 호출·스크래핑·결과 저장 대상으로 사용하지 않습니다. Getty AAT 역시 이미지 카탈로그가 아니라 용어 근거 후보로만 사용합니다. 자체 카드와 권리 검토 기준은 팀 승인을 거쳐야 하며, 승인되지 않은 데이터는 완료된 카탈로그로 주장하지 않습니다.
+Pinterest 이미지는 저장하지 않습니다. 검색 도구가 반환한 Pin URL만 세션에 저장하고, 화면에서는 공식 `pinit.js` `embedPin`으로 원본 Pin을 렌더링합니다. 검색 제공자의 API·비즈니스 계정 요건은 확인 후 확정합니다. Pin 삭제와 렌더링/네트워크 오류를 공식 응답만으로 구분할 수 없으면 `render_error`로 처리합니다. 용어·출처는 TERM_CARD JSON을 그대로 사용하며, LLM이나 런타임 외부 조회로 보강하지 않습니다. 자체 카드와 권리 검토 기준은 팀 승인을 거쳐야 하며, 승인되지 않은 데이터는 완료된 카탈로그로 주장하지 않습니다.
 
 ## API와 MCP 상태
 
 | 항목 | 현재 상태 | 최종 목표 |
 | --- | --- | --- |
 | `GET /health` | 구현됨. `{"status":"ok"}` 반환 | Cloud Run 상태 확인 |
-| `POST /api/agent` | 미구현 | Pydantic 요청·응답 계약을 갖춘 사용자 Agent API |
+| Agent 메시지 API | 명세 미정 | 사용자 메시지를 저장하고 비동기 작업을 생성하는 공개 진입점 |
 | `/docs` | FastAPI 기본 문서에서 확인 가능 | 요청·응답 모델 및 오류 응답 확인 |
 | `/mcp` | 미구현. `example_tool` 골조만 존재 | FastMCP Streamable HTTP endpoint와 도구 호출 증거 |
 | MCP 접근 제어 | 미구현 | 토큰 또는 허용 클라이언트 정책을 문서화하고 적용 |
@@ -165,9 +167,12 @@ docker compose down
 
 | 문서 | 내용 |
 | --- | --- |
+| [PRD](./docs/PRD.md) | 제품 요구사항, 사용자 흐름, 범위와 수용 기준 |
+| [SDD](./docs/SDD.md) | 시스템 아키텍처, 데이터 흐름, 검증·비동기 처리 설계 |
 | [도메인 프로필](./docs/domains/illustration-reference/domain-profile.md) | 사용자, 업무 경험, 경쟁 서비스, 범위와 데이터 출처 |
 | [경쟁 서비스 분석](./docs/domains/illustration-reference/competitive-analysis.md) | 실제 시작 흐름 비교, 차별점과 조사 한계 |
 | [설계 문서](./docs/domains/illustration-reference/design.md) | LLM·결정론 코드·MCP의 책임 분리와 폴백 설계 |
+| [실패 상태 계약](./docs/specs/illustration-reference-failure-state-contract.md) | 성공·정보 부족·범위 밖·안전 거부·부분 결과·서비스 불가의 응답 및 LLM JSON 계약 |
 | [NOT_BUILD.md](./NOT_BUILD.md) | MVP에서 의도적으로 만들지 않는 기능과 이유 |
 | [EVAL_REPORT.md](./EVAL_REPORT.md) | 관측, 프롬프트 운영, 평가, 비용·지연, 출시 게이트 |
 | [evals/](./evals/) | 평가셋과 판정 기준 |
