@@ -16,7 +16,7 @@
 ## 기반 계약
 
 - 요청 모델은 `request_text` 1~500자와 UUID 형식 `anonymous_user_id`, `session_id`만 허용한다.
-- 내부 선택은 `body | pose | composition | detail` 축과 정적 `term_id`를 가지며, 구도는 `view | perspective | layout` kind를 사용한다.
+- 내부 선택은 `body | pose | view | perspective | layout`의 `role`, 정적 `term_id`, 근거, confidence를 가진다. 현재 활성 카드의 `role`·`term_id` 계약을 그대로 사용하며, `axis`·`kind` 필드는 사용하지 않는다.
 - 검색 역할은 `body → pose → view → perspective → layout` 순서다. 실제로 선택된 역할만 만든다.
 - 역할별 링크와 통합 링크는 `urllib.parse.urlencode`로 생성한다. Pinterest에 요청하거나 결과를 저장하지 않는다.
 
@@ -30,10 +30,11 @@
 
 ## Getty 조회와 정적 카드 폴백 실험
 
-- 실제 LLM 호출 전에는 `Selection`이 LLM의 구조화 출력을 나타낸다. MCP는 유효한 프로젝트 `term_id`만 처리하며, 잘못된 축·kind는 Getty에 전달하지 않는다.
+- 실제 LLM 호출 전에는 `Selection`이 LLM의 구조화 출력을 나타낸다. MCP는 유효한 프로젝트 `role`·`term_id` 조합만 처리하며, 잘못된 역할 또는 term ID는 Getty에 전달하지 않는다.
 - 각 term ID에서 축 접두사를 제외한 영문 용어(예: `pose_contrapposto` → `contrapposto`)로 Getty AAT를 최대 한 건 조회한다. 성공하면 `getty_aat` 출처와 Getty URI·label·출처 URL을 반환한다.
-- 후보 없음은 `getty_aat_term_not_found`, timeout·5xx·비정상 응답은 `getty_aat_unavailable` limitation과 함께 `term_cards` 출처로 폴백한다.
-- Pinterest 링크는 Getty의 동적 label이 아닌, 검증된 정적 카드의 `query_fragment`로만 생성한다.
+- 후보 없음은 `GETTY_AAT_TERM_NOT_FOUND`, timeout·5xx·비정상 응답은 `GETTY_AAT_UNAVAILABLE` limitation code와 함께 `term_cards` 출처로 폴백한다.
+- Pinterest 링크는 Getty의 동적 label이 아닌, 검증된 정적 카드의 `query_fragment` 또는 실패 상태 계약에서 검증한 임시 후보의 짧은 `search_token`으로만 생성한다.
+- 필요한 팀 카드가 없으면 MCP는 `resolution_source=term_source_unavailable`, `limitation_codes=[TEAM_TERM_CARD_UNAVAILABLE]`을 반환한다. 카드 저장소를 읽지 못하면 같은 출처 상태와 `limitation_codes=[STATIC_CARD_STORE_UNAVAILABLE]`을 반환한다. `resolution_source`는 MCP의 출처 상태이고 API 사유 코드가 아니며, 서버는 `limitation_codes`의 대문자 공통 enum을 `reason_codes`에 변환 없이 보존한다. 서버는 실패 상태 계약에 따라 세 번째 LLM 폴백을 한 번 호출할 수 있으며, 성공한 후보도 `llm_fallback`·임시 후보·사람 검토 필요로 표시한다. 이 후보는 카드·Skill·DB에 자동 저장하지 않는다.
 
 ## 다음 단계 전제
 
