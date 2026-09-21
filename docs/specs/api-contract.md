@@ -193,7 +193,7 @@ GET /api/jobs/{job_id}
 }
 ```
 
-`401 SESSION_REQUIRED`, `404 JOB_NOT_FOUND`, 또는 재시도할 수 없는 작업의 `409 JOB_NOT_RETRYABLE`을 반환한다.
+`401 SESSION_REQUIRED`, `404 JOB_NOT_FOUND`(타인 작업 접근 포함), 또는 재시도할 수 없는 작업의 `409 JOB_NOT_RETRYABLE`을 반환한다.
 
 ### 내부 의존성 경계
 
@@ -206,46 +206,15 @@ GET /api/jobs/{job_id}
 - 검색 결과에는 메시지·역할·`term_id`·Pin URL·`active|deleted|no_results|search_error` 상태·생성 시각을 저장한다.
 - 세션·대화·구조화 결과·Pin URL은 1개월 보관하고 하루 한 번 만료 데이터를 삭제한다. 이미지 바이너리·썸네일·LLM 원문 응답은 저장하지 않는다.
 
-## AC
+## 향후 API 명세서에서 확정할 항목
 
-**AC-01 · 서버가 새 세션을 발급한다**
+- 공개 endpoint·request/response 필드·HTTP 상태·오류 코드
+- polling 간격, 작업 상태 조회 종료 조건, timeout 기준
+- 메시지·역할별 결과 pagination과 정렬 규칙
+- 세션 조회·종료 메서드와 세션 목록 범위
+- `agent_status`와 `job_status`의 envelope/payload 위치
+- `failure_code`별 `retryable` 규칙과 `attempt`, `max_attempts` 계약
 
-- GIVEN: 세션 쿠키가 없는 브라우저
-- WHEN: `POST /api/sessions`를 호출한다
-- THEN: 서버는 `201`, 새 `session_id`, 만료 시각과 `HttpOnly` 세션 쿠키를 반환한다
-- AND THEN: 브라우저는 토큰을 JavaScript로 읽을 수 없다
+비동기 재시도 참고 정책은 `max_attempts=3`이다. timeout·인스턴스 중단 등 재시도 가능한 실패는 기본 `retryable=true`로 시작하고, 시도 횟수가 3회에 도달하면 `retryable=false`로 종결한다. `job_status=failed`인 envelope는 `result=null`과 `failure_code`, `user_message`, `retryable`을 가지며, `agent_status`는 결과 payload가 존재할 때만 사용한다.
 
-**AC-02 · 메시지는 비동기 작업을 만든다**
-
-- GIVEN: 유효한 세션 쿠키와 소유한 `session_id`
-- WHEN: 1~500자 `request_text`를 `POST /api/sessions/{session_id}/messages`로 보낸다
-- THEN: 서버는 `202`, 새 `message_id`, `job_id`, `job_status=queued`를 반환한다
-- AND THEN: 클라이언트가 보낸 `role`, `term_id`, 검색어, Pin URL은 없으며 서버도 이를 요청하지 않는다
-
-**AC-03 · 세션 소유권을 강제한다**
-
-- GIVEN: 세션 A의 쿠키를 가진 브라우저와 세션 B의 `session_id` 또는 `job_id`
-- WHEN: 메시지 제출·작업 조회·재시도를 시도한다
-- THEN: 서버는 리소스 존재 여부를 드러내지 않는 `404`를 반환한다
-
-**AC-04 · 작업 결과는 역할별 Pin을 제한한다**
-
-- GIVEN: 활성 카드가 선택되고 검색이 끝난 작업
-- WHEN: `GET /api/jobs/{job_id}`를 조회한다
-- THEN: 각 역할은 최대 8개의 Pin URL과 `render_status`를 반환한다
-- AND THEN: 프론트는 `active` URL만 `pinit.js` `embedPin`으로 렌더링하고 이미지 파일을 저장하지 않는다
-
-**AC-05 · 실패 작업은 명시적 재시도만 허용한다**
-
-- GIVEN: timeout 또는 Cloud Run 중단으로 `job_status=failed`, `retryable=true`가 된 작업
-- WHEN: 사용자가 `POST /api/jobs/{job_id}/retry`를 호출한다
-- THEN: 서버는 원래 작업과 연결된 새 `job_id`를 `202`로 반환한다
-- AND THEN: 사용자 호출 전에는 자동으로 새 작업을 만들지 않는다
-
-**AC-06 · 입력 형식 오류는 도구를 호출하지 않는다**
-
-- GIVEN: 공백만 있거나 500자를 초과한 `request_text`
-- WHEN: 메시지 제출을 시도한다
-- THEN: 서버는 `422 INVALID_REQUEST_TEXT`를 반환한다
-- AND THEN: LLM·MCP·검색 도구를 호출하지 않는다
 

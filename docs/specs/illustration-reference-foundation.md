@@ -1,4 +1,4 @@
-> 이 문서는 초기 골조 Spec입니다. 최신 제품·아키텍처 기준은 `docs/PRD.md`와 `docs/SDD.md`를 우선합니다.
+> 이 문서는 초기 골조 Spec입니다. 기존 동기 `POST /api/agent`와 body의 사용자·세션 ID 계약은 폐기되었다. 현재는 서버 발급 HttpOnly 쿠키와 비동기 job 모델을 사용하며, 공개 API 계약은 아직 미정이다. 최신 기준은 `docs/PRD.md`와 `docs/SDD.md`다.
 
 # 캐주얼 캐릭터 일러스트 레퍼런스 Agent — 기반 골조 Spec
 

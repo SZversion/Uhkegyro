@@ -1,4 +1,6 @@
-# Illustration Reference Failure State Contract
+# Illustration Reference Failure State Contract — superseded draft
+
+> 이 문서는 기존 동기 `POST /api/agent`와 단일 6상태 응답 모델을 정의한 초안이다. 현재 기준에서는 폐기하고, 서버 발급 HttpOnly 쿠키·비동기 job·`job_status` envelope와 결과 payload의 `needs_clarification` boolean 모델을 따른다. 공개 API 계약은 아직 미정이며 PRD·SDD를 우선한다.
 
 ## Why
 
