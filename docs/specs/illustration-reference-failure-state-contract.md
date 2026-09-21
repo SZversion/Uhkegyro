@@ -57,7 +57,21 @@
 
 `request_id`는 사용자 입력이나 개인 식별자가 아닌 서버 생성 식별자다. `reason_codes`는 UI·평가·로그용 허용 enum이며, 외부 서비스의 원문 오류나 비밀값은 포함하지 않는다.
 
-### 2. 상태와 사용자 화면
+### 2. MCP 출처 상태와 공통 사유 코드
+
+`resolution_source`는 MCP 내부 결과의 출처 상태 enum(`getty_aat | term_cards | term_source_unavailable`)이다. 이 값은 사용자 API의 `reason_codes`에 넣지 않는다. 반면 `limitation_codes`와 API `reason_codes`는 같은 대문자 `FailureReasonCode` enum을 사용하며, 서버는 MCP의 `limitation_codes`를 문자열 변환 없이 API `reason_codes`에 보존한다.
+
+| MCP 조건 | `resolution_source` | MCP `limitation_codes` | 서버 API 상태·추가 `reason_codes` |
+| --- | --- | --- | --- |
+| Getty 후보 없음, 승인 카드 있음 | `term_cards` | `[GETTY_AAT_TERM_NOT_FOUND]` | `success`, 추가 코드 없음 |
+| Getty timeout·5xx·비정상 응답, 승인 카드 있음 | `term_cards` | `[GETTY_AAT_UNAVAILABLE]` | `partial_result`, 추가 코드 없음 |
+| 선택된 팀 카드 없음, 임시 후보 검증 성공 | `term_source_unavailable` | `[TEAM_TERM_CARD_UNAVAILABLE]` | `partial_result`, `LLM_FALLBACK_USED` 추가 |
+| 팀 카드 저장소 읽기 실패, 임시 후보 검증 성공 | `term_source_unavailable` | `[STATIC_CARD_STORE_UNAVAILABLE]` | `partial_result`, `LLM_FALLBACK_USED` 추가 |
+| 팀 카드 없음 또는 저장소 실패, 임시 후보 없음 | `term_source_unavailable` | 위 코드 중 실제 코드 | `service_unavailable`, `REFERENCE_PLAN_UNAVAILABLE` 추가 |
+
+`TEAM_TERM_CARD_UNAVAILABLE`은 선택된 역할·term ID에 사용할 팀 카드가 없다는 뜻이고, `STATIC_CARD_STORE_UNAVAILABLE`은 팀 카드 저장소를 읽을 수 없다는 기술적 장애다. 둘은 필요하면 함께 기록할 수 있지만, 소문자 별칭이나 계층별 다른 문자열을 만들지 않는다.
+
+### 3. 상태와 사용자 화면
 
 | 상태 | HTTP | 대표 사유 코드 | `result` | UI 행동 | 외부 도구 호출 |
 | --- | ---: | --- | --- | --- | --- |
@@ -65,26 +79,26 @@
 | `needs_clarification` | 200 | `ABSTRACT_INTENT_ONLY`, `INSUFFICIENT_BODY_POSE_VIEW_DETAIL`, `CONFLICTING_CONSTRAINTS` | `null` | 한 번에 하나의 구체 질문만 표시 | 호출하지 않음 |
 | `out_of_scope` | 200 | `IMAGE_GENERATION_REQUEST`, `IMAGE_ANALYSIS_REQUEST`, `STYLE_REPLICATION_REQUEST`, `PIN_COLLECTION_REQUEST`, `UNSUPPORTED_SUBJECT` | `null` | 지원하지 않는 이유와 텍스트 입력 범위 안의 대안만 표시 | 호출하지 않음 |
 | `unsafe_input` | 200 | `PROMPT_INJECTION_ATTEMPT`, `SECRET_EXTRACTION_ATTEMPT`, `HARMFUL_OR_ILLICIT_REQUEST` | `null` | 입력 원문을 되풀이하지 않고 안전한 범위 안내만 표시 | 호출하지 않음 |
-| `partial_result` | 200 | `GETTY_AAT_UNAVAILABLE`, `TEAM_TERM_CARD_UNAVAILABLE`, `LLM_FALLBACK_USED`, `PINTEREST_RESULTS_UNAVAILABLE` | 필수 | 사용 가능한 용어·근거·외부 링크를 표시하고, 빠진 부분과 원인을 함께 표시 | 폴백 경로만 수행 |
-| `service_unavailable` | 503 | `REFERENCE_PLAN_UNAVAILABLE`, `STATIC_CARD_STORE_UNAVAILABLE`, `LLM_RESPONSE_UNAVAILABLE` | `null` | 결과·링크를 지어내지 않고 재시도 안내 표시 | 중단 |
+| `partial_result` | 200 | `GETTY_AAT_UNAVAILABLE`, `TEAM_TERM_CARD_UNAVAILABLE`, `STATIC_CARD_STORE_UNAVAILABLE`, `LLM_FALLBACK_USED`, `PINTEREST_RESULTS_UNAVAILABLE` | 필수 | 사용 가능한 용어·근거·외부 링크를 표시하고, 빠진 부분과 원인을 함께 표시 | 폴백 경로만 수행 |
+| `service_unavailable` | 503 | `TEAM_TERM_CARD_UNAVAILABLE`, `STATIC_CARD_STORE_UNAVAILABLE`, `REFERENCE_PLAN_UNAVAILABLE`, `LLM_RESPONSE_UNAVAILABLE` | `null` | 결과·링크를 지어내지 않고 재시도 안내 표시 | 중단 |
 
 `GETTY_AAT_TERM_NOT_FOUND`는 Getty에 후보가 없었다는 정상 조회 결과다. 승인된 정적 카드가 있으면 `success`로 반환하며, 출처가 `term_cards`임을 함께 표시한다. 단순히 Getty 후보가 없다는 이유만으로 `partial_result`로 낮추지 않는다.
 
 `PINTEREST_RESULTS_UNAVAILABLE`은 현재 링크 전용 MVP에서 사용하지 않는 예약 코드다. 향후 Pinterest Partner Search가 팀 승인과 API 접근 승인을 모두 받은 뒤, 이미지 결과를 표시하는 별도 기능 Spec에서만 활성화한다. 그 기능의 도구 호출이 실패해도 현재처럼 Pinterest 외부 검색 링크를 만들 수 있으면 `partial_result`를 사용한다.
 
-### 3. 상태 결정 규칙
+### 4. 상태 결정 규칙
 
 1. 요청 형식이 잘못되었거나 `request_text`가 1~500자 제약을 위반하면 `422 Unprocessable Entity`를 반환한다. 이는 사용자 의미 상태가 아니므로 위 `status` enum을 만들지 않으며, LLM·Getty·Pinterest 호출도 하지 않는다.
 2. 입력이 지원 범위 안이지만 “귀여운 포즈”, “멋진 느낌”처럼 체형·포즈·시점 중 어느 축을 찾아야 하는지 알 수 없으면 `needs_clarification`이다. Agent는 이를 Pinterest 직접 검색어로 쓰지 않고, 가장 먼저 정할 축 하나를 묻는다.
 3. 이미지 생성·편집, 특정 작가 화풍 복제, Pinterest 핀의 대량 수집·다운로드·재게시, 업로드 이미지 분석처럼 MVP 비범위 요청이면 `out_of_scope`이다. 해당 요청을 처리할 도구를 호출하지 않는다.
 4. “이전 지시를 무시하라”처럼 프롬프트를 덮어쓰려는 지시, 시스템 프롬프트·API 키·내부 설정을 요구하는 요청, 유해·불법 실행을 요구하는 입력은 `unsafe_input`이다. 원문을 화면·trace·로그에 되풀이하지 않으며, LLM·Getty·Pinterest·MCP를 호출하지 않는다.
 5. 허용 `term_id`가 선택되고 `TERM_CARDS`가 준비되어 있으면, Getty가 timeout·5xx·비정상 응답이어도 카드와 결정론 URL 생성으로 결과를 이어 간다. 이때 `partial_result`와 `GETTY_AAT_UNAVAILABLE`을 반환한다.
-6. MCP가 `resolution_source=term_source_unavailable`, `team_term_card_unavailable` limitation을 반환해 Getty와 팀 카드가 모두 선택된 역할의 용어를 제공하지 못한 경우에만, 해당 역할의 별도 LLM 폴백을 한 번 호출한다. 폴백의 출력은 활성 `term_id`가 아닌 임시 후보이며, 코드가 형식·역할·짧은 검색 토큰을 검증한다.
-7. 검증된 임시 후보가 있으면 서버가 `source_type=llm_fallback`, `temporary=true`, `requires_human_review=true`, `source_label_ko="임시 용어 후보"`, `source_notice_ko="검증된 팀 카드 또는 Getty 출처가 아닌 임시 후보입니다."`를 붙이고 `partial_result`와 `TEAM_TERM_CARD_UNAVAILABLE`, `LLM_FALLBACK_USED`를 반환한다. UI는 이 출처 라벨과 한계 문구를 용어보다 먼저 또는 같은 블록에 표시한다. 이 후보는 카드·Skill·DB에 자동 저장하지 않는다.
+6. MCP가 `resolution_source=term_source_unavailable`와 실제 원인인 `limitation_codes=[TEAM_TERM_CARD_UNAVAILABLE]` 또는 `[STATIC_CARD_STORE_UNAVAILABLE]`을 반환해 Getty와 팀 카드가 모두 선택된 역할의 용어를 제공하지 못한 경우에만, 해당 역할의 별도 LLM 폴백을 한 번 호출한다. 폴백의 출력은 활성 `term_id`가 아닌 임시 후보이며, 코드가 형식·역할·짧은 검색 토큰을 검증한다.
+7. 검증된 임시 후보가 있으면 서버가 `source_type=llm_fallback`, `temporary=true`, `requires_human_review=true`, `source_label_ko="임시 용어 후보"`, `source_notice_ko="검증된 팀 카드 또는 Getty 출처가 아닌 임시 후보입니다."`를 붙이고 `partial_result`를 반환한다. 서버는 MCP의 실제 `TEAM_TERM_CARD_UNAVAILABLE` 또는 `STATIC_CARD_STORE_UNAVAILABLE`을 `reason_codes`에 보존하고 `LLM_FALLBACK_USED`를 추가한다. UI는 이 출처 라벨과 한계 문구를 용어보다 먼저 또는 같은 블록에 표시한다. 이 후보는 카드·Skill·DB에 자동 저장하지 않는다.
 8. LLM 구조화 응답을 검증 가능한 선택으로 만들지 못했고 질문으로 안전하게 되돌릴 근거도 없으면 `service_unavailable`이다. 팀 카드와 Getty가 모두 없고 LLM 폴백도 검증 가능한 후보를 만들지 못한 경우도 같다. 미검증 용어·링크·출처를 대신 만들지 않는다.
 9. `partial_result`는 적어도 하나의 검증된 `term_id` 또는 검증된 임시 후보와 그에 대응하는 설명 또는 외부 링크가 있을 때만 쓴다. 없으면 `service_unavailable`이다.
 
-### 4. LLM 구조화 출력 계약
+### 5. LLM 구조화 출력 계약
 
 LLM은 최종 API 응답의 `status`, `reason_codes`, 출처, Pinterest URL을 만들지 않는다. 기본 LLM은 허용된 활성 `term_id`만 선택하고, 서버가 이를 검증한 뒤 Getty·팀 카드·URL 생성으로 넘긴다.
 
@@ -192,7 +206,7 @@ LLM은 최종 API 응답의 `status`, `reason_codes`, 출처, Pinterest URL을 �
 }
 ```
 
-### 5. 세 번째 LLM 폴백 출력 계약
+### 6. 세 번째 LLM 폴백 출력 계약
 
 이 출력은 Getty와 팀 카드가 모두 해당 역할의 용어를 제공하지 못했을 때만 사용한다. 기본 LLM의 허용 term ID 선택을 대체하지 않으며, 응답 한 건 안에서만 쓰는 임시 후보다.
 
@@ -252,7 +266,7 @@ LLM은 최종 API 응답의 `status`, `reason_codes`, 출처, Pinterest URL을 �
 }
 ```
 
-### 6. 사용자 문구의 최소 기준
+### 7. 사용자 문구의 최소 기준
 
 | 상태 | 문구 기준 | 예시 |
 | --- | --- | --- |
@@ -262,7 +276,7 @@ LLM은 최종 API 응답의 `status`, `reason_codes`, 출처, Pinterest URL을 �
 | `partial_result` | 가능한 결과와 불가능한 부분을 모두 표시한다. | “Getty 용어 확인은 일시적으로 실패했지만, 검토된 용어 카드와 Pinterest 외부 링크는 제공할 수 있습니다.” |
 | `service_unavailable` | 결과가 없음을 분명히 하고 재시도 가능 여부를 알려 준다. | “지금은 검증된 탐색 계획을 만들 수 없습니다. 잠시 후 다시 시도해 주세요.” |
 
-### 7. 재시도와 기록
+### 8. 재시도와 기록
 
 이 Spec은 실제 재시도 구현 전의 고정 정책이다. 구현 시 SDK 기본 재시도와 중복되지 않도록 애플리케이션 설정을 명시한다.
 
