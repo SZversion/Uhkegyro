@@ -1,94 +1,203 @@
-# AI Human 7기 — 조별 프로젝트 저장소
+# UH케그려 — 캐주얼 캐릭터 일러스트 레퍼런스 해석 Agent
 
-이 저장소는 **조별 프로젝트 공간**입니다. 조원 전원이 write 권한을 갖습니다.
+> 전문 용어가 낯선 초보자가 텍스트로 묘사한 캐주얼 캐릭터의 **체형/소체, 포즈, 구도**를 기초 드로잉 용어와 역할별 Pinterest 탐색 계획으로 바꾸는 Agent입니다.
 
-## 팀 정보 (프로젝트 시작 시 조장이 작성)
+> **현재 상태: 기반 골조 구현 중**
+> 현재 API는 `GET /health`만 동작합니다. LLM 기반 해석, `POST /api/agent`, MCP 도구, Langfuse, UI 및 배포는 아직 구현·측정하지 않았습니다. 아래의 목표 구조와 계획 항목은 완료 기능으로 해석하면 안 됩니다.
+
+## 한눈에 보기
 
 | 항목 | 내용 |
-|---|---|
-| 프로젝트 | proj{N} — {프로젝트명} |
-| 조 | {A~G} |
+| --- | --- |
+| 핵심 사용자 | 캐주얼 캐릭터 일러스트를 시작했고 드로잉 전문 용어가 낯선 사용자 |
+| 반복 문제 | 원하는 체형·포즈·구도를 일상어로만 검색해 넓은 결과를 반복 탐색한다. |
+| 해결 방식 | 일상어를 구조화한 뒤, 용어 설명과 역할별 외부 탐색 링크를 함께 제공한다. |
+| 팀 | UH케그려 (4조) |
+| 현재 실행 가능 범위 | Docker Compose 기반 FastAPI `GET /health` 골조 |
 
-## 조원 소개 — 🏁 첫 과제
+## 팀원
 
-**조원 각자가 자기 행을 브랜치 → PR → 리뷰 → merge로 직접 추가하세요.** (전원 필수)
-이 첫 PR이 협업 흐름 연습입니다. 같은 표를 여러 명이 수정하면 충돌이 날 수 있는데, 그것까지가 연습입니다 (아래 "충돌이 났을 때" 참고).
+| 이름 | 역할 |
+| --- | --- |
+| 오세창 | 도메인 경험·용어 검토 |
+| 김호섭 | 백앤드 |
+| 윤태현 | 모델 |
 
-| 이름 | GitHub | 역할 | 한마디 |
-|---|---|---|---|
-| 홍길동(예시) | @octocat | 백엔드 | 잘 부탁드립니다 |
+## 문제와 도메인 경험
 
-## 협업 규칙 (필독)
+프리랜서 캐주얼 캐릭터 일러스트레이터로 약 3년 활동한 오세창의 작업 경험에서 출발했습니다. 의뢰 이미지나 텍스트 설명만으로 캐릭터를 그릴 때, 하나의 이미지에서 모든 조건을 찾기보다 **체형/소체 → 지지점과 포즈 → 시점·원근·배치 → 세부 표현** 순서로 조건을 나눠 여러 레퍼런스를 병렬로 확인했습니다.
 
-1. **`main`에 직접 push 금지** — 모든 변경은 브랜치 → PR로만 합칩니다.
-2. 브랜치명: `feat/{작업내용}` (예: `feat/login-api`, 버그 수정은 `fix/{내용}`)
-3. PR은 **조원 1명 이상의 approve를 받은 뒤** merge합니다. 리뷰 없는 merge는 감사 리포트에 잡힙니다.
-4. **제출물 = 마감 시점의 `main`** — 마감 시각에 강사가 전체 조 repo에 태그를 일괄 생성합니다. 태그 이후 커밋은 평가 대상이 아닙니다.
-5. **커밋은 본인 계정으로**: 자기가 한 작업은 자기 계정으로 커밋해야 이 repo가 본인 포트폴리오 증빙이 됩니다. 함께 작업했다면 커밋 메시지에 `Co-authored-by:`를 추가하세요.
-6. 다른 조 저장소도 읽을 수 있습니다 — 보고 배우는 것은 권장, 복사 제출은 금지.
+초보자는 “한쪽 다리에 힘을 준 자연스러운 자세”, “상체가 넓고 다리가 긴 캐릭터”, “아래에서 올려다보는 구도”처럼 묘사하지만, 이를 `contrapposto`, `inverted triangle body type`, `low angle` 또는 `foreshortening` 같은 탐색 가능한 용어로 바꾸기 어렵습니다. 이 Agent는 그 번역과 탐색 계획 수립을 돕습니다.
 
-## 📁 폴더 구조 (2차 프로젝트)
+## 목표 사용자 흐름
 
-필수 조건과 제출물에 맞춰 자리를 미리 잡아 두었습니다. 쓰지 않는 것은 지우고, 필요한 것은 더하세요.
+1. 사용자가 만들고 싶은 캐릭터를 일상어로 입력합니다.
+2. Agent가 체형/소체, 포즈, 시점, 원근, 배치를 구분해 해석합니다.
+3. 각 조건을 쉬운 말과 드로잉 용어로 설명하고, 확신하지 못한 조건은 질문 또는 한계로 표시합니다.
+4. 선택된 역할에 한해서만 Pinterest 외부 탐색 링크를 제공합니다.
+5. 사용자는 하나의 ‘정답 이미지’가 아니라 역할별 레퍼런스를 조합해 러프를 시작합니다.
 
-```
-backend/          FastAPI (필수 2) — services/llm.py 한곳에 LLM 호출을 모읍니다
-skills/           도메인 지식·판단 기준 (필수 5)
-mcp_server/       MCP 서버 (필수 5)
-evals/            평가셋 30건 (필수 4)
-EVAL_REPORT.md    개선 전후 지표 (제출물)
-docker-compose.yml  `docker compose up` 한 줄 실행 (필수 2)
-```
+### 입력과 목표 출력 예시
 
-**착수 후 9/23(수)까지 문제 정의와 `evals/`를 채우세요.** 추석 연휴 전에 이 둘이 있어야 연휴 동안 각자 진행할 수 있습니다.
+| 입력 | 목표 해석 예시 |
+| --- | --- |
+| “한쪽 다리에 힘 주고 상체는 살짝 틀어진 마른 캐릭터” | `body: slim`, `pose: contrapposto`, `pose: torso twist` |
+| “낮은 곳에서 올려다보는 앉은 캐릭터” | `pose: seated`, `view: low angle`, `perspective: foreshortening` |
 
-각 폴더가 무엇이고 무엇을 채워야 하는지는 **[docs/SCAFFOLD.md](./docs/SCAFFOLD.md)**에 정리돼 있습니다.
-자세한 요구사항은 2차 프로젝트 가이드를 참고하세요.
+용어 해석은 사용자의 의도를 확인하는 제안이며, 신체 비율이나 포즈를 단정하는 판정이 아닙니다.
 
-## 🔑 시크릿 규칙 (위반 시 전원에게 노출됩니다)
+## MVP 범위
 
-- API 키·비밀번호는 **`.env` 파일에만** 두세요. `.env`는 `.gitignore`에 이미 등록되어 커밋되지 않습니다.
-- 코드에 키를 직접 적으면 안 됩니다. 이 org는 상호 공개라 **커밋된 키는 7기 전원이 볼 수 있습니다.**
-- 모든 push는 **Secret Scan**(GitHub Actions)이 자동 검사합니다. 검사가 ❌ 실패하면 = 키가 커밋된 것입니다. 즉시 강사에게 알리고 **해당 키를 재발급**하세요. (히스토리에서 지워도 유출된 것으로 간주합니다)
-- 필요한 키 목록은 `.env.example`에 값 없이 적어 공유하세요.
+### 제공할 것
 
-## 작업 흐름
+- 1~500자 텍스트 설명의 구조화 해석
+- 체형/소체, 포즈, 구도(`view`, `perspective`, `layout`)의 역할 분리
+- 전문 용어의 초보자용 설명과 불확실성 표시
+- 선택된 역할만 사용하는 Pinterest 외부 탐색 링크 및 통합 탐색 링크
+- Getty AAT 용어 후보 또는 승인된 팀 `TERM_CARDS`의 출처 정보
 
-```bash
-# 1. 최신 main에서 작업 브랜치 생성
-git switch main && git pull
-git switch -c feat/login-api
+### 제공하지 않을 것
 
-# 2. 작업 후 커밋·push
-git add .
-git commit -m "feat: 로그인 API 구현"
-git push -u origin feat/login-api
+- 이미지 생성, 편집, 업로드 이미지 분석, 특정 작가 화풍 복제
+- Pinterest·Getty 이미지의 수집, 저장, 재게시 또는 스크래핑
+- 단일 이미지가 모든 조건에 맞는다고 보장하는 추천
+- 문서를 청크로 검색해 답변에 주입하는 RAG
 
-# 3. GitHub에서 PR 생성 → 조원 리뷰 → approve 후 merge
-```
+제외 범위와 이유는 [NOT_BUILD.md](./NOT_BUILD.md)에서 확인할 수 있습니다.
 
-## 충돌(conflict)이 났을 때
+## 목표 아키텍처
 
-PR 화면에 "This branch has conflicts" 가 뜨면:
-
-```bash
-git switch main && git pull          # 최신 main 받기
-git switch feat/내브랜치
-git merge main                       # 충돌 발생 지점이 파일에 표시됨
-# 파일 열어 <<<<<<< ======= >>>>>>> 사이에서 남길 내용 선택 후 저장
-git add . && git commit              # 충돌 해결 커밋
-git push                             # PR이 자동 갱신됨
+```text
+사용자 UI
+  -> FastAPI POST /api/agent
+    -> LLM: 일상어를 허용된 term_id와 역할로 구조화
+    -> 결정론 코드: Pydantic 검증, 역할 순서, 허용 ID, URL 인코딩
+    -> FastMCP: Getty AAT 용어 후보 또는 팀 TERM_CARDS 조회
+    -> UI: 용어 설명, 근거/한계, Pinterest 외부 탐색 링크 표시
 ```
 
-당황하지 말 것 — 충돌은 사고가 아니라 협업의 일상입니다. 막히면 조원 또는 강사를 부르세요.
+| 계층 | 담당 책임 |
+| --- | --- |
+| LLM | 일상어의 의미 해석, 조건 충돌·모호성 인식, 허용된 구조화 선택 생성 |
+| 결정론 코드 | Pydantic 스키마 검증, 허용 `term_id`, 역할 순서, URL 인코딩, 실패 응답 |
+| FastMCP | 구조화된 용어 후보·출처 조회와 폴백 결과 반환 |
+| UI | 입력 안내, 로딩·실패 안내, 용어·한계·외부 링크 표시 |
 
-## 폴더 구조
+LLM은 링크를 임의로 만들거나 데이터 출처를 지어내지 않습니다. 링크 생성과 출력 검증은 코드가 맡습니다.
 
-- `docs/` — 기획서·회의록·발표자료
-- `docs/specs/` — 기능별 Spec 문서 (`_example.md` 형식 참고, AI 에이전트에게 구현을 시키기 전 여기에 먼저 작성)
-- `AGENTS.md` / `CLAUDE.md` — AI 에이전트(Claude Code·Codex 등) 공통 작업 지침
-- 소스 코드 구조는 조에서 자율 결정 (README에 실행 방법 필수 기재)
+## 도메인 데이터와 출처 경계
 
-## 질문
+| 구분 | 계획된 역할 | 출력에 보이는 정보 |
+| --- | --- | --- |
+| Getty AAT | 미술 용어 후보의 구조화 조회 | 용어 label, AAT URI, Getty 출처 URL |
+| 팀 `TERM_CARDS` | 검토·승인한 기초 드로잉 용어의 정적 폴백 | term ID, 설명, 탐색용 query fragment, 출처 상태 |
+| Pinterest | 사용자가 원본을 직접 확인할 외부 탐색 대상 | 검색 링크만 제공 |
 
-강사 확인이 필요한 질문은 이 저장소의 **Issues**에 남기고 강사를 멘션하세요.
+Pinterest는 API 호출·스크래핑·결과 저장 대상으로 사용하지 않습니다. Getty AAT 역시 이미지 카탈로그가 아니라 용어 근거 후보로만 사용합니다. 자체 카드와 권리 검토 기준은 팀 승인을 거쳐야 하며, 승인되지 않은 데이터는 완료된 카탈로그로 주장하지 않습니다.
+
+## API와 MCP 상태
+
+| 항목 | 현재 상태 | 최종 목표 |
+| --- | --- | --- |
+| `GET /health` | 구현됨. `{"status":"ok"}` 반환 | Cloud Run 상태 확인 |
+| `POST /api/agent` | 미구현 | Pydantic 요청·응답 계약을 갖춘 사용자 Agent API |
+| `/docs` | FastAPI 기본 문서에서 확인 가능 | 요청·응답 모델 및 오류 응답 확인 |
+| `/mcp` | 미구현. `example_tool` 골조만 존재 | FastMCP Streamable HTTP endpoint와 도구 호출 증거 |
+| MCP 접근 제어 | 미구현 | 토큰 또는 허용 클라이언트 정책을 문서화하고 적용 |
+
+`/mcp`를 공개 데모 API처럼 무제한 노출하지 않습니다. 구현 시 연결 방법, 도구 목록, 실제 호출 결과, 접근 제어 방식을 이 README에 추가합니다.
+
+## 로컬 실행
+
+### 사전 준비
+
+- Docker Desktop 또는 Docker Engine과 Docker Compose
+- Git
+- `.env`에 둘 API 키가 필요한 기능은 아직 구현되지 않았습니다. 현재 골조는 키 없이도 `GET /health` 확인이 가능해야 합니다.
+
+### PowerShell
+
+```powershell
+git clone <팀-저장소-URL>
+cd proj2-4
+Copy-Item .env.example .env
+docker compose up --build
+```
+
+실행 뒤 다음 주소를 확인합니다.
+
+| 주소 | 현재 기대 결과 |
+| --- | --- |
+| `http://localhost:8000/health` | `{"status":"ok"}` |
+| `http://localhost:8000/docs` | FastAPI 자동 문서 |
+
+종료는 다음 명령으로 합니다.
+
+```powershell
+docker compose down
+```
+
+> 아직 전체 MVP를 10분 안에 재현하는 실측은 수행하지 않았습니다. LLM·MCP·Langfuse·UI 구현 후, 새 환경에서 위 절차를 검증하고 결과를 갱신합니다.
+
+## 환경 변수와 보안
+
+필요한 변수명은 [.env.example](./.env.example)에만 공개합니다. 실제 값은 로컬 `.env` 또는 배포 환경의 Secret Manager에만 저장합니다.
+
+- `.env`, API 키, 토큰, 서비스 계정 파일, 사용자 원문 이미지·개인정보를 커밋하지 않습니다.
+- 키가 노출되면 Git 이력 삭제만으로 충분하지 않으므로 즉시 폐기·재발급합니다.
+- 브라우저 UI는 LLM SDK 또는 비밀값을 직접 호출하지 않습니다.
+
+## 평가와 운영 지표
+
+최종 평가는 정상·경계·실패 유도 케이스를 포함한 최소 30건의 평가셋으로 수행합니다. 동일한 평가셋으로 한 가지 변경 후 다시 실행해 회귀를 확인합니다.
+
+| 지표 | 현재 값 | 최종 기록 위치 |
+| --- | --- | --- |
+| 평가셋 품질 점수 | 미측정 | [EVAL_REPORT.md](./EVAL_REPORT.md) |
+| 계약 준수율 | 미측정 | `EVAL_REPORT.md` |
+| p50 / p95 지연 | 미측정 | `EVAL_REPORT.md` |
+| 요청당 평균 비용 | 미측정 | `EVAL_REPORT.md` |
+| LLM·MCP 오류율 | 미측정 | `EVAL_REPORT.md` |
+
+평가 문항과 판정 기준은 [evals/README.md](./evals/README.md), 실제 개선 전후 결과·실패 사례·Keep/Discard 판단은 [EVAL_REPORT.md](./EVAL_REPORT.md)에 남깁니다.
+
+## 프로젝트 문서
+
+| 문서 | 내용 |
+| --- | --- |
+| [도메인 프로필](./docs/domains/illustration-reference/domain-profile.md) | 사용자, 업무 경험, 경쟁 서비스, 범위와 데이터 출처 |
+| [설계 문서](./docs/domains/illustration-reference/design.md) | LLM·결정론 코드·MCP의 책임 분리와 폴백 설계 |
+| [NOT_BUILD.md](./NOT_BUILD.md) | MVP에서 의도적으로 만들지 않는 기능과 이유 |
+| [EVAL_REPORT.md](./EVAL_REPORT.md) | 관측, 프롬프트 운영, 평가, 비용·지연, 출시 게이트 |
+| [evals/](./evals/) | 평가셋과 판정 기준 |
+| [docs/SCAFFOLD.md](./docs/SCAFFOLD.md) | 저장소 폴더별 작성 안내 |
+
+## 팀과 협업
+
+1. `main`에는 직접 push하지 않고, 개인 브랜치에서 PR을 만듭니다.
+2. PR은 팀원 1명 이상의 approve 뒤에 사람이 merge합니다.
+3. 기능 구현 전 `docs/specs/{feature-name}.md`에 Why, Goal, What, How, AC를 작성합니다.
+4. API 키·비밀번호·`.env`는 절대 커밋하지 않습니다.
+5. 강사 확인이 필요한 질문은 Issue에 남기고 강사를 멘션합니다.
+
+```powershell
+git switch main
+git pull
+git switch -c feat/<작업내용>
+# 작업 및 검증 후
+git add <변경한-파일>
+git commit -m "feat: <변경 내용>"
+git push -u origin feat/<작업내용>
+```
+
+## 배포와 데모
+
+| 제출 증거 | 상태 |
+| --- | --- |
+| 사용자 UI URL | 미배포 |
+| Cloud Run Agent API URL | 미배포 |
+| MCP 연결·도구 호출 화면 | 미구현 |
+| Langfuse 대시보드 스크린샷 | 미측정 |
+| 정상·실패 경로 데모 영상 | 미제작 |
+
+배포와 평가가 끝나면 실제 URL·실행 날짜·모델·프롬프트 버전·데이터셋 버전만 기록합니다. 추정 수치나 아직 존재하지 않는 URL은 적지 않습니다.
