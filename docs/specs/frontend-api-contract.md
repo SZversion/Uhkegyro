@@ -158,7 +158,7 @@ export async function requestReferencePlan(requestText: string) {
 - GIVEN: 요청 본문이 비었거나 `request_text`가 1~500자 제약을 위반한다.
 - WHEN: 백엔드가 요청을 검증한다.
 - THEN: HTTP `422`를 반환하고 `AgentResponse`의 `status` enum을 만들지 않는다.
-- AND THEN: LLM·Getty·Pinterest 도구를 호출하지 않으며, 프론트는 입력 형식 안내를 표시한다.
+- AND THEN: LLM·Pinterest·외부 어휘 도구를 호출하지 않으며, 프론트는 입력 형식 안내를 표시한다.
 
 **AC-03 · 서비스 불가 시 503**
 - GIVEN: 검증 가능한 결과를 만들지 못했다.
