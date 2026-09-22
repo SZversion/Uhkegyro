@@ -80,9 +80,11 @@
 | `out_of_scope` | 200 | `IMAGE_GENERATION_REQUEST`, `IMAGE_ANALYSIS_REQUEST`, `STYLE_REPLICATION_REQUEST`, `PIN_COLLECTION_REQUEST`, `UNSUPPORTED_SUBJECT` | `null` | 텍스트 기반 체형·포즈·시점·원근·구도 해석 범위만 안내 | `reply` |
 | `unsafe_input` | 200 | `PROMPT_INJECTION_ATTEMPT`, `SECRET_EXTRACTION_ATTEMPT`, `HARMFUL_OR_ILLICIT_REQUEST` | `null` | 입력 원문을 되풀이하지 않고 안전한 사용 범위를 안내 | `none` |
 | `partial_result` | 200 | `PIN_RESULTS_EMPTY`, `PIN_DELETED`, `PIN_THUMBNAIL_UNAVAILABLE`, `PIN_SEARCH_UNAVAILABLE`, `SEARCH_URL_BUILD_FAILED`, `TEAM_TERM_CARD_UNAVAILABLE` | 필수 | 사용 가능한 카드·썸네일·원본 링크를 표시하고, 빠진 역할·Pin·썸네일과 원인을 함께 표시 | `reply`, `human_review`, 또는 `manual_retry` |
-| `service_unavailable` | 503 | `TERM_CARD_STORE_UNAVAILABLE`, `LLM_RESPONSE_UNAVAILABLE`, `LLM_SCHEMA_INVALID`, `REQUEST_TIMEOUT`, `INSTANCE_TERMINATED` | `null` | 결과·검색 링크를 만들지 않고 재시도 안내를 표시 | `manual_retry` |
+| `service_unavailable` | 503 | `TERM_CARD_STORE_UNAVAILABLE`, `LLM_RESPONSE_UNAVAILABLE`, `LLM_SCHEMA_INVALID`, `APP_DEADLINE_EXCEEDED` | `null` | 결과·검색 링크를 만들지 않고 재시도 안내를 표시 | `manual_retry` |
 
 요청 본문이 비었거나 `request_text`가 1~500자 제약을 위반하면 HTTP `422`를 반환한다. 이는 사용자 의미 상태가 아니므로 `AgentResponse.status`를 만들지 않으며 LLM·검색 도구를 호출하지 않는다.
+
+`AgentResponse`는 서버가 HTTP 응답을 끝까지 쓸 수 있을 때만 반환한다. Cloud Run 인스턴스 종료, 게이트웨이 timeout, 브라우저 연결 단절처럼 응답 자체가 도착하지 않을 수 있는 전송 계층 실패는 이 enum이나 `reason_codes`로 표현하지 않는다. 클라이언트는 JSON이 아닌 5xx·네트워크 오류를 별도의 전송 실패 화면으로 표시하고 새 `POST /api/agent` 요청을 허용한다. 서버·플랫폼 관측에는 가능한 경우 `request_id`와 종료 원인을 기록하지만, 사용자 화면에 존재하지 않는 `AgentResponse`를 지어내지 않는다.
 
 ### 3. 사유 코드와 사용 조건
 
@@ -108,8 +110,7 @@
 | 서비스 | `TERM_CARD_STORE_UNAVAILABLE` | 자체 TERM_CARD DB에 연결할 수 없거나, DB의 활성 카드 검증에 실패했다. 시드 JSON 오류는 배포·시드 적재 단계에서 이 상태로 기록한다. |
 | 서비스 | `LLM_RESPONSE_UNAVAILABLE` | LLM timeout·5xx·429·미완료 응답으로 해석 JSON을 받지 못했다. |
 | 서비스 | `LLM_SCHEMA_INVALID` | LLM 응답이 구조화 출력 또는 Pydantic 검증을 통과하지 못했다. |
-| 요청 | `REQUEST_TIMEOUT` | `POST /api/agent`가 허용 요청 시간 안에 완료하지 못했다. |
-| 작업 | `INSTANCE_TERMINATED` | Cloud Run 인스턴스 종료 등으로 작업이 중단됐다. |
+| 요청 | `APP_DEADLINE_EXCEEDED` | 앱이 관리하는 처리 제한 시간을 응답 작성 전에 감지해 안전하게 중단했다. Cloud Run·게이트웨이 timeout은 이 코드로 단정하지 않는다. |
 
 ### 4. LLM 내부 출력 계약
 

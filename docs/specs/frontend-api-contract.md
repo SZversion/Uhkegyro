@@ -35,7 +35,7 @@
 | # | 상황 | 처리 방식 |
 |---|---|---|
 | EC-01 | 빈 입력 또는 500자 초과 전송 | 백엔드가 `422` 반환, 프론트는 입력 검증도 선행 수행 (1~500자 안내) |
-| EC-02 | API 호출 중 네트워크 오류·타임아웃 | 프론트가 `service_unavailable` 안내 형식으로 "잠시 후 다시 시도" 표시 |
+| EC-02 | API 호출 중 네트워크 오류·브라우저 timeout·JSON이 아닌 5xx | `AgentResponse`로 해석하지 않고 일반 전송 실패 안내와 새 요청 버튼을 표시 |
 | EC-03 | `status=needs_clarification` | 결과 카드를 숨기고 한 개의 `clarifying_question`을 질문 화면으로 표시 |
 | EC-04 | `status=partial_result` | 사용 가능한 결과와 실패 원인(`reason_codes`)을 함께 표시 |
 | EC-05 | `status=unsafe_input` / `out_of_scope` | 입력 원문을 되풀이하지 않고 안전한 범위 안내만 표시 |
@@ -75,9 +75,10 @@
 응답 본문은 상태 코드와 함께 **`illustration-reference-current-failure-state-contract.md`의 `AgentResponse` 계약을 그대로 따르고, 이 문서는 재정의하지 않는다.**
 
 - 정상 및 의미 상태: HTTP `200` (예: `success`, `needs_clarification`, `partial_result`)
-- 재시도 필요: HTTP `503` (`service_unavailable`만 해당)
+- 재시도 필요: 유효한 `AgentResponse`를 포함한 HTTP `503` (`service_unavailable`만 해당)
 - 형식 오류: HTTP `422` (빈 입력·500자 초과, `AgentResponse` 계약의 `status` enum에 없음)
 - 응답 필드(`request_id`, `status`, `reason_codes`, `result`, `clarifying_question`, `user_message`, `next_action`, `retryable`, `retry_after_ms`)와 `result` 내부의 역할·Pin 구조는 전부 참조 스펙의 정의와 검증 규칙에 따른다.
+- Cloud Run 종료·게이트웨이 timeout·브라우저 연결 단절의 HTTP/네트워크 실패는 `AgentResponse`가 아닐 수 있다. 이때는 JSON 파싱이나 `status` 분기를 시도하지 않고 전송 실패 UI를 표시한다.
 
 ### 4. 환경변수
 
@@ -109,26 +110,39 @@ function getAnonymousUserId(): string {
 
 export async function requestReferencePlan(requestText: string) {
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-  const response = await fetch(
-    apiBaseUrl + "/api/agent",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        request_text: requestText,
-        anonymous_user_id: getAnonymousUserId(),
-        session_id: crypto.randomUUID(),
-      }),
-    },
-  );
+  let response: Response;
+  try {
+    response = await fetch(
+      apiBaseUrl + "/api/agent",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          request_text: requestText,
+          anonymous_user_id: getAnonymousUserId(),
+          session_id: crypto.randomUUID(),
+        }),
+      },
+    );
+  } catch {
+    throw new TransportError(null);
+  }
   if (!response.ok) {
-    // 422: 입력 형식 안내, 503: service_unavailable 안내
-    const body = await response.json();
-    throw new AgentApiError(response.status, body);
+    const body = await response.json().catch(() => null);
+    if (response.status === 422) {
+      throw new InputValidationError(body);
+    }
+    if (response.status === 503 && isAgentResponse(body)) {
+      throw new AgentApiError(response.status, body);
+    }
+    // 422는 입력 형식 안내, JSON이 아닌 5xx는 전송 실패 안내
+    throw new TransportError(response.status);
   }
   return response.json();
 }
 ```
+
+`isAgentResponse`는 참조 스펙의 필수 필드와 허용 enum을 확인하는 런타임 schema guard다. 응답 본문이 이를 통과하지 못하면 `status`·`reason_codes`를 읽지 않는다.
 
 ### 7. UI 상태 매핑
 
@@ -142,6 +156,7 @@ export async function requestReferencePlan(requestText: string) {
 | `unsafe_input` (200) | 결과 카드 표시 안 함 | 안전 범위 안내 (원문 재출력 금지) |
 | `partial_result` (200) | 가능한 용어·원격 썸네일·원본 링크 + 빠진 이유(`reason_codes`) | 부분 안내 |
 | `service_unavailable` (503) | 결과·링크 미표시 | 재시도 안내 |
+| 네트워크 오류·JSON이 아닌 5xx | 결과·링크 미표시 | 전송 실패 안내와 새 요청 버튼 |
 
 - 결과 카드에는 검색 provider가 반환한 `thumbnail_url`을 원격 썸네일로만 표시하고, 클릭하면 `pin_url` 원본 Pin을 연다. `thumbnail_url=null`이면 원본 링크만 표시한다. 이미지 바이트·썸네일 URL·Pin 메타데이터는 브라우저 저장소·세션 DB에 저장하거나 재게시하지 않는다.
 - `retryable=true`와 `retry_after_ms`를 받으면 해당 안내에 재시도 동작을 맞춘다.
@@ -161,12 +176,17 @@ export async function requestReferencePlan(requestText: string) {
 - AND THEN: LLM·Pinterest·런타임 외부 어휘 도구를 호출하지 않으며, 프론트는 입력 형식 안내를 표시한다. 자체 TERM_CARD DB 조회는 브라우저가 아니라 서버 내부에서만 수행한다.
 
 **AC-03 · 서비스 불가 시 503**
-- GIVEN: 검증 가능한 결과를 만들지 못했다.
+- GIVEN: 서버가 응답 작성 전에 앱 내부 서비스 오류 또는 앱 관리 처리 제한 시간 초과를 감지했다.
 - WHEN: 백엔드가 최종 상태를 결정한다.
 - THEN: HTTP `503`과 `status=service_unavailable`(참조 스펙 구조)을 반환한다.
 - AND THEN: 프론트는 결과·링크를 지어내지 않고 재시도 안내를 표시한다.
 
-**AC-04 · 브라우저는 비공개 계층 미접근**
+**AC-04 · 전송 실패는 AgentResponse로 가정하지 않음**
+- GIVEN: Cloud Run 종료·게이트웨이 timeout·브라우저 연결 단절로 JSON 응답을 받지 못했다.
+- WHEN: 프론트가 응답을 처리한다.
+- THEN: `AgentResponse.status`나 `reason_codes`를 지어내지 않고 전송 실패 안내와 새 요청 버튼을 표시한다.
+
+**AC-05 · 브라우저는 비공개 계층 미접근**
 - GIVEN: 요청을 실행한다.
 - WHEN: MCP·LLM 비밀값이 필요한 처리가 발생한다.
 - THEN: 브라우저는 `/mcp`나 LLM SDK를 직접 호출하지 않는다.

@@ -46,7 +46,7 @@ Langfuse <- LLM adapter의 요청 ID·모델·토큰·지연·비용·재시도
 - 클라이언트는 자연어 텍스트와 허용된 비식별 세션 참조만 전달한다. `role`·`term_id`·검색어·Pin URL은 서버가 결정한다.
 - LLM은 `{role, term_id, evidence, confidence}` 후보와 의미 상태만 출력한다. resolver가 자체 TERM_CARD DB의 활성 여부·역할·조건을 다시 검증한다.
 - 검색 provider는 검증된 카드의 `query_fragments`만 입력으로 받고 `pin_url`, `thumbnail_url`, `status`를 반환한다. UI는 썸네일 URL이 있을 때만 원격 미리보기를 표시하고, 이미지 바이트·썸네일 URL·Pin 메타데이터를 저장하지 않는다.
-- timeout·인스턴스 종료·처리 예외는 `service_unavailable`으로 반환하며 자동 재시도하지 않는다. 사용자의 재시도는 새 `POST /api/agent` 요청이다.
+- 앱이 응답 작성 전에 감지한 LLM·검색·DB 오류와 앱 관리 처리 제한 시간은 `service_unavailable`으로 반환하며 자동 재시도하지 않는다. Cloud Run 인스턴스 종료, 게이트웨이 timeout, 브라우저 연결 단절은 `AgentResponse` 반환을 보장할 수 없는 전송 계층 실패다. 사용자의 재시도는 새 `POST /api/agent` 요청이다.
 
 ### 세션 저장
 
@@ -67,7 +67,7 @@ Langfuse <- LLM adapter의 요청 ID·모델·토큰·지연·비용·재시도
 7. 유효 카드마다 response assembler가 자체 DB의 카드 피드백과 팀 검수 상태를 조립한다. Getty 데이터·귀속·외부 어휘 API·SPARQL·웹 조회는 사용하지 않는다.
 8. URL builder는 선택 카드의 `query_fragments` 배열만 합쳐 Pinterest 검색 URL을 만든다. `direct_search_disabled_term_ids`에 해당하면 링크를 만들지 않는다.
 9. PinterestSearchProvider가 역할별 결과를 반환하면 `{pin_url, thumbnail_url, status}`를 조립한다. 썸네일 URL이 없으면 `thumbnail_unavailable`로 원본 링크만 표시하고, 삭제 Pin은 `deleted`로 표시 대상에서 제외한다. 0건은 `no_results`, 검색 장애는 `search_error`와 재시도 안내로 구분한다.
-10. 요청이 Cloud Run 종료 또는 timeout으로 중단되면 `service_unavailable`과 `INSTANCE_TERMINATED` 또는 `REQUEST_TIMEOUT`을 반환한다. 자동 재시도는 하지 않는다.
+10. 앱이 응답 작성 전에 관리 처리 제한 시간을 감지하면 `service_unavailable`과 `APP_DEADLINE_EXCEEDED`를 반환한다. Cloud Run 종료·게이트웨이 timeout·브라우저 연결 단절은 `AgentResponse`로 단정하지 않고, 가능한 범위에서 플랫폼·서버 관측 로그에 `request_id`와 종료 원인을 남긴다. 브라우저는 JSON이 아닌 HTTP 오류·네트워크 오류에 일반 재시도 안내를 표시한다.
 
 ## 5. 실패와 폴백
 
@@ -76,6 +76,8 @@ Langfuse <- LLM adapter의 요청 ID·모델·토큰·지연·비용·재시도
 | JSON 누락·파싱 실패·스키마 불일치 | 서비스 준비 실패, 운영 로그 기록; 빈 허용 목록으로 실행 금지 |
 | 입력 계약 위반 | 검증 오류; LLM·MCP를 호출하지 않음 |
 | LLM timeout/형식 오류 | 자동 재시도 없이 `service_unavailable` 반환; 사용자 수동 재시도 가능 상태와 trace 기록 |
+| 앱 관리 처리 제한 시간 초과 | 응답 작성 전 감지했을 때만 `service_unavailable`과 `APP_DEADLINE_EXCEEDED` 반환 |
+| Cloud Run 종료·게이트웨이 timeout·브라우저 연결 단절 | `AgentResponse` 반환을 보장하지 않음; 플랫폼·서버 관측과 브라우저 전송 실패 안내로 처리 |
 | 카드 밖 또는 비활성 ID | resolver가 폐기; 링크 생성 금지 |
 | 단서 부족·상충 | 추측 금지, 질문 또는 `pending_human_review` |
 | 카드 필수 필드 누락 | 해당 카드를 검증 오류로 기록하고, 외부 출처를 생성·조회하지 않음 |

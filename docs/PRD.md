@@ -59,4 +59,4 @@
 7. **Given** 상태 점검, **When** `GET /health`를 호출하면, **Then** `{"status":"ok"}`를 반환한다.
 8. **Given** 활성 카드가 선택된 역할, **When** 검색이 완료되면, **Then** 해당 역할 섹션에 최대 8개의 Pin 미리보기를 표시한다.
 9. **Given** 사용자가 후속 chat으로 일부 역할만 다시 검색하라고 하면, **When** Agent가 처리하면, **Then** 지정된 Pin은 유지하고 요청된 역할의 새 결과만 누적한다.
-10. **Given** Cloud Run 작업이 중단되면, **When** 상태를 조회하면, **Then** 사용자에게 실패 상태와 재시도 안내를 표시한다.
+10. **Given** Cloud Run 종료·게이트웨이 timeout·브라우저 연결 단절로 JSON 응답을 받지 못하면, **When** 프론트가 요청을 처리하면, **Then** `AgentResponse` 상태를 지어내지 않고 전송 실패 안내와 새 요청 동작을 표시한다.
