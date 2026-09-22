@@ -1,0 +1,61 @@
+# Cloud Build 설정: backend/ 변경 시 Docker 빌드 → Artifact Registry → Cloud Run 배포
+# 트리거: GitHub main 브랜치 push, backend/** 경로 변경 감지
+# 무료 티어 (Option C): Cloud Run min-instances=0, SQLite 로컬 파일, VPC 커넥터 없음
+# 주의: SQLite 데이터는 새 배포 시 초기화됨 (영속성 필요 시 Option A/B 사용)
+steps:
+  # 1. Docker 이미지 빌드
+  - name: "gcr.io/cloud-builders/docker"
+    id: "build-image"
+    args:
+      - "build"
+      - "--tag=${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_SERVICE_NAME}:${SHORT_SHA}"
+      - "--tag=${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_SERVICE_NAME}:latest"
+      - "."
+
+  # 2. Artifact Registry에 푸시
+  - name: "gcr.io/cloud-builders/docker"
+    id: "push-image"
+    args:
+      - "push"
+      - "--all-tags"
+      - "${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_SERVICE_NAME}"
+
+  # 3. Cloud Run 서비스 배포 (무료 티어 설정)
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
+    id: "deploy-cloud-run"
+    entrypoint: "gcloud"
+    args:
+      - "run"
+      - "deploy"
+      - "${_SERVICE_NAME}"
+      - "--image=${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_SERVICE_NAME}:${SHORT_SHA}"
+      - "--region=${_REGION}"
+      - "--platform=managed"
+      - "--allow-unauthenticated"
+      - "--port=8000"
+      - "--cpu=1"
+      - "--memory=512Mi"
+      - "--min-instances=0"
+      - "--max-instances=3"
+      - "--concurrency=80"
+      - "--timeout=300"
+      - "--set-env-vars=ENVIRONMENT=production"
+      - "--set-secrets=OPENROUTER_API_KEY=OPENROUTER_API_KEY:latest"
+      - "--set-secrets=LANGFUSE_PUBLIC_KEY=LANGFUSE_PUBLIC_KEY:latest"
+      - "--set-secrets=LANGFUSE_SECRET_KEY=LANGFUSE_SECRET_KEY:latest"
+      - "--set-secrets=DATABASE_URL=DATABASE_URL:latest"
+      - "--set-secrets=SESSION_SECRET=SESSION_SECRET:latest"
+
+substitutions:
+  _REGION: "asia-northeast3"
+  _ARTIFACT_REGISTRY: "asia-northeast3-docker.pkg.dev"
+  _SERVICE_NAME: "api"
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: "E2_STANDARD_4"
+
+# 트리거 조건 (GitHub 웹훅에서 설정):
+# - 브랜치: ^main$
+# - 포함된 파일 경로: backend/**
+# - 저장소: aihuman-7th/proj2-4
