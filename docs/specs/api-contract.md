@@ -45,7 +45,7 @@
 | 쿠키가 없거나 만료됨 | `401`과 `SESSION_REQUIRED`; 브라우저는 새 세션 생성 흐름으로 이동 |
 | 다른 세션의 `session_id` 또는 `job_id` 접근 | 존재 여부를 노출하지 않는 `404` 반환 |
 | 빈 입력 또는 500자 초과 | `422`; LLM·MCP·검색을 호출하지 않음 |
-| 카드로 해석할 단서가 부족함 | 작업 결과에 `needs_clarification=true`와 질문 하나를 담음. 구체 응답 형식은 향후 API 명세서에서 확정 |
+| 카드로 해석할 단서가 부족함 | 작업 결과에 `agent_status=needs_clarification`과 질문 하나를 담음. 구체 응답 형식은 향후 API 명세서에서 확정 |
 | 역할별 검색 결과가 없음 | 작업 `completed`; 해당 역할 `no_results`와 `검색 결과가 없습니다` 반환 |
 | Pin 삭제 확인 | URL 이력은 저장하고 `deleted`; 렌더링 대상에서는 제외 |
 | 검색 시스템 오류 | 작업 `completed`; 해당 역할 `search_error`와 재시도 안내 반환 |
@@ -159,7 +159,6 @@ GET /api/jobs/{job_id}
         "term_id": "pose_contrapposto",
         "label_ko": "콘트라포스토",
         "feedback_ko": "한쪽 다리에 무게를 싣는 자세입니다.",
-        "getty_aat": null,
         "search_status": "active",
         "pins": [
           {"pin_url":"https://www.pinterest.com/pin/example/","render_status":"active"}
@@ -170,14 +169,23 @@ GET /api/jobs/{job_id}
 }
 ```
 
-- 이 초안의 `agent_status`와 `needs_clarification` 표현은 확정 계약이 아니다. 구현 시에는 SDD의 내부 LLM 출력 규칙을 따른다: `needs_clarification`은 boolean 필드이며, `true`이면 용어·링크 조립을 중단하고 사용자 질문 경로로 전환한다.
+- `agent_status`는 `success`, `needs_clarification`, `partial_result`, `out_of_scope`, `unsafe_input`, `service_unavailable` 중 하나다. 별도 `needs_clarification` boolean 필드는 사용하지 않는다.
+- `agent_status=needs_clarification`이면 `roles`는 빈 배열이고 `clarifying_question`은 하나의 문자열이어야 한다.
 - 역할별 `pins`는 최대 8개다. Pin의 `render_status`는 `active` 또는 `deleted`다. 역할의 `search_status`는 `active`, `no_results`, `search_error` 중 하나다.
 - `deleted` Pin은 URL 이력으로만 반환하고 프론트는 `embedPin`을 만들지 않는다. `no_results`와 `search_error`는 빈 `pins` 및 역할 상태·사용자 안내로 반환한다.
 - `job_status=failed`는 envelope 상태이며 `result=null`, `failure_code`, `user_message`, `retryable`을 가진다. `agent_status`는 결과 payload에만 존재하고 작업 실패 envelope에는 존재하지 않는다.
 
 실패 응답은 `job_status=failed`, `result=null`, `failure_code`, `user_message`, `retryable`을 포함한다. `failure_code`는 `JOB_TIMEOUT`, `INSTANCE_INTERRUPTED`, `PROCESSING_ERROR` 중 하나이며, 내부 오류 원문·비밀값은 포함하지 않는다.
 
-확정 시 사용할 실패 매핑 초안: `JOB_TIMEOUT`과 `INSTANCE_INTERRUPTED`는 `retryable=true`로 시작하고, `attempt=3`이면 `false`로 전환한다. `PROCESSING_ERROR`는 기본 `retryable=false`이며, 명세서에서 재시도 가능한 처리 오류 목록을 별도로 승인한 경우에만 `true`로 둔다.
+실패 매핑 확정안:
+
+| failure_code | retryable |
+| --- | --- |
+| `JOB_TIMEOUT` | `true` |
+| `INSTANCE_INTERRUPTED` | `true` |
+| `PROCESSING_ERROR` | `false` |
+
+`attempt=3`에 도달하면 모든 failure code의 `retryable`을 `false`로 전환한다.
 
 조회 오류는 `401 SESSION_REQUIRED` 또는 `404 JOB_NOT_FOUND`다. 소유하지 않은 작업도 `404`로 처리한다.
 

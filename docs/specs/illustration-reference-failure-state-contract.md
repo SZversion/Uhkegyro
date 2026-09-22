@@ -5,14 +5,15 @@
 ## 상태 계층
 
 - 작업 envelope의 `job_status`: `queued`, `running`, `validating`, `searching`, `rendering`, `completed`, `failed`.
-- 결과 payload의 `agent_status`: `success`, `partial_result`, `out_of_scope`, `unsafe_input`, `service_unavailable`.
-- 결과 payload의 `needs_clarification`: boolean. `true`이면 카드·링크 조립을 중단하고 사용자에게 질문한다.
+- 결과 payload의 `agent_status`: `success`, `needs_clarification`, `partial_result`, `out_of_scope`, `unsafe_input`, `service_unavailable`.
+- 별도 `needs_clarification` boolean 필드는 사용하지 않는다. `agent_status=needs_clarification`이면 카드·링크 조립을 중단하고 질문을 반환한다.
 - `job_status=failed`이면 `result=null`이며 `failure_code`, `user_message`, `retryable`을 반환한다.
 
 ## 실패·재시도
 
-- `JOB_TIMEOUT`, `INSTANCE_INTERRUPTED`: 기본 `retryable=true`.
-- `PROCESSING_ERROR`: 기본 `retryable=false`.
+- `JOB_TIMEOUT`: `retryable=true`.
+- `INSTANCE_INTERRUPTED`: `retryable=true`.
+- `PROCESSING_ERROR`: `retryable=false`.
 - 재시도 가능한 작업은 `attempt`를 증가시키며 `max_attempts=3` 후 `retryable=false`로 종결한다.
 - 사용자의 재시도는 새 작업을 만들고 기존 작업과 원인·입력을 연결한다. 무제한 자동 재시도는 허용하지 않는다.
 

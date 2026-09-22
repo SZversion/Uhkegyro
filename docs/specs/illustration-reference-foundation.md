@@ -7,7 +7,7 @@
 - 서버가 발급한 HttpOnly 쿠키로 세션 소유권을 검증한다.
 - 사용자는 자연어 텍스트만 입력한다. `role`, `term_id`, 검색어, Pin URL은 클라이언트가 보내지 않는다.
 - 메시지 제출은 즉시 완료 응답이 아니라 작업을 만들고 `job_status`를 조회하는 비동기 흐름이다.
-- `job_status`는 작업 envelope에, `agent_status`와 `needs_clarification`은 결과 payload에 둔다.
+- `job_status`는 작업 envelope에, `agent_status`는 결과 payload에 둔다. 추가 `needs_clarification` boolean은 사용하지 않는다.
 - TERM_CARD의 활성 카드만 사용하며 백엔드가 역할·활성 여부·confidence/requires를 검증한다.
 - 검색은 검증된 `query_fragments`로 역할별 수행하고 최대 8개 Pin URL을 반환한다. 이미지는 저장하지 않는다.
 
