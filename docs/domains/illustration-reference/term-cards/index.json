@@ -1,11 +1,10 @@
 {
   "dataset_name": "illustration_reference_master_term_cards",
-  "dataset_version": "0.5-self-managed-term-card-store-draft",
+  "dataset_version": "0.6-self-managed-term-card-store-draft",
   "status": "mixed_review_state_with_beginner_feedback_draft",
   "purpose": "캐주얼 캐릭터 일러스트 레퍼런스 해석 Agent의 현재 MVP 선택 역할별 TERM_CARDS 원본입니다. index와 categories에 적힌 5개 파일을 함께 읽으며, 팀이 검수한 정적 카드 데이터만 사용합니다.",
   "source_documents": [
-    "TERM_CARDS_DRAFT_30.json",
-    "POSE_RESPONSE_DRAFTS_87.json"
+    "docs/domains/illustration-reference/term-cards/SOURCE_PROVENANCE.md"
   ],
   "card_count": 74.0,
   "data_governance": {

@@ -35,6 +35,7 @@
 ## How
 
 - **현재 저장소 경계**: `docs/domains/illustration-reference/term-cards/index.json`과 index의 `categories`에 선언된 5개 JSON이 유일한 TERM_CARD 저장소다. 디렉터리 자동 탐색이나 외부 provider 조회는 하지 않는다.
+- **과거 마스터 경계**: `TERM_CARDS_MASTER_100_DRAFT.json`은 과거 초안 경로를 위한 `deprecated_term_card_store_pointer`다. 이 파일은 index에 포함하지 않으며, 어떤 카드 로더도 직접 읽지 않는다.
 - **카드 형식**: 모든 카드의 `source_type`은 `team_card`다. `getty_aat` 객체와 외부 URI·label·attribution 필드는 저장하지 않는다. 기존 `term_id`, 역할, 검색 조각, 관찰 기준, `confidence_gate`, `requires_all_of`, `requires_any_of`, 검수 상태는 보존한다.
 - **데이터 거버넌스**: 후보 카드는 `review_status=needs_osechang_review` 또는 기존 검수 상태를 보존하되, 사람 검수·API 계약·Skill·평가셋 갱신 전에는 승격하지 않는다. index의 `dataset_version`으로 데이터 계약 변경을 기록한다.
 - **현재 부족분**: 실제 PostgreSQL 테이블·마이그레이션·JSON repository·스키마 버전 검증·관리자 변경 이력은 구현되지 않았다. 이번 전환은 해당 구현의 선행 조건인 데이터·문서 계약 정리만 수행한다.
