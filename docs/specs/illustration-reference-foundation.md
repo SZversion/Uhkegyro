@@ -11,9 +11,9 @@
 
 ## Goal
 
-- **해결 목표**: 이후 LLM·용어 후보 MCP·권리 검토된 카탈로그·UI가 같은 계약을 사용할 수 있도록 FastAPI health check, Pydantic 요청/선택 모델, 정적 용어 카드, 도메인 검증, Getty 조회·정적 카드 폴백, Pinterest 검색 URL 생성 함수를 구현한다.
-- **성공 기준**: `/health`가 서비스 상태를 반환하고, 입력 길이/추가 필드/UUID 형식과 term ID·축·구도 하위 역할을 검증한다. 유효한 LLM 선택은 Getty URI·출처 또는 정적 카드 폴백과 함께 `body → pose → view → perspective → layout` 순서의 URL 계획으로 변환한다.
-- **Out of Scope**: OpenAI 또는 Langfuse 호출, LLM 해석, 권리 검토된 자체 레퍼런스 카탈로그 서버/데이터, Pinterest HTTP 요청·스크래핑·이미지 표시, Next.js UI, Docker Compose 확장, 배포, 평가 데이터 업로드. Getty AAT 용어 후보 MCP와 미래 자체 용어 DB의 교체 지점은 별도 Spec에서 다룬다.
+- **해결 목표**: 이후 LLM·정적 카드 검증 MCP·UI가 같은 계약을 사용할 수 있도록 FastAPI health check, Pydantic 요청/선택 모델, 자체 관리 정적 용어 카드, 도메인 검증, Pinterest 검색 URL 생성 함수를 구현한다.
+- **성공 기준**: `/health`가 서비스 상태를 반환하고, 입력 길이/추가 필드/UUID 형식과 term ID·축·구도 하위 역할을 검증한다. 유효한 LLM 선택은 팀 카드 정보와 함께 `body → pose → view → perspective → layout` 순서의 URL 계획으로 변환한다.
+- **Out of Scope**: OpenAI 또는 Langfuse 호출, LLM 해석, PostgreSQL TERM_CARD 저장소·마이그레이션, Pinterest HTTP 요청·스크래핑·이미지 표시, Next.js UI, Docker Compose 확장, 배포, 평가 데이터 업로드, 외부 어휘 API.
 
 ## What
 
@@ -23,7 +23,7 @@
 2. 검증된 `body`, `pose`, `view`, `perspective`, `layout` 선택만 정적 용어 카드와 대조한다.
 3. 선택된 역할만 고정 역할 순서로 정렬하고, 역할별 Pinterest 검색 URL과 통합 검색 URL을 결정론적으로 생성한다.
 4. `/health`는 API가 실행 중임을 반환한다.
-5. FastMCP 파이프라인은 각 유효 term ID의 Getty 조회 성공 정보를 반환하고, 후보 없음·장애 시 정적 카드로 폴백한다.
+5. FastMCP 파이프라인은 각 유효 term ID를 팀이 관리하는 정적 카드와 대조하고, 카드가 없거나 저장소가 없으면 결정론적 실패 상태를 반환한다.
 
 **Edge Cases**
 
@@ -42,7 +42,7 @@
 - `backend/app/domain/term_cards.py`는 허용된 term ID와 축·역할·검색 조각·관찰 기준을 고정한다.
 - `backend/app/services/validator.py`는 LLM을 호출하지 않고 선택이 정적 카드와 일치하는지만 검증한다.
 - `backend/app/services/search_plan.py`는 `urllib.parse.urlencode`로 역할별·통합 Pinterest 검색 URL을 만든다. Pinterest에 HTTP 요청하지 않는다.
-- 현재 Getty AAT 용어 후보 MCP는 `VocabularyCandidateProvider` 계약을 통해 연결한다. Getty는 실험 단계의 기본 구현이며, 미래 자체 용어 DB가 같은 계약을 구현하면 교체할 수 있다.
+- 현재 TERM_CARD 저장소는 역할별 JSON이며, index에 선언된 파일만 로드한다. 실제 영속 DB 도입은 별도 Spec에서 repository·스키마·마이그레이션과 함께 진행한다.
 - 이번 단계에는 `POST /api/agent`를 구현하지 않는다. LLM Structured Output과 재시도 정책이 준비되는 다음 단계에서 최신 응답 계약과 함께 추가한다.
 
 ## AC (Given-When-Then)
@@ -70,4 +70,4 @@
 **AC-05 · 외부 데이터 미호출**
 - GIVEN: 어떤 선택 목록
 - WHEN: 검색 계획을 생성
-- THEN: URL 문자열만 만들며 Pinterest, OpenAI, Langfuse, MCP에 HTTP 요청하지 않는다. Getty 용어 후보 MCP는 이 검색 계획 함수와 별도다.
+- THEN: URL 문자열만 만들며 Pinterest, OpenAI, Langfuse, MCP 또는 외부 어휘 API에 HTTP 요청하지 않는다.

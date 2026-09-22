@@ -122,7 +122,7 @@ LLM은 최종 API 응답의 `status`, `reason_codes`, 출처, Pinterest URL을 �
 }
 ```
 
-- `role`은 현재 `TERM_CARDS_MASTER_100_DRAFT.json`의 `role` 값과 동일하게 `body | pose | view | perspective | layout`만 허용한다. 이전 문서의 `axis`/`kind` 표기는 이 구현 계약에 사용하지 않는다.
+- `role`은 현재 `term-cards/index.json`이 가리키는 역할별 카드 파일의 `role` 값과 동일하게 `body | pose | view | perspective | layout`만 허용한다. 이전 문서의 `axis`/`kind` 표기는 이 구현 계약에 사용하지 않는다.
 - `term_id`는 `runtime_eligible=true`와 `mvp_status=active_in_current_contract`를 모두 만족하는 현재 활성 카드만 허용한다. LLM이 만든 새 term ID, 카드 후보 ID, 비활성 카드 ID는 거부한다.
 - MVP에서는 역할당 최대 한 개의 선택만 허용하고, 실제로 언급된 역할만 낸다. 비어 있는 역할, 기본 검색어, 추측으로 채운 선택은 금지한다.
 - `evidence`는 선택 근거를 사용자가 쓴 짧은 표현으로만 담는다. 이 필드는 사용자 화면에는 근거로 쓸 수 있으나 로그에는 원문 대신 해시 또는 필요 최소 메타데이터만 남긴다.

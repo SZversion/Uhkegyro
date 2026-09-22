@@ -1,4 +1,6 @@
 > 이 문서는 초기 Getty 용어 파이프라인 Spec입니다. 최신 제품·아키텍처 기준은 `docs/PRD.md`와 `docs/SDD.md`를 우선합니다.
+>
+> **2026-09-21 폐기됨:** 이 외부 어휘 파이프라인은 구현하거나 호출하지 않는다. 현재 용어 해석은 `docs/specs/self-managed-term-card-store.md`의 정적 카드 저장소만 사용한다.
 
 # Getty Term Resolution Pipeline Spec
 
@@ -9,13 +11,13 @@
 
 ## Goal
 
-- FastMCP 도구가 구조화된 `Selection` 목록을 받아 term ID를 검증하고, term ID에서 축 접두사를 제외한 영문 용어로 Getty AAT를 조회한 뒤, 성공/폴백 출처와 Pinterest 검색 계획을 한 결과로 반환한다.
+- FastMCP 도구가 구조화된 `Selection` 목록을 받아 term ID를 검증하고, term ID에서 역할 접두사를 제외한 영문 용어로 Getty AAT를 조회한 뒤, 성공/폴백 출처와 Pinterest 검색 계획을 한 결과로 반환한다.
 
 ## What
 
-1. LLM은 허용된 프로젝트 `term_id`와 축·근거를 `Selection`으로 출력한다. 실제 LLM 호출은 이 실험 범위 밖이다.
+1. LLM은 허용된 프로젝트 `term_id`와 역할·근거를 `Selection`으로 출력한다. 실제 LLM 호출은 이 실험 범위 밖이다.
 2. FastMCP의 `resolve_illustration_reference_plan` 도구는 `Selection`을 검증한다.
-3. 각 term ID에서 `body_`, `pose_`, `view_`, `perspective_`, `composition_` 축 접두사를 제외하고 `_`를 공백으로 바꾼 Getty 조회어로 AAT를 최대 한 건 조회한다. 예: `pose_contrapposto` → `contrapposto`.
+3. 각 term ID에서 `body_`, `pose_`, `view_`, `perspective_`, `layout_` 역할 접두사를 제외하고 `_`를 공백으로 바꾼 Getty 조회어로 AAT를 최대 한 건 조회한다. 예: `pose_contrapposto` → `contrapposto`.
 4. Getty가 후보를 반환하면 `source=getty_aat`과 Getty label·URI·출처 URL을 반환한다.
 5. Getty가 후보를 찾지 못하거나 timeout·5xx·비정상 응답이면 `source=term_cards`와 정적 카드 label·관찰 기준을 사용한다.
 6. 필요한 팀 카드가 없으면 MCP는 `resolution_source=term_source_unavailable`, `limitation_codes=[TEAM_TERM_CARD_UNAVAILABLE]`을 반환한다. 카드 저장소를 읽지 못하면 같은 출처 상태와 `limitation_codes=[STATIC_CARD_STORE_UNAVAILABLE]`을 반환한다. 이 MCP는 임시 용어·검색 URL을 만들지 않는다.
