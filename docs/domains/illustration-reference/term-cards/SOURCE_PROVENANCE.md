@@ -2,7 +2,7 @@
 
 ## 현재 데이터 계약
 
-- 현재 TERM_CARD 저장소는 `index.json`과 index가 열거한 `body.json`, `pose.json`, `view.json`, `perspective.json`, `layout.json`이다.
+- 현재 존재하는 **검수·시드 저장소**는 `index.json`과 index가 열거한 `body.json`, `pose.json`, `view.json`, `perspective.json`, `layout.json`이다. 구현 후 런타임 단일 원본은 자체 TERM_CARD DB이며, 현재 DB schema·적재·repository는 미구현이다.
 - 과거 `TERM_CARDS_MASTER_100_DRAFT.json`은 카드 데이터가 아닌 폐기 포인터다. 로더와 검증 대상에 포함하지 않는다.
 - 카드 수·역할별 분포·활성 조건은 `index.json`을 기준으로 검증한다.
 

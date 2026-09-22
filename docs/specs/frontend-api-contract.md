@@ -77,7 +77,7 @@
 - 정상 및 의미 상태: HTTP `200` (예: `success`, `needs_clarification`, `partial_result`)
 - 재시도 필요: HTTP `503` (`service_unavailable`만 해당)
 - 형식 오류: HTTP `422` (빈 입력·500자 초과, `AgentResponse` 계약의 `status` enum에 없음)
-- 응답 필드(`request_id`, `status`, `reason_codes`, `result`, `clarifying_question`, `user_message`, `retryable`, `retry_after_ms`)는 전부 참조 스펙의 정의와 검증 규칙에 따른다.
+- 응답 필드(`request_id`, `status`, `reason_codes`, `result`, `clarifying_question`, `user_message`, `next_action`, `retryable`, `retry_after_ms`)와 `result` 내부의 역할·Pin 구조는 전부 참조 스펙의 정의와 검증 규칙에 따른다.
 
 ### 4. 환경변수
 
@@ -136,14 +136,14 @@ export async function requestReferencePlan(requestText: string) {
 
 | 상태 (HTTP) | 카드 표시 | 안내 형태 |
 |---|---|---|
-| `success` (200) | 용어 설명·한계·Pinterest 외부 링크 | 정상 결과 |
+| `success` (200) | 용어 설명·한계·원격 썸네일·Pinterest 원본 링크 | 정상 결과 |
 | `needs_clarification` (200) | 결과 카드 표시 안 함 | 질문 하나 표시 |
 | `out_of_scope` (200) | 결과 카드 표시 안 함 | 지원 범위 안내 |
 | `unsafe_input` (200) | 결과 카드 표시 안 함 | 안전 범위 안내 (원문 재출력 금지) |
-| `partial_result` (200) | 가능한 부분 + 빠진 이유(`reason_codes`) | 부분 안내 |
+| `partial_result` (200) | 가능한 용어·원격 썸네일·원본 링크 + 빠진 이유(`reason_codes`) | 부분 안내 |
 | `service_unavailable` (503) | 결과·링크 미표시 | 재시도 안내 |
 
-- 결과 카드에 **Pinterest 이미지·썸네일·핀 제목을 표시하지 않는다.** 외부 탐색 링크만 제공한다.
+- 결과 카드에는 검색 provider가 반환한 `thumbnail_url`을 원격 썸네일로만 표시하고, 클릭하면 `pin_url` 원본 Pin을 연다. `thumbnail_url=null`이면 원본 링크만 표시한다. 이미지 바이트·썸네일 URL·Pin 메타데이터는 브라우저 저장소·세션 DB에 저장하거나 재게시하지 않는다.
 - `retryable=true`와 `retry_after_ms`를 받으면 해당 안내에 재시도 동작을 맞춘다.
 
 ## AC
@@ -175,7 +175,7 @@ export async function requestReferencePlan(requestText: string) {
 **AC-05 · 부분 결과는 상태 표시 유지**
 - GIVEN: `status=partial_result`를 받는다.
 - WHEN: 프론트가 응답을 렌더링한다.
-- THEN: 사용 가능한 용어·근거·외부 링크와 함께 빠진 부분과 `reason_codes`를 표시한다.
+- THEN: 사용 가능한 용어·근거·원격 썸네일·원본 Pin 링크와 함께 빠진 부분과 `reason_codes`를 표시한다.
 - AND THEN: 실패 원인을 성공으로 속여 표시하지 않는다.
 
 **AC-06 · 응답 스키마는 참조 스펙과 중복 정의하지 않는다**
