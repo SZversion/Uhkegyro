@@ -1,14 +1,15 @@
-# Langfuse 관측 속성 & 프롬프트 버전 규칙 — 강사님 회의(2026-09-22) 접수·확정
+# Langfuse 관측 속성 & 프롬프트 버전 규칙 — 강사님 회의(2026-09-22) 접수·확정 (PR #15 정합)
 
 **팀**: 4조 (UH케그려)
 **작성일**: 2026-09-22
 **작성자**: 윤태현 (YTH)
-**상태**: 강사님 회의(2026-09-22) 반영 · 트레이싱 계약 확정 · 프롬프트 네이밍·필수/금지 속성 합의 반영
+**상태**: 강사님 회의(2026-09-22) 반영 · 트레이싱 계약 확정 · 프롬프트 네이밍·필수/금지 속성 합의 반영 · **PR #15 정합**
 **근거 문서**:
 - 확정: `260921 강사님회의/06_트레이싱_정의.md` — 트레이싱 3층·trace 구조·기록 필드·span 배정
 - 합의 대상: 안건 3 (Langfuse 관측 속성 & 프롬프트 버전)
 - `docs/SDD.md` §6 — 관측·보안·검증
 - `EVAL_REPORT.md` §1~2 — 관측·프롬프트 운영 채점 항목
+- 현행 계약(PR #15): `frontend-api-contract.md` — 비동기 job 모델·`request_id`
 
 ---
 
@@ -17,9 +18,9 @@
 | 항목 | 상태 |
 | --- | --- |
 | 트레이싱 3층 (Langfuse / stdout / 집계) | **확정** (06 문서) |
-| 요청 단위 trace 구조 (5 span) | **확정** (06 문서) |
+| 요청 단위 trace 구조 (job 실행 단위) | **확정** (06 문서 · PR #15 job 기준) |
 | 기록 필드 20종 + 개인정보 제한 | **확정** (06 문서) |
-| 재시도 trace 가시성 정책 | **확정** (max_retries=0, retry event) |
+| 재시도 trace 가시성 정책 | **확정** (자동 재시도 없음, 수동 retry는 실패 기록) |
 | 프롬프트 네이밍 규칙 | 합의 필요 — 제안 `uhkegryo-{역할}-v{n}` |
 | trace 필수/금지 속성 목록 | 합의 필요 — 제안 필수 5종 / 금지 2종 |
 | 관측 구현 책임자 | 합의 필요 — Langfuse(김호섭)·백엔드(윤태현) 병행 지명 |
@@ -38,20 +39,19 @@
 
 ---
 
-## 3. 요청 단위 trace 구조 (확정 — 06 문서 §2)
+## 3. 요청 단위 trace 구조 (비동기 job 기준 — PR #15 정합)
 
 ```
-POST /api/agent (비동기 채택 시: /api/sessions/{id}/messages, /api/jobs/{id} 조회 포함)
-  ├─ span: api_agent            (status 200/202/422/503, latency)
+POST /api/sessions/{session_id}/messages (202) → GET /api/jobs/{job_id} polling (동일 request_id)
+  ├─ span: api_agent            (status 200/202/404/422, latency, job_id)
   ├─ span: llm_interpret        (attempt 1..n)
-  │    └─ event: retry          (attempt, error_type, backoff_ms)   ← 재시도마다 1건
-  ├─ span: mcp_getty_terms      (tool_name, tool_latency_ms, 성공/폴백/실패)
-  ├─ span: mcp_pinterest_links  (선택 역할만 검색 계획 생성)
+  ├─ span: mcp_pinterest_links  (선택 역할만 검색 계획/결과 — PinterestSearchProvider)
   └─ span: response_validate    (output_schema_valid, 링크 역할 수)
 ```
 
-- 재시도가 일어나면 그 사실이 trace 안에서 보여야 한다 (결과만 남기지 않는다).
-- MCP span은 `resolve_illustration_reference_plan` / `search_getty_aat_terms` / `mcp_pinterest_links`로 분리해 LLM 지연과 분리한다 (도구명은 스펙 기준·구현 시 확정).
+- 자동 재시도는 없다(PR #15). 재시도는 사용자 `POST /api/jobs/{job_id}/retry` → 새 `job_id`가 trace에 연결되며, 원 job의 `failure_code`·`attempt`를 남긴다.
+- Getty·외부 어휘 조회 span(`mcp_getty_terms`, `resolve_illustration_reference_plan`, `search_getty_aat_terms`)은 PR #15 계약에서 제거되어 기록하지 않는다. MCP 도구명은 별도 МCP Spec 확정 시 반영한다.
+- `request_id`는 `POST /api/sessions/{session_id}/messages`에서 생성해 `JobEnvelope`와 trace에 동일 값으로 남긴다.
 
 ---
 
@@ -65,20 +65,20 @@ POST /api/agent (비동기 채택 시: /api/sessions/{id}/messages, /api/jobs/{i
 | session_id_hash | sha256 | session_id 해시 |
 | model | str | 사용 모델 (gpt-4.1-mini 등) |
 | prompt_version | str | Langfuse Prompt 버전 (label: production) |
-| attempt | int | 최초 1부터 재시도마다 증가 |
+| attempt | int | 최초 1부터 (수동 retry job마다 1 증가) |
 | event | str | `llm_interpret` / `retry` / `mcp_call` / `api_agent` / `response_validate` |
 | error_type | str \| null | `schema_violation` / `timeout` / `5xx` / `429` / `mcp_timeout` / `mcp_error` / `none` |
 | backoff_ms | int \| null | 재시도 전 대기 (안 하면 null) |
 | latency_ms | int | 서비스 단계별 지연 (LLM/MCP 분리) |
 | input_length | int | request_text 자릿수 |
 | output_schema_valid | bool | 최종 응답이 Pydantic 스키마 통과 여부 |
-| tool_name | str \| null | `resolve_illustration_reference_plan` / `search_getty_aat_terms` / `mcp_pinterest_links` |
+| tool_name | str \| null | MCP Spec 확정 후 도구명 (자체 DB 조회·검색 provider) |
 | tool_latency_ms | int \| null | MCP 도구 단독 지연 |
-| resolution_source | str \| null | `getty_aat` / `term_cards` (폴백 여부) |
-| retry_occurred | bool | 재시도 있었는지 집계용 |
-| (보완 추가) job_id | str \| null | 비동기 채택 시 작업 식별자 연결 |
+| retry_occurred | bool | 재시도 있었는지 집계용 (수동 retry 연결) |
+| (보완 추가) job_id | str | 비동기 job 식별자 (retry 시 새 job_id 연결) |
 | (보완 추가) failure_code | str \| null | `JOB_TIMEOUT` / `INSTANCE_INTERRUPTED` / `PROCESSING_ERROR` |
-| (보완 추가) agent_status | str \| null | 최종 사용자 상태 6종 |
+| (보완 추가) agent_status | str \| null | 최종 사용자 상태 5종 |
+| (보완 추가) attempt / max_attempts | int | 전체 시도 한도 3 |
 
 **개인정보·보안 제한 (확정)**: 요청 원문(`request_text` 전문)은 트레이스 본문 대신 해시 또는 제한 정보(길이·term ID)만 남긴다. name·email·로그인·원문 이미지·API 키는 어떤 로그에도 저장하지 않는다. 테스트용 평가셋 문장만 Dataset에 넣는다.
 
@@ -95,18 +95,18 @@ POST /api/agent (비동기 채택 시: /api/sessions/{id}/messages, /api/jobs/{i
 | 프롬프트 | 이름 제안 | 용도 |
 | --- | --- | --- |
 | 기본 해석 LLM | `uhkegryo-interpreter-v1` | 일상어 → 활성 term_id·역할 구조화 (`InterpretationOutput`) |
-| 폴백 LLM | `uhkegryo-fallback-v1` | 카드·Getty 모두 불가 시 임시 후보 (`FallbackTermOutput`) |
 
 - label: `production` 로 고정
 - 사용 모델 변경, 프롬프트 변경은 `v{n}` 증가로 추적
 - `prompt_version` 필드에 항상 기록 (trace 필수 속성)
+- 폴백 LLM은 PR #15 계약에서 제거됨 — 별도 프롬프트 없음. 자체 DB에 없는 표현은 추가 질문 또는 `pending_human_review`.
 
 ### 5-2. EVAL_REPORT.md §2 요구사항 (함께 채움)
 
 | 항목 | 내용 |
 | --- | --- |
-| Langfuse Prompt로 관리하는 프롬프트 수 | 2 (interpreter · fallback) |
-| 현재 서비스 중인 버전 | `uhkegryo-interpreter-v1` · `uhkegryo-fallback-v1` |
+| Langfuse Prompt로 관리하는 프롬프트 수 | 1 (interpreter) |
+| 현재 서비스 중인 버전 | `uhkegryo-interpreter-v1` |
 | 배포 없이 교체·롤백한 사례 | 구현 후 기록 (EVAL_REPORT에 반영) |
 
 ---
@@ -130,33 +130,32 @@ POST /api/agent (비동기 채택 시: /api/sessions/{id}/messages, /api/jobs/{i
 | 1 | 요청 원문 `request_text` 전문 | 개인정보·민감 입력; 길이·해시·term_id로 대체 |
 | 2 | 비밀값 (API 키·토큰·서비스 계정 등) | 노출 시 즉시 폐기 대상 |
 
-> 보충: 프롬프트·trace에 외부 데이터 원문(GGetty 후보·Pin URL)을 주입하지 않는다. `<untrusted_data>` 래핑 + 출처 필드(`subject_uri`·`label`·`source_url`)만 남긴다 (신뢰 경계와 연동).
+> 보충: 프롬프트·trace에 외부 데이터 원문(Pinterest 검색 결과·썸네일 URL)을 주입하지 않는다. `<untrusted_data>` 래핑 + 링크·상태 필드만 남긴다 (신뢰 경계와 연동). Getty·외부 어휘 주입은 없다.
 
 ---
 
-## 7. 실패 경로에서도 남는 것 (확정 — 06 문서 §5)
+## 7. 실패 경로에서도 남는 것 (비동기 job 기준 — PR #15 정합)
 
 | 실패 | trace에 남는 것 |
 | --- | --- |
-| LLM 스키마 위반 → 재시도 | `llm_interpret` attempt 1 실패 → `retry` event(`schema_violation`, backoff 0) → attempt 2 |
-| 타임아웃 → 재시도 2회 | `retry` event ×2 (backoff 1000→2000) → 503 |
-| 5xx · 429 | `retry` event (5xx 1회 backoff 1000, 429는 Retry-After 또는 3000→6000) |
-| MCP Getty 조회 실패 | 200 유지 + `mcp_getty_terms` span 폴백(`resolution_source=term_cards`, limitation 기록) |
-| MCP 도구 전체 불가 | 200 유지 + mcp span 실패 + `fallback_queries`만 반환 |
-| 검증 실패 (허용 term 위반) | `response_validate=false` + 503 |
-| 작업 실패 (비동기) | `job_id` + `failure_code` + `retryable` 기록 (+ 필요 시 `agent_status`) |
+| LLM 스키마 위반·5xx·429 | `failed` job + `failure_code=PROCESSING_ERROR` + `llm_interpret` span 실패(`schema_violation` 등) |
+| LLM timeout | `failed` job + `failure_code=JOB_TIMEOUT` |
+| Cloud Run 중단 (lease 만료) | recovery가 `failed` job + `failure_code=INSTANCE_INTERRUPTED`로 종결, `attempt` 기록 |
+| 검색 provider 장애 | 유효 카드 있으면 `partial_result`(completed), 없으면 `failed`+`PROCESSING_ERROR` |
+| 검증 실패 (허용 term 위반) | `response_validate=false` → `needs_clarification` 또는 `failed` |
+| 자동 재시도 | **없음** (PR #15) — 수동 `retry` 시 새 job의 `retry_of_job_id`로 원 job 연결 |
 
-> 포기(모든 재시도 실패)는 503이며, 지어낸 용어·링크를 내보내지 않는 원칙이 trace에 그대로 보인다. SDK 기본 재시도가 trace를 삼키지 않도록 `max_retries=0`을 명시한다.
+> 지어낸 용어·링크를 내보내지 않는 원칙이 trace에 그대로 보인다. job 실패 시 동기 HTTP 오류가 아니라 `JobFailure`로 기록한다. SDK 기본 재시도가 trace를 삼키지 않도록 `max_retries=0`을 명시한다.
 
 ---
 
 ## 8. 회의 확정 사항 (5건)
 
-| # | 결정 포인트 | 결과 (2026-09-22 회의 기준) |
+| # | 결정 포인트 | 결과 (2026-09-22 회의 기준 · PR #15 정합) |
 | --- | --- | --- |
-| 1 | 프롬프트 목록·개수 | **2개** (`interpreter`, `fallback`) |
+| 1 | 프롬프트 목록·개수 | **1개** (`interpreter`) — 폴백 프롬프트는 PR #15에서 제거 |
 | 2 | 네이밍 규칙 | `uhkegryo-{역할}-v{n}` (label: production) |
-| 3 | `session_id`/`user_id` 해시 원천 | **비동기 세션 모델 기준으로 표기 정합화** (06 문서 `anonymous_user_id` 문구 갱신) |
+| 3 | `session_id`/`user_id` 해시 원천 | **비동기 세션 모델 기준으로 표기 정합화** (서버 발급 · 해시 기록) |
 | 4 | 관측 구현 책임자 | Langfuse(김호섭) · 백엔드(윤태현) 병행 — `llm.py` 구현과 동시 지정 |
 | 5 | `job_id`·`failure_code`·`agent_status` 필드 추가 | **추가 채택** (비동기 모델에서 trace↔job 연결 필수) |
 
@@ -164,7 +163,7 @@ POST /api/agent (비동기 채택 시: /api/sessions/{id}/messages, /api/jobs/{i
 
 ## 9. Next Task
 
-1. 위 확정 5건 → `06_트레이싱_정의.md`에 프롬프트 네이밍·필수/금지 속성·`job_id` 필드 연결 반영 (PR)
-2. Langfuse Prompt 2개 등록: `uhkegryo-interpreter-v1`, `uhkegryo-fallback-v1` (label: production)
-3. `backend/services/llm.py` 구현 시 trace 필수 5종·금지 2종·`max_retries=0`·retry event 반영 → stdout 구조화 로그 동일 이벤트
+1. 위 확정 5건 → `06_트레이싱_정의.md`에 프롬프트 네이밍·필수/금지 속성·`job_id` 필드 연결 반영 (PR #15 병합 시점 이후)
+2. Langfuse Prompt 1개 등록: `uhkegryo-interpreter-v1` (label: production)
+3. `backend/services/llm.py` 구현 시 trace 필수 5종·금지 2종·`max_retries=0`·job 실패 기록 반영 → stdout 구조화 로그 동일 이벤트
 4. 진행 지연·실패 케이스 평가 후 trace 스크린샷 + 프롬프트 교체·롤백 사례 → `EVAL_REPORT.md` §1~2 기록
