@@ -9,23 +9,14 @@
       "label_ko": "프론트 뷰",
       "label_en": "front view",
       "source_type": "team_card",
-      "query_fragments": [
-        "front view",
-        "reference"
-      ],
+      "query_fragments": ["front view"],
       "look_for": [
         "얼굴과 몸통이 관찰자 쪽을 향함",
         "좌우 정보가 비교적 대칭적으로 보임"
       ],
       "confidence_gate": {
-        "require_any": [
-          "정면을 본다는 묘사",
-          "앞모습이라는 명시"
-        ],
-        "do_not_infer_from": [
-          "배경의 1점 투시",
-          "카메라 높이 정보만 있음"
-        ]
+        "require_any": ["정면을 본다는 묘사", "앞모습이라는 명시"],
+        "do_not_infer_from": ["배경의 1점 투시", "카메라 높이 정보만 있음"]
       },
       "mvp_status": "active_in_current_contract",
       "reviewed_by": "오세창",
@@ -44,19 +35,13 @@
       "label_ko": "3/4 뷰",
       "label_en": "three-quarter view",
       "source_type": "team_card",
-      "query_fragments": [
-        "three quarter view",
-        "reference"
-      ],
+      "query_fragments": ["three quarter view"],
       "look_for": [
         "정면과 측면 사이로 보이는 얼굴",
         "한쪽 면이 더 많이 보이는 몸통"
       ],
       "confidence_gate": {
-        "require_any": [
-          "45도 정도 비스듬히 본다는 묘사",
-          "3/4뷰라는 명시"
-        ],
+        "require_any": ["45도 정도 비스듬히 본다는 묘사", "3/4뷰라는 명시"],
         "do_not_infer_from": [
           "하이 앵글이나 로우 앵글만 있음",
           "정면과 측면을 모두 원한다는 모호한 표현"
@@ -79,19 +64,13 @@
       "label_ko": "하이 앵글",
       "label_en": "high-angle view",
       "source_type": "team_card",
-      "query_fragments": [
-        "high angle view",
-        "reference"
-      ],
+      "query_fragments": ["high angle"],
       "look_for": [
         "카메라가 인물보다 높은 위치에 있음",
         "위에서 아래로 내려다봄"
       ],
       "confidence_gate": {
-        "require_any": [
-          "위에서 내려다본다는 묘사",
-          "하이 앵글이라는 명시"
-        ],
+        "require_any": ["위에서 내려다본다는 묘사", "하이 앵글이라는 명시"],
         "do_not_infer_from": [
           "인물이 고개를 숙임",
           "인물이 작게 보인다는 묘사만 있음"
@@ -114,23 +93,14 @@
       "label_ko": "로우 앵글",
       "label_en": "low-angle view",
       "source_type": "team_card",
-      "query_fragments": [
-        "low angle view",
-        "reference"
-      ],
+      "query_fragments": ["low angle"],
       "look_for": [
         "카메라가 인물보다 낮은 위치에 있음",
         "아래에서 위로 올려다봄"
       ],
       "confidence_gate": {
-        "require_any": [
-          "아래에서 올려다본다는 묘사",
-          "로우 앵글이라는 명시"
-        ],
-        "do_not_infer_from": [
-          "인물이 키가 큼",
-          "배경에 높은 건물이 있음"
-        ]
+        "require_any": ["아래에서 올려다본다는 묘사", "로우 앵글이라는 명시"],
+        "do_not_infer_from": ["인물이 키가 큼", "배경에 높은 건물이 있음"]
       },
       "mvp_status": "active_in_current_contract",
       "reviewed_by": "오세창",
@@ -149,22 +119,14 @@
       "label_ko": "측면 뷰",
       "label_en": "Profile",
       "source_type": "team_card",
-      "query_fragments": [
-        "profile",
-        "view reference"
-      ],
-      "look_for": [
-        "인물을 옆에서 본 시점입니다."
-      ],
+      "query_fragments": ["profile"],
+      "look_for": ["인물을 옆에서 본 시점입니다."],
       "confidence_gate": {
         "require_any": [
           "측면 뷰 또는 이에 해당하는 시점의 명시",
           "인물을 보는 방향·높이·수평 기울기 중 하나 이상의 단서"
         ],
-        "do_not_infer_from": [
-          "인물 포즈만 제시됨",
-          "배경의 투시 정보만 제시됨"
-        ]
+        "do_not_infer_from": ["인물 포즈만 제시됨", "배경의 투시 정보만 제시됨"]
       },
       "requires_all_of": [],
       "requires_any_of": [],
@@ -183,22 +145,14 @@
       "label_ko": "뒷면 뷰",
       "label_en": "Back View",
       "source_type": "team_card",
-      "query_fragments": [
-        "back view",
-        "view reference"
-      ],
-      "look_for": [
-        "인물을 뒤에서 본 시점입니다."
-      ],
+      "query_fragments": ["full back view"],
+      "look_for": ["인물을 뒤에서 본 시점입니다."],
       "confidence_gate": {
         "require_any": [
           "뒷면 뷰 또는 이에 해당하는 시점의 명시",
           "인물을 보는 방향·높이·수평 기울기 중 하나 이상의 단서"
         ],
-        "do_not_infer_from": [
-          "인물 포즈만 제시됨",
-          "배경의 투시 정보만 제시됨"
-        ]
+        "do_not_infer_from": ["인물 포즈만 제시됨", "배경의 투시 정보만 제시됨"]
       },
       "requires_all_of": [],
       "requires_any_of": [],
@@ -217,10 +171,7 @@
       "label_ko": "조감도",
       "label_en": "Bird's Eye View",
       "source_type": "team_card",
-      "query_fragments": [
-        "bird's eye view",
-        "view reference"
-      ],
+      "query_fragments": ["bird's eye view"],
       "look_for": [
         "높은 곳에서 장면 전체를 내려다보는 시점입니다. 단순 하이 앵글보다 위쪽에 가깝습니다."
       ],
@@ -229,10 +180,7 @@
           "조감도 또는 이에 해당하는 시점의 명시",
           "인물을 보는 방향·높이·수평 기울기 중 하나 이상의 단서"
         ],
-        "do_not_infer_from": [
-          "인물 포즈만 제시됨",
-          "배경의 투시 정보만 제시됨"
-        ]
+        "do_not_infer_from": ["인물 포즈만 제시됨", "배경의 투시 정보만 제시됨"]
       },
       "requires_all_of": [],
       "requires_any_of": [],
@@ -251,10 +199,7 @@
       "label_ko": "개미 눈높이",
       "label_en": "Worm's Eye View",
       "source_type": "team_card",
-      "query_fragments": [
-        "worm's eye view",
-        "view reference"
-      ],
+      "query_fragments": ["worm's eye view"],
       "look_for": [
         "아주 낮은 위치에서 위로 올려다보는 시점입니다. 단순 로우 앵글보다 아래쪽에 가깝습니다."
       ],
@@ -263,10 +208,7 @@
           "개미 눈높이 또는 이에 해당하는 시점의 명시",
           "인물을 보는 방향·높이·수평 기울기 중 하나 이상의 단서"
         ],
-        "do_not_infer_from": [
-          "인물 포즈만 제시됨",
-          "배경의 투시 정보만 제시됨"
-        ]
+        "do_not_infer_from": ["인물 포즈만 제시됨", "배경의 투시 정보만 제시됨"]
       },
       "requires_all_of": [],
       "requires_any_of": [],
@@ -285,10 +227,7 @@
       "label_ko": "더치 앵글",
       "label_en": "Dutch Angle",
       "source_type": "team_card",
-      "query_fragments": [
-        "dutch angle",
-        "view reference"
-      ],
+      "query_fragments": ["dutch angle"],
       "look_for": [
         "카메라의 수평선을 기울여 불안정하거나 긴장된 느낌을 만드는 시점입니다."
       ],
@@ -297,10 +236,7 @@
           "더치 앵글 또는 이에 해당하는 시점의 명시",
           "인물을 보는 방향·높이·수평 기울기 중 하나 이상의 단서"
         ],
-        "do_not_infer_from": [
-          "인물 포즈만 제시됨",
-          "배경의 투시 정보만 제시됨"
-        ]
+        "do_not_infer_from": ["인물 포즈만 제시됨", "배경의 투시 정보만 제시됨"]
       },
       "requires_all_of": [],
       "requires_any_of": [],
