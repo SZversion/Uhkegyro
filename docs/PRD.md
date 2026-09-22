@@ -10,7 +10,7 @@
 
 - 설명을 `body`, `pose`, `view`, `perspective`, `layout`로 구조화한다.
 - 초보자용 설명, 선택 근거, 확인 지점, 혼동 안내, 추가 질문을 카드 데이터에 따라 제공한다.
-- Agent가 선택한 역할별로 Pinterest 검색 결과 상위 8개 Pin을 표시한다. 기본값 8은 설정으로 변경 가능하다.
+- Agent가 선택한 역할별로 Pinterest 검색 결과 최대 8개 Pin을 표시한다.
 - Pin 이미지 바이트·썸네일 URL·Pin 메타데이터는 저장하지 않는다. 화면에는 검색 provider가 반환한 원격 썸네일을 원본 Pin 링크로 표시한다.
 - 사용자가 입력을 계속하는 하나의 chat 세션에 대화와 검색 결과를 누적한다.
 - LLM 출력은 프로젝트 자체 TERM_CARD DB의 현재 런타임 허용 카드만 사용한다. 역할별 JSON은 DB 적재 전 검수·시드 자료이며, 런타임 조회 원본이 아니다.
@@ -19,14 +19,15 @@
 
 ## What
 
-1. 사용자가 사진 없이 자연어 텍스트를 Agent chat에 입력한다.
-2. LLM은 카드 목록 안의 `term_id`만 선택해 `body`, `pose`, `view`, `perspective`, `layout`별 구조화 JSON을 만든다.
-3. 코드가 JSON 형식, 활성 카드, 역할, confidence/requires 조건을 검증한다.
-4. 검증되면 검색 도구가 역할별 검색을 수행하고 각 역할의 상위 8개 `{pin_url, thumbnail_url, status}`를 반환한다. 같은 Pin이 여러 역할에 나오면 중복 표시한다.
-5. 프론트엔드는 역할별 섹션에서 원격 `thumbnail_url`을 원본 `pin_url` 링크로 표시한다. 썸네일 URL이 없으면 링크만 제공하며, 이미지 바이트·썸네일 URL·Pin 메타데이터는 저장하지 않는다.
-6. 검색 결과가 0개이면 해당 역할에 `검색 결과가 없습니다`를 표시한다. Pin 삭제가 확인되면 `이 Pin은 삭제되었습니다`를 표시하고 결과에서 제외한다. 검색 시스템 오류는 오류와 재시도 안내를 표시한다.
-7. 사용자가 후속 chat에서 특정 결과는 남기고 다시 찾으라고 하면, 지정한 Pin URL은 세션 결과에 유지하고 해당 역할만 다시 검색한다.
-8. 활성 카드로 해석할 수 없으면 Agent가 부족한 정보를 명확히 설명하고 질문하며, 사용자의 다음 입력을 기다린다. 해결하지 못한 경우 휴먼 피드백 필요 상태로 표시한다.
+1. 브라우저가 서버 세션과 `HttpOnly` 쿠키를 받고, 사용자가 사진 없이 자연어 텍스트를 Agent chat에 입력한다.
+2. 메시지 endpoint는 `202`와 `job_id`를 반환하고, 프론트는 실제 job 상태를 polling한다.
+3. worker의 LLM은 카드 목록 안의 `term_id`만 선택해 `body`, `pose`, `view`, `perspective`, `layout`별 구조화 JSON을 만든다.
+4. worker 코드가 JSON 형식, 활성 카드, 역할, confidence/requires 조건을 검증한다.
+5. 검증되면 검색 도구가 역할별 검색을 수행하고 각 역할의 최대 8개 `{pin_url, thumbnail_url, status}`를 반환한다. 같은 Pin이 여러 역할에 나오면 중복 표시한다.
+6. 프론트엔드는 `completed` job의 역할별 섹션에서 원격 `thumbnail_url`을 원본 `pin_url` 링크로 표시한다. 썸네일 URL이 없으면 링크만 제공하며, 이미지 바이트·썸네일 URL·Pin 메타데이터는 저장하지 않는다.
+7. 검색 결과가 0개이면 해당 역할에 `검색 결과가 없습니다`를 표시한다. Pin 삭제가 확인되면 `이 Pin은 삭제되었습니다`를 표시하고 결과에서 제외한다. 검색 시스템 오류는 부분 결과와 수동 재시도 안내를 표시한다.
+8. 사용자가 후속 chat에서 특정 결과는 남기고 다시 찾으라고 하면, 지정한 Pin URL은 세션 결과에 유지하고 해당 역할만 다시 검색하는 새 job을 만든다.
+9. 활성 카드로 해석할 수 없으면 job은 질문 하나를 가진 완료 결과로 종결하고, 사용자의 다음 입력을 기다린다. 해결하지 못한 경우 휴먼 피드백 필요 상태로 표시한다.
 
 현재 구현되어 동작하는 공개 API는 `GET /health`의 `{"status":"ok"}`뿐이다. Agent API, UI, 실제 MCP, Langfuse 관측은 목표 MVP다.
 
@@ -46,7 +47,7 @@
 - TERM_CARD는 팀이 작성·검수한 자체 DB의 단일 원본이다. Getty는 용어 조사 시 참고한 자료일 뿐 서비스 DB·사용자 응답·런타임 도구 출처가 아니다. 외부 API·provider 결과·참고 자료가 새 `term_id`가 되거나 LLM에 자동 주입되면 안 된다.
 - 모호·상충 입력은 단정하지 않고 낮은 확신도, 한계, `pending_human_review`, 또는 추가 질문으로 처리한다.
 - 비밀값은 UI에 노출하지 않으며 `.env`만 사용한다. MCP는 무제한 공개 endpoint로 제공하지 않는다.
-- 사용자·LLM chat과 검색 이력은 Cloud SQL for PostgreSQL에 1개월 보관하고 하루 한 번 만료 데이터를 삭제한다. `anonymous_user_id`는 브라우저 로컬 저장소의 비식별 UUID이며, `session_id`는 탭 단위 UUID로 요청마다 전달한다.
+- 사용자·LLM chat, job, 검색 이력은 Cloud SQL for PostgreSQL에 1개월 보관하고 하루 한 번 만료 데이터를 삭제한다. `anonymous_user_id`와 `session_id`는 서버가 생성하며, 브라우저는 `HttpOnly` 세션 쿠키와 현재 화면의 서버 발급 `session_id`만 사용한다. 식별자·토큰 원문은 로그·trace에 남기지 않는다.
 
 ## AC
 
@@ -59,4 +60,5 @@
 7. **Given** 상태 점검, **When** `GET /health`를 호출하면, **Then** `{"status":"ok"}`를 반환한다.
 8. **Given** 활성 카드가 선택된 역할, **When** 검색이 완료되면, **Then** 해당 역할 섹션에 최대 8개의 Pin 미리보기를 표시한다.
 9. **Given** 사용자가 후속 chat으로 일부 역할만 다시 검색하라고 하면, **When** Agent가 처리하면, **Then** 지정된 Pin은 유지하고 요청된 역할의 새 결과만 누적한다.
-10. **Given** Cloud Run 종료·게이트웨이 timeout·브라우저 연결 단절로 JSON 응답을 받지 못하면, **When** 프론트가 요청을 처리하면, **Then** `AgentResponse` 상태를 지어내지 않고 전송 실패 안내와 새 요청 동작을 표시한다.
+10. **Given** 유효 세션의 메시지 제출, **When** `POST /api/sessions/{session_id}/messages`를 호출하면, **Then** HTTP `202`, `job_id`, `job_status=queued`를 반환하고 프론트는 종결 상태까지 polling한다.
+11. **Given** worker timeout·중단·처리 예외, **When** job recovery 또는 worker가 처리하면, **Then** job을 `failed`와 허용 `failure_code`로 종결하고 사용자가 수동 재시도할 수 있게 한다.

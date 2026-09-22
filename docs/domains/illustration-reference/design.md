@@ -2,7 +2,7 @@
 
 ## 현재 구현 단계
 
-현재는 기반 골조 단계다. 현재 동작하는 API는 `/health`뿐이다. 다음 구현 단계에서 `POST /api/agent`의 Pydantic 계약, 자체 TERM_CARD DB, 역할 검증, Pinterest 원본 링크·원격 썸네일 조립, 카드 검증 FastMCP 파이프라인을 추가한다. DB schema·적재·조회는 목표 설계에 포함하지만 아직 구현·적재하지 않았다. Getty는 용어 조사 참고 자료일 뿐 서비스 데이터로 사용하지 않는다. OpenAI, Langfuse, UI, 배포는 아직 구현하거나 호출하지 않는다.
+현재는 기반 골조 단계다. 현재 동작하는 API는 `/health`뿐이다. 다음 구현 단계에서 서버 세션 쿠키, `202` 비동기 job, job polling·수동 재시도, 자체 TERM_CARD DB, 역할 검증, Pinterest 원본 링크·원격 썸네일 조립, 카드 검증 FastMCP 파이프라인을 추가한다. DB schema·적재·조회와 job executor·recovery는 목표 설계에 포함하지만 아직 구현·적재하지 않았다. Getty는 용어 조사 참고 자료일 뿐 서비스 데이터로 사용하지 않는다. OpenAI, Langfuse, UI, 배포는 아직 구현하거나 호출하지 않는다.
 
 ## 책임 분리
 
@@ -15,7 +15,7 @@
 
 ## 기반 계약
 
-- 요청 모델은 `request_text` 1~500자와 UUID 형식 `anonymous_user_id`, `session_id`만 허용한다.
+- 메시지 요청 모델은 `request_text` 1~500자만 허용한다. `anonymous_user_id`, 세션 토큰, `session_id`, job ID는 서버가 생성·검증하며 브라우저는 서버 발급 세션 ID를 경로에만 사용한다.
 - 내부 선택은 `body | pose | view | perspective | layout`의 `role`, 정적 `term_id`, 근거, confidence를 가진다. 현재 활성 카드의 `role`·`term_id` 계약을 그대로 사용하며, `axis`·`kind` 필드는 사용하지 않는다.
 - 검색 역할은 `body → pose → view → perspective → layout` 순서다. 실제로 선택된 역할만 만든다.
 - 역할별 검색은 구현 후 자체 TERM_CARD DB의 검증된 활성 카드 `query_fragments`를 Pinterest 검색 provider에 전달한다. provider 결과의 `pin_url`·`thumbnail_url`·상태를 응답에 조립하며, 이미지 바이트·썸네일 URL은 저장하지 않는다.
@@ -34,4 +34,4 @@
 
 ## 다음 단계 전제
 
-`POST /api/agent`는 OpenAI Structured Output, 애플리케이션 재시도, 카탈로그 MCP 실패 정책, 최신 응답 계약을 한 단위로 추가할 때 구현한다. 카탈로그 레코드와 권리 검토 기준은 팀 승인 전까지 비어 있어야 한다.
+`POST /api/sessions`, `POST /api/sessions/{session_id}/messages`, `GET /api/jobs/{job_id}`, `POST /api/jobs/{job_id}/retry`는 OpenAI Structured Output, job executor·lease recovery, 카탈로그 MCP 실패 정책, 최신 job 계약을 한 단위로 추가할 때 구현한다. 카탈로그 레코드와 권리 검토 기준은 팀 승인 전까지 비어 있어야 한다.

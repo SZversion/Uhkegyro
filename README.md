@@ -71,12 +71,15 @@
 
 ```text
 사용자 UI
-  -> FastAPI POST /api/agent (미구현, 동기 응답 계약 확정)
-    -> LLM: 일상어를 허용된 term_id와 역할로 구조화
-    -> 결정론 코드: Pydantic 검증, 역할 순서, 허용 ID, URL 인코딩
-    -> FastMCP: 자체 TERM_CARD DB의 검증된 카드 정보를 구조화 조회
-    -> PinterestSearchProvider tool: 역할별 최대 8개 {pin_url, thumbnail_url, status} 반환
-    -> UI: 원격 썸네일을 원본 Pin 링크로 표시
+  -> POST /api/sessions (미구현, 서버 세션 쿠키 발급)
+  -> POST /api/sessions/{session_id}/messages (미구현, 202 + job_id)
+  -> GET /api/jobs/{job_id} polling (미구현, completed/failed까지)
+Job executor / recovery (미구현)
+  -> LLM: 일상어를 허용된 term_id와 역할로 구조화
+  -> 결정론 코드: Pydantic 검증, 역할 순서, 허용 ID, URL 인코딩
+  -> FastMCP: 자체 TERM_CARD DB의 검증된 카드 정보를 구조화 조회
+  -> PinterestSearchProvider tool: 역할별 최대 8개 {pin_url, thumbnail_url, status} 반환
+  -> UI: 원격 썸네일을 원본 Pin 링크로 표시
 ```
 
 | 계층 | 담당 책임 |
@@ -103,7 +106,10 @@ Pinterest 이미지 바이트를 저장·재게시하지 않습니다. 검색 �
 | 항목 | 현재 상태 | 최종 목표 |
 | --- | --- | --- |
 | `GET /health` | 구현됨. `{"status":"ok"}` 반환 | Cloud Run 상태 확인 |
-| `POST /api/agent` | 명세 확정·미구현 | 사용자 레퍼런스 해석 요청을 받아 최종 `AgentResponse`를 동기 반환하는 공개 진입점 |
+| `POST /api/sessions` | 명세 확정·미구현 | 서버 세션과 `HttpOnly` 쿠키 발급 |
+| `POST /api/sessions/{session_id}/messages` | 명세 확정·미구현 | 사용자 요청을 받아 `202`와 비동기 `job_id` 반환 |
+| `GET /api/jobs/{job_id}` | 명세 확정·미구현 | 소유 job의 실제 상태·완료 결과·실패·재시도 가능 여부 반환 |
+| `POST /api/jobs/{job_id}/retry` | 명세 확정·미구현 | 사용자가 실패 job을 수동으로 재시도 |
 | `/docs` | FastAPI 기본 문서에서 확인 가능 | 요청·응답 모델 및 오류 응답 확인 |
 | `/mcp` | 미구현. `example_tool` 골조만 존재 | FastMCP Streamable HTTP endpoint와 도구 호출 증거 |
 | 자체 TERM_CARD DB | 미구현·미적재 | 팀 검수 시드 카드를 적재하고 역할별 활성 카드만 조회 |
@@ -174,7 +180,7 @@ docker compose down
 | [도메인 프로필](./docs/domains/illustration-reference/domain-profile.md) | 사용자, 업무 경험, 경쟁 서비스, 범위와 데이터 출처 |
 | [경쟁 서비스 분석](./docs/domains/illustration-reference/competitive-analysis.md) | 실제 시작 흐름 비교, 차별점과 조사 한계 |
 | [설계 문서](./docs/domains/illustration-reference/design.md) | LLM·결정론 코드·MCP의 책임 분리와 폴백 설계 |
-| [실패 상태 계약](./docs/specs/illustration-reference-current-failure-state-contract.md) | 성공·정보 부족·범위 밖·안전 거부·부분 결과·서비스 불가의 현행 응답 및 LLM JSON 계약 |
+| [실패 상태 계약](./docs/specs/illustration-reference-current-failure-state-contract.md) | 비동기 job 상태, 완료 결과, worker 실패·재시도 및 LLM JSON 계약 |
 | [NOT_BUILD.md](./NOT_BUILD.md) | MVP에서 의도적으로 만들지 않는 기능과 이유 |
 | [EVAL_REPORT.md](./EVAL_REPORT.md) | 관측, 프롬프트 운영, 평가, 비용·지연, 출시 게이트 |
 | [evals/](./evals/) | 평가셋과 판정 기준 |
