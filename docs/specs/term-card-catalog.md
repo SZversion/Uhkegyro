@@ -26,13 +26,16 @@
 - 카드 `role`과 선언된 역할 일치
 - `term_id`, `role`, `label_ko`, `label_en`, `query_fragments`, `look_for`, `confidence_gate`, `requires_all_of`, `requires_any_of`, `runtime_eligible`, `mvp_status` 필수 필드 존재
 - 활성 카드의 비어 있지 않은 `query_fragments`
+- 활성 카드의 비어 있지 않은 `source_answer_draft`, `look_for`
 - 허용 역할과 활성 조건 유효성
+- `active_term_feedback`의 모든 term ID가 활성 카드에 연결되는지
+- 연결된 피드백의 비어 있지 않은 `plain_meaning_ko`, `selection_reason_template_ko`, `reference_checkpoints_ko`
 
 전체 카드 수, 활성 카드 수, `card_count`의 특정 값은 검증하지 않는다. 카탈로그 검증 실패는 `CATALOG_INVALID_AT_STARTUP` 운영 원인으로 기록하고 worker/job 수신을 시작하지 않는다.
 
 모든 카드의 `source_type`은 `team_card`다. Getty URI·외부 어휘 결과·이미지·Pin 메타데이터는 카드에 저장하지 않는다.
 
-화면 피드백은 `active_term_feedback[term_id]`를 우선한다. 이 경우 `plain_meaning_ko`, `selection_reason_template_ko`, `reference_checkpoints_ko`를 API의 `plain_meaning_ko`, `selection_reason`, `reference_checkpoints`로 각각 매핑한다. 피드백이 없는 새 활성 카드는 `source_answer_draft`를 `plain_meaning_ko`로, `look_for`를 `reference_checkpoints`로 사용하며 `selection_reason=null`이다. LLM은 fallback 문구를 보완하거나 새로 만들지 않는다.
+화면 피드백은 `active_term_feedback[term_id]`를 우선한다. 이 경우 `plain_meaning_ko`, `selection_reason_template_ko`, `reference_checkpoints_ko`를 API의 `plain_meaning_ko`, `selection_reason`, `reference_checkpoints`로 각각 매핑한다. 피드백이 없는 새 활성 카드는 `source_answer_draft`를 `plain_meaning_ko`로, `look_for`를 `reference_checkpoints`로 사용하며 `selection_reason=null`이다. `pinterest_search_notice_ko`, `common_confusion_ko`, `clarifying_question_ko`는 검수용 비공개 메타데이터로 API와 UI에 노출하지 않는다. LLM은 fallback 문구를 보완하거나 새로 만들지 않는다.
 
 `pinterest_search_contract.direct_search_disabled_term_ids`에 든 카드는 검색 계획에 사용할 수 없다. 해당 카드 또는 추상 의도만 후보이면 resolver는 Pinterest URL을 만들거나 provider를 호출하지 않고 `completed + needs_clarification`과 질문 하나를 반환한다. 다음 사용자 메시지에서 구체 단서를 얻은 뒤 검색 가능한 활성 카드가 선택된 경우에만 검색한다.
 
@@ -62,3 +65,9 @@
 - GIVEN: 후보가 `direct_search_disabled_term_ids`에 있다.
 - WHEN: resolver가 검색 계획을 만든다.
 - THEN: URL·provider 호출 없이 `needs_clarification`과 질문 하나를 반환한다.
+
+**AC-05 · 피드백 검증**
+
+- GIVEN: 활성 카드 또는 `active_term_feedback` 항목이 있다.
+- WHEN: 앱이 시작한다.
+- THEN: fallback 필드와 연결된 피드백 필드가 비어 있거나 피드백 ID가 활성 카드에 없으면 ready 상태를 거부한다.

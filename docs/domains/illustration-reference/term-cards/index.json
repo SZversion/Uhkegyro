@@ -58,15 +58,12 @@
       "term_label",
       "plain_meaning_ko",
       "selection_reason_template_ko",
-      "pinterest_search_notice_ko",
-      "reference_checkpoints_ko",
-      "common_confusion_ko",
-      "clarifying_question_ko"
+      "reference_checkpoints_ko"
     ],
-    "term_selection_rule": "LLM은 입력의 실제 단서가 confidence_gate를 통과할 때만 term_id를 고릅니다. 단서가 부족하면 terminology와 Pinterest 링크를 만들지 않고 clarifying_question_ko를 사용합니다.",
+    "term_selection_rule": "LLM은 입력의 실제 단서가 confidence_gate를 통과할 때만 term_id를 고릅니다. 단서가 부족하면 terminology와 Pinterest 링크를 만들지 않고 InterpretationOutput의 clarifying_question을 반환합니다.",
     "body_term_notice": "체형 카드는 사람을 평가하거나 진단하는 분류가 아닙니다. 캐릭터의 실루엣과 비례를 찾기 위한 레퍼런스 용어입니다.",
     "candidate_policy": "현재 5개 역할 파일의 74개 카드는 모두 초보자 화면과 검색 결과의 선택 후보입니다. 새 카드 또는 파일 밖 용어는 별도 검수·계약 확정 전까지 선택 후보가 아닙니다.",
-    "feedback_fallback_rule": "현재 74개 승인 카드는 모두 active_term_feedback의 초보자용 설명·선택 이유·검색 안내·확인 지점·혼동 안내·추가 질문을 표시합니다. 이후 새 카드에 화면 설명이 없으면 label_ko, source_answer_draft, look_for만 표시하고, 없는 문구를 LLM이 지어내지 않습니다."
+    "feedback_fallback_rule": "현재 승인 카드는 active_term_feedback의 초보자용 설명·선택 이유·확인 지점을 표시합니다. 이후 새 카드에 화면 설명이 없으면 label_ko, source_answer_draft, look_for만 표시하고, 없는 문구를 LLM이 지어내지 않습니다. pinterest_search_notice_ko, common_confusion_ko, clarifying_question_ko는 검수용 비공개 메타데이터이며 API와 UI에 노출하지 않습니다."
   },
   "beginner_feedback_review": {
     "status": "reviewed",
