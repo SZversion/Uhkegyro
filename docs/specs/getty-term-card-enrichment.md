@@ -1,4 +1,4 @@
-> **2026-09-21 폐기됨:** 이 출처 보강 작업은 되돌렸으며 외부 어휘 메타데이터를 다시 추가하지 않는다. 현재 TERM_CARD 계약은 `docs/specs/self-managed-term-card-store.md`를 따른다.
+> **2026-09-21 폐기됨:** 아래 본문은 되돌린 출처 보강 작업의 이력이며 구현·실행·평가에 사용하지 않는다. 역할별 JSON과 자체 TERM_CARD DB에 Getty 데이터·메타데이터를 추가하지 않는다. Getty는 용어 조사 시 사람이 참고한 자료일 뿐 런타임 데이터가 아니다.
 
 # Getty AAT TERM_CARD 보강 (historical)
 

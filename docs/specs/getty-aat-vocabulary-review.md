@@ -1,6 +1,6 @@
 > 이 문서는 초기 Getty 검토 Spec입니다. 최신 제품·아키텍처 기준은 `docs/PRD.md`와 `docs/SDD.md`를 우선합니다.
 >
-> **2026-09-21 폐기됨:** 이 외부 어휘 조회 실험은 구현하거나 재개하지 않는다. 현재 용어 데이터·검수 기준은 `docs/specs/self-managed-term-card-store.md`를 따른다.
+> **2026-09-21 폐기됨:** 아래 본문은 과거 검토 이력이며 이 외부 어휘 조회 실험은 구현하거나 재개하지 않는다. Getty는 용어 조사 시 사람이 참고한 자료일 뿐 서비스 DB·MCP 응답·LLM 입력·런타임 출처가 아니다. 현재 설계는 `self-managed-term-card-store.md`의 자체 TERM_CARD DB 계약만 따른다.
 
 # Getty AAT 용어 보완 및 저신뢰도 검토 Spec
 

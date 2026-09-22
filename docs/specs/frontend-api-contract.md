@@ -2,184 +2,179 @@
 
 ## Why
 
-- **페르소나**: 체형/소체, 포즈, 구도 전문 용어가 낯선 캐주얼 캐릭터 일러스트 초보자
-- **상황**: 브라우저 UI는 사용자의 일상어 설명을 받아 `POST /api/agent`로 보내고, 응답의 용어 해석·한계·Pinterest 외부 탐색 링크를 카드로 표시한다.
-- **문제**: 응답 스키마만 정해져 있고, 요청 형식·엔드포인트·환경변수·CORS·브라우저 식별자·UI 상태 매핑이 계약으로 고정되지 않아 백엔드와 프론트가 서로 다른 가정으로 구현할 위험이 있다.
-- **측정 지표**: 요청·응답 필드가 이 계약과 100% 일치하는지 계약 평가 100건으로 확인한다. 브라우저에서 `POST /api/agent` 호출과 오류 상태 표시가 정상·실패 경로 모두 동작한다.
+- **사용자**: 자연어로 캐릭터 레퍼런스를 찾고, 같은 대화에서 결과를 유지하거나 실패한 요청을 직접 다시 시도하려는 일러스트 초보자.
+- **상황**: 용어 해석·카드 검증·Pinterest 검색은 즉시 끝나지 않을 수 있다. 브라우저가 요청 연결을 계속 붙잡으면 timeout과 중단 상태를 구분하기 어렵다.
+- **문제**: 세션 소유권, job 상태, polling 종료, 재시도 계약이 없으면 프론트와 백엔드가 서로 다른 결과 상태를 구현한다.
+- **측정 지표**: 계약 평가 100건에서 endpoint·세션 소유권·job 상태 전이·응답 스키마 준수율 100%. 실제 측정값은 구현 후 `EVAL_REPORT.md`에 기록한다.
 
 ## Goal
 
-- 백엔드 FastAPI와 프론트 Next.js 사이의 **연결 계약**(요청·응답 전송, 식별자, 환경변수, CORS, 오류 처리, UI 상태 매핑)을 고정한다.
-- 응답 스키마의 상세 정의는 **`illustration-reference-failure-state-contract.md`를 참조**하여 중복하지 않는다. 이 문서는 전송·연결 계층만 다룬다.
-- 성공 기준:
-  - 브라우저는 `/mcp`, LLM SDK, 비밀값을 직접 호출하지 않는다.
-  - 요청에 `request_text`, `anonymous_user_id`, `session_id`를 항상 포함한다.
-  - 상태 코드·응답 본문 필드는 참조 스펙의 계약과 모순되지 않는다.
-  - 오류 상태는 사용자에게 참조 스펙의 UI 행동 기준대로 표시한다.
-- **Out of Scope**:
-  - 응답 스키마(`status`, `reason_codes`, `result` 등)의 재정의 또는 세부 예시 작성 (참조 스펙이 담당)
-  - 백엔드·프론트 실제 구현 코드, CORS 미들웨어 설정값 최종 결정
-  - 배포 인프라 구축, 실제 도메인 URL 확보
+- 서버 발급 `HttpOnly` 쿠키로 세션 소유권을 확인하고, 메시지 제출은 `202 Accepted`와 비동기 job으로 처리한다.
+- 브라우저는 job의 실제 상태만 polling하여 종결 상태의 결과·실패·수동 재시도 가능 여부를 표시한다.
+- 역할별 원격 썸네일은 현재 응답에서만 원본 Pin 링크로 표시하며, 이미지·썸네일 URL·Pin 메타데이터는 저장하거나 재게시하지 않는다.
 
 ## What
 
-**Happy Path**
-1. 사용자가 텍스트 입력창에 1~500자 설명을 입력하고 요청을 보낸다.
-2. 프론트가 `anonymous_user_id`(로컬스토리지)와 `session_id`(탭당 신규)를 채워 `POST /api/agent`로 전송한다.
-3. 백엔드가 해석 계획을 만들고 `AgentResponse`를 반환한다.
-4. 프론트가 상태별로 성공 카드 또는 안내 화면을 표시한다.
-5. 사용자는 역할별 용어 설명과 Pinterest 외부 탐색 링크로 레퍼런스를 확인한다.
+### Happy Path
 
-**Edge Cases** (최소 5개 + 처리 방식)
+1. 브라우저가 `POST /api/sessions`를 호출한다.
+2. 서버가 `session_id`, 비식별 `anonymous_user_id`, 불투명 세션 토큰을 생성하고 토큰을 `HttpOnly` 쿠키로 설정한다.
+3. 브라우저는 반환된 `session_id`를 현재 화면 상태에만 보관하고 `POST /api/sessions/{session_id}/messages`로 `request_text`를 보낸다.
+4. 서버는 쿠키 소유권을 검증하고 message·job을 저장한 뒤 `202 Accepted`와 `job_id`를 반환한다.
+5. 브라우저는 `GET /api/jobs/{job_id}`를 `poll_after_ms` 간격으로 조회한다.
+6. `completed`면 결과를, `failed`면 실패 안내와 수동 재시도 동작을 표시한다.
+
+### Edge Cases
 
 | # | 상황 | 처리 방식 |
 |---|---|---|
-| EC-01 | 빈 입력 또는 500자 초과 전송 | 백엔드가 `422` 반환, 프론트는 입력 검증도 선행 수행 (1~500자 안내) |
-| EC-02 | API 호출 중 네트워크 오류·타임아웃 | 프론트가 `service_unavailable` 안내 형식으로 "잠시 후 다시 시도" 표시 |
-| EC-03 | `status=needs_clarification` | 결과 카드를 숨기고 한 개의 `clarifying_question`을 질문 화면으로 표시 |
-| EC-04 | `status=partial_result` | 사용 가능한 결과와 실패 원인(`reason_codes`)을 함께 표시 |
-| EC-05 | `status=unsafe_input` / `out_of_scope` | 입력 원문을 되풀이하지 않고 안전한 범위 안내만 표시 |
-| EC-06 | 로컬스토리지 비활성(시크릿 등) | `anonymous_user_id`를 탭 생존 UUID로 대체 (탭마다 추적 분리됨을 인지) |
+| EC-01 | 쿠키가 없거나 만료됨 | `401 SESSION_REQUIRED`; 새 세션 생성으로 이동 |
+| EC-02 | 타인의 `session_id` 또는 `job_id` 조회 | 존재 여부를 노출하지 않는 `404` |
+| EC-03 | 빈 입력 또는 500자 초과 | 메시지 생성 시 `422 INVALID_REQUEST_TEXT`; LLM·검색 미호출 |
+| EC-04 | job이 `queued`~`rendering` | `result=null`; 실제 `job_status`와 `poll_after_ms`만 표시 |
+| EC-05 | 용어 단서 부족 | job은 `completed`; `result.agent_status=needs_clarification`과 질문 하나 표시 |
+| EC-06 | 역할별 검색 0건·삭제·검색 오류 | job은 `completed`; `partial_result`와 역할별 상태를 표시 |
+| EC-07 | worker timeout·중단·처리 예외 | job은 `failed`; `failure_code`, `retryable`, 사용자 안내를 표시 |
+| EC-08 | 네트워크 오류·JSON이 아닌 5xx | job 상태를 추측하지 않고 전송 실패 안내와 다시 조회/새 요청 동작을 표시 |
 
 ## How
 
-### 1. 엔드포인트
+### 1. Endpoint
 
-| 엔드포인트 | 메서드 | 용도 |
-|---|---|---|
-| `/health` | `GET` | 서비스 상태 확인 (응답 `{"status":"ok"}`) |
-| `/api/agent` | `POST` | 사용자 레퍼런스 해석 요청 (메인 기능) |
+| Endpoint | Method | 용도 | 성공 응답 |
+|---|---|---|---|
+| `/health` | `GET` | 프로세스 상태 확인 | `200 {"status":"ok"}` |
+| `/api/sessions` | `POST` | 새 서버 세션 발급 | `201` + `Set-Cookie` |
+| `/api/sessions/{session_id}/messages` | `POST` | 메시지와 비동기 job 생성 | `202` |
+| `/api/jobs/{job_id}` | `GET` | 소유 job 상태·결과 조회 | `200` |
+| `/api/jobs/{job_id}/retry` | `POST` | 사용자가 실패 job을 수동 재시도 | `202` |
 
-### 2. 요청 계약
+`GET /health` 외 모든 `/api/*` endpoint는 세션 쿠키를 검증한다. 브라우저는 `role`, `term_id`, 검색어, Pin URL, 인증 토큰, `anonymous_user_id`를 만들거나 전송하지 않는다.
 
-`POST /api/agent` 요청 본문은 다음 필드를 가진다. 모든 필드는 필수다.
+### 2. 세션과 메시지 생성
+
+`POST /api/sessions`는 요청 본문 없이 새 세션을 만든다. 서버는 세션 토큰을 `HttpOnly`, `SameSite=Lax`, `Path=/` 쿠키로 설정하고, 배포 환경에서는 반드시 `Secure=true`를 사용한다. 로컬 HTTP 개발에서만 명시적 local 설정으로 `Secure=false`를 허용하며, 이 값은 배포 환경에 사용하지 않는다. DB에는 토큰 원문이 아닌 해시만 저장한다. `anonymous_user_id`는 서버가 생성해 세션과 연결하고 로그·trace에는 해시만 기록한다.
 
 ```json
 {
-  "request_text": "한쪽 다리에 힘을 주고 아래에서 보이는 캐릭터",
-  "anonymous_user_id": "anonymous-user-id",
-  "session_id": "tab-session-id"
+  "session_id": "server-issued-uuid",
+  "expires_at": "2026-10-22T00:00:00Z"
 }
 ```
 
-| 필드 | 타입 | 제약 | 의미 |
-|---|---|---|---|
-| `request_text` | string | 1~500자 | 사용자 일상어 설명 |
-| `anonymous_user_id` | string (UUID) | 1회 발급, 재사용 | 브라우저 단위 식별자, 로컬스토리지 보관 |
-| `session_id` | string (UUID) | 탭 단위 신규 발급 | 세션·추적 단위 식별자 |
+`POST /api/sessions/{session_id}/messages`의 요청 본문은 `request_text`만 허용한다.
 
-참고: `anonymous_user_id`는 로컬스토리지 키 `illustration-reference-anonymous-user-id`에 보관한다. `session_id`는 탭을 열 때마다 `crypto.randomUUID()`로 새로 만든다. 둘 다 사용자 입력·개인 식별자가 아니다.
+```json
+{ "request_text": "한쪽 다리에 힘을 주고 아래에서 보이는 캐릭터" }
+```
 
-### 3. 응답 계약
+성공 시 HTTP `202`를 반환한다.
 
-응답 본문은 상태 코드와 함께 **`illustration-reference-failure-state-contract.md`의 `AgentResponse` 계약(공통 응답 계약 §1)을 그대로 따르고, 이 문서는 재정의하지 않는다.**
-
-- 정상 및 의미 상태: HTTP `200` (예: `success`, `needs_clarification`, `partial_result`)
-- 재시도 필요: HTTP `503` (`service_unavailable`만 해당)
-- 형식 오류: HTTP `422` (빈 입력·500자 초과, `AgentResponse` 계약의 `status` enum에 없음)
-- 응답 필드(`request_id`, `status`, `reason_codes`, `result`, `clarifying_question`, `user_message`, `retryable`, `retry_after_ms`)는 전부 참조 스펙의 정의와 검증 규칙에 따른다.
-
-### 4. 환경변수
-
-`.env` / 배포 환경에 다음 변수를 쓴다. 브라우저 UI는 `NEXT_PUBLIC_API_BASE_URL`만 접근하고, 그 외 키는 서버 환경에만 둔다.
-
-| 변수 | 위치 | 용도 |
-|---|---|---|
-| `NEXT_PUBLIC_API_BASE_URL` | 프론트 (브라우저 노출 가능) | `POST /api/agent`, `GET /health` 호출 base URL |
-| `OPENAI_API_KEY`, `LANGFUSE_*`, `MCP_BASE_URL` | 백엔드·MCP (비노출) | LLM·추적·MCP 연결 |
-
-### 5. CORS·브라우저 접근 경계
-
-- 브라우저 UI는 **`/mcp`를 직접 호출하지 않는다.** MCP는 백엔드가 서버 간(서버 대 서버)으로만 사용한다.
-- 브라우저 UI는 **LLM SDK 또는 비밀값을 직접 호출하지 않는다.** 모든 LLM·검색은 `POST /api/agent`를 통해서만 이루어진다.
-- 백엔드는 프론트 오리진만 허용하도록 CORS를 구성하고, 별도 인증 토큰은 현재 계약에 포함하지 않는다.
-
-### 6. 프론트 호출 패턴 예시
-
-```tsx
-// frontend/lib/api.ts
-function getAnonymousUserId(): string {
-  const key = "illustration-reference-anonymous-user-id";
-  const stored = window.localStorage.getItem(key);
-  if (stored) return stored;
-  const created = crypto.randomUUID();
-  window.localStorage.setItem(key, created);
-  return created;
+```json
+{
+  "message_id": "server-issued-uuid",
+  "job_id": "server-issued-uuid",
+  "job_status": "queued",
+  "poll_after_ms": 1000
 }
+```
 
-export async function requestReferencePlan(requestText: string) {
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-  const response = await fetch(
-    apiBaseUrl + "/api/agent",
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        request_text: requestText,
-        anonymous_user_id: getAnonymousUserId(),
-        session_id: crypto.randomUUID(),
-      }),
-    },
-  );
-  if (!response.ok) {
-    // 422: 입력 형식 안내, 503: service_unavailable 안내
-    const body = await response.json();
-    throw new AgentApiError(response.status, body);
+오류는 `401 SESSION_REQUIRED`, `404 SESSION_NOT_FOUND`(타인 세션 포함), `422 INVALID_REQUEST_TEXT`만 반환한다.
+
+### 3. Job 조회와 결과
+
+job 상태는 `queued`, `running`, `validating`, `searching`, `rendering`, `completed`, `failed`다. `completed`와 `failed`만 종결 상태다. 진행 상태에서는 브라우저가 `poll_after_ms=1000`으로 polling하며, 종결 상태에서는 polling을 멈춘다. UI는 job 상태 이외의 진행률이나 완료 예정 시간을 만들지 않는다.
+
+```json
+{
+  "job_id": "server-issued-uuid",
+  "session_id": "server-issued-uuid",
+  "request_id": "opaque-request-id",
+  "job_status": "searching",
+  "attempt": 1,
+  "max_attempts": 3,
+  "poll_after_ms": 1000,
+  "retryable": false,
+  "result": null,
+  "failure": null
+}
+```
+
+`completed` 응답의 `result`는 [현행 비동기 실패 상태 계약](./illustration-reference-current-failure-state-contract.md)의 `AgentResult`다. 이 결과에는 역할별 최대 8개의 `{pin_url, thumbnail_url, status}`가 포함될 수 있다. `thumbnail_url`은 응답 전용 원격 표시 URL이고, UI는 이를 원본 `pin_url`의 클릭 대상으로 표시한다.
+
+`failed` 응답은 `result=null`과 아래 `failure`를 가진다.
+
+```json
+{
+  "failure": {
+    "failure_code": "JOB_TIMEOUT | INSTANCE_INTERRUPTED | PROCESSING_ERROR",
+    "user_message": "요청을 완료하지 못했습니다. 다시 시도해 주세요.",
+    "retryable": true
   }
-  return response.json();
 }
 ```
 
-### 7. UI 상태 매핑
+`GET /api/jobs/{job_id}`의 조회 오류는 `401 SESSION_REQUIRED` 또는 `404 JOB_NOT_FOUND`다. 타인 job도 `404`로 처리한다.
 
-응답은 참조 스펙의 상태별 UI 행동을 그대로 따른다. 이 계약은 연결층에서 아래 요약만 유지한다.
+### 4. 수동 재시도
 
-| 상태 (HTTP) | 카드 표시 | 안내 형태 |
+`POST /api/jobs/{job_id}/retry`는 `job_status=failed`이고 `retryable=true`인 경우만 새 message·새 job을 만든다. 자동 재시도는 하지 않는다. 전체 시도 한도는 원 작업을 포함해 `max_attempts=3`이며, 한도에 도달하면 `retryable=false`다. 성공 시 `202`와 새 `job_id`, `retry_of_job_id`, `job_status=queued`, `poll_after_ms=1000`을 반환한다. 오류는 `401 SESSION_REQUIRED`, `404 JOB_NOT_FOUND`, `409 JOB_NOT_RETRYABLE`이다.
+
+### 5. 프론트 요청 규칙
+
+모든 API 호출은 쿠키 전송을 위해 `credentials: "include"`를 사용한다. 브라우저는 새 화면 진입 시 세션을 만들고, 현재 화면의 `session_id`·`job_id`만 React state에 둔다. 세션 토큰·`anonymous_user_id`를 로컬스토리지·URL·로그에 저장하지 않는다.
+
+```ts
+const session = await fetch(apiBaseUrl + "/api/sessions", {
+  method: "POST",
+  credentials: "include",
+}).then(readJsonOrThrow);
+
+const accepted = await fetch(
+  apiBaseUrl + `/api/sessions/${session.session_id}/messages`,
+  {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ request_text: requestText }),
+  },
+).then(readJsonOrThrow);
+```
+
+`fetch` 자체가 실패하거나 JSON이 아닌 5xx를 받으면 `AgentResult`·`job_status`를 지어내지 않는다. 사용자는 같은 `job_id`를 다시 조회하거나 새 요청을 시작할 수 있다.
+
+### 6. 환경·보안 경계
+
+| 변수 | 접근 계층 | 용도 |
 |---|---|---|
-| `success` (200) | 용어 설명·한계·Pinterest 외부 링크 | 정상 결과 |
-| `needs_clarification` (200) | 결과 카드 표시 안 함 | 질문 하나 표시 |
-| `out_of_scope` (200) | 결과 카드 표시 안 함 | 지원 범위 안내 |
-| `unsafe_input` (200) | 결과 카드 표시 안 함 | 안전 범위 안내 (원문 재출력 금지) |
-| `partial_result` (200) | 가능한 부분 + 빠진 이유(`reason_codes`) | 부분 안내 |
-| `service_unavailable` (503) | 결과·링크 미표시 | 재시도 안내 |
+| `NEXT_PUBLIC_API_BASE_URL` | 프론트 | 같은 origin API base URL; 프로덕션은 빈 상대 경로, 개발은 Vite proxy 경로 |
+| `OPENAI_API_KEY`, `LANGFUSE_*`, `MCP_BASE_URL` | 백엔드·MCP | LLM·관측·MCP 연결 |
 
-- 결과 카드에 **Pinterest 이미지·썸네일·핀 제목을 표시하지 않는다.** 외부 탐색 링크만 제공한다.
-- `retryable=true`와 `retry_after_ms`를 받으면 해당 안내에 재시도 동작을 맞춘다.
+브라우저는 LLM SDK·MCP·비밀값을 직접 호출하지 않는다. `SameSite=Lax` 세션 쿠키를 사용하는 MVP는 UI와 API를 같은 origin으로 제공한다. 개발 환경은 Vite proxy로 같은 origin처럼 호출한다. Vercel UI에서 별도 Cloud Run API를 직접 호출하는 교차 사이트 cookie 배포는 MVP 범위 밖이며, 필요하면 이후 BFF 또는 별도 쿠키 정책을 설계한다. `Access-Control-Allow-Origin: *`와 credential 쿠키는 함께 사용하지 않는다.
 
 ## AC
 
-**AC-01 · 요청 필드 항상 포함**
-- GIVEN: 사용자가 설명을 입력하고 요청을 보낸다.
-- WHEN: 프론트가 `POST /api/agent`를 호출한다.
-- THEN: `request_text`, `anonymous_user_id`, `session_id` 세 필드를 모두 포함한다.
-- AND THEN: `anonymous_user_id`는 로컬스토리지 키에서 읽거나 새로 발급해 저장하고, `session_id`는 탭마다 새로 발급한다.
+**AC-01 · 서버 세션 발급**
+- GIVEN: 신규 브라우저 화면 진입
+- WHEN: `POST /api/sessions`를 호출한다.
+- THEN: `201`, 서버 생성 `session_id`, 만료 시각, `HttpOnly` 세션 쿠키를 받는다.
 
-**AC-02 · 형식 오류는 422로 차단**
-- GIVEN: 요청 본문이 비었거나 `request_text`가 1~500자 제약을 위반한다.
-- WHEN: 백엔드가 요청을 검증한다.
-- THEN: HTTP `422`를 반환하고 `AgentResponse`의 `status` enum을 만들지 않는다.
-- AND THEN: LLM·Pinterest·외부 어휘 도구를 호출하지 않으며, 프론트는 입력 형식 안내를 표시한다.
+**AC-02 · 비동기 job 생성**
+- GIVEN: 유효한 세션과 1~500자 `request_text`
+- WHEN: 메시지를 제출한다.
+- THEN: 서버는 `202`와 `job_id`, `job_status=queued`, `poll_after_ms=1000`을 반환한다.
 
-**AC-03 · 서비스 불가 시 503**
-- GIVEN: 검증 가능한 결과를 만들지 못했다.
-- WHEN: 백엔드가 최종 상태를 결정한다.
-- THEN: HTTP `503`과 `status=service_unavailable`(참조 스펙 구조)을 반환한다.
-- AND THEN: 프론트는 결과·링크를 지어내지 않고 재시도 안내를 표시한다.
+**AC-03 · 실제 상태만 polling**
+- GIVEN: 종결되지 않은 소유 job
+- WHEN: `GET /api/jobs/{job_id}`를 호출한다.
+- THEN: 프론트는 반환된 `job_status`만 표시하고 `completed` 또는 `failed`에서 polling을 멈춘다.
 
-**AC-04 · 브라우저는 비공개 계층 미접근**
-- GIVEN: 요청을 실행한다.
-- WHEN: MCP·LLM 비밀값이 필요한 처리가 발생한다.
-- THEN: 브라우저는 `/mcp`나 LLM SDK를 직접 호출하지 않는다.
-- AND THEN: `NEXT_PUBLIC_` 이외의 키는 브라우저 번들에 포함되지 않는다.
+**AC-04 · 실패와 수동 재시도**
+- GIVEN: `failed`, `retryable=true`, `attempt < max_attempts`인 job
+- WHEN: 사용자가 재시도를 누른다.
+- THEN: `202`와 새 `job_id`를 받고 원 job을 자동 재시도하지 않는다.
 
-**AC-05 · 부분 결과는 상태 표시 유지**
-- GIVEN: `status=partial_result`를 받는다.
-- WHEN: 프론트가 응답을 렌더링한다.
-- THEN: 사용 가능한 용어·근거·외부 링크와 함께 빠진 부분과 `reason_codes`를 표시한다.
-- AND THEN: 실패 원인을 성공으로 속여 표시하지 않는다.
-
-**AC-06 · 응답 스키마는 참조 스펙과 중복 정의하지 않는다**
-- GIVEN: 이 문서와 참조 스펙을 대조한다.
-- WHEN: 응답 필드 구조·검증 규칙을 확인한다.
-- THEN: 이 문서는 전송·연결 계약만 정의하고 `AgentResponse` 세부는 `illustration-reference-failure-state-contract.md`를 참조한다.
-- AND THEN: 두 문서의 상태·HTTP 코드·UI 행동이 모순되지 않는다.
+**AC-05 · 소유권과 전송 실패**
+- GIVEN: 쿠키가 없거나 타인의 session/job을 요청하거나 JSON 응답을 받지 못했다.
+- WHEN: 프론트가 응답을 처리한다.
+- THEN: 각각 새 세션, `404`, 일반 전송 실패 안내로 처리하고 다른 세션의 정보·가짜 job 결과를 표시하지 않는다.

@@ -133,15 +133,15 @@
           "배경 원근선 없이 정면 뷰만 제시됨"
         ]
       },
-      "mvp_status": "candidate_perspective",
-      "reviewed_by": null,
-      "reviewed_at": null,
+      "mvp_status": "active_in_current_contract",
+      "reviewed_by": "오세창",
+      "reviewed_at": "2026-09-22",
       "requires_all_of": [],
       "requires_any_of": [],
       "source_category_id": "team_candidate_enrichment",
       "source_answer_draft": "팀 작성 초안: '1점 투시' 레퍼런스를 찾을 때 '깊이 방향의 평행선이 한 소실점으로 모임', '정면을 향한 복도·방·도로처럼 수직선이 평행하게 유지되는 공간' 단서를 우선 확인한다.",
-      "review_status": "needs_osechang_review",
-      "runtime_eligible": false
+      "review_status": "reviewed",
+      "runtime_eligible": true
     },
     {
       "term_id": "perspective_two_point",
@@ -168,15 +168,15 @@
           "수직선까지 수렴하는 3점 투시 묘사"
         ]
       },
-      "mvp_status": "candidate_perspective",
-      "reviewed_by": null,
-      "reviewed_at": null,
+      "mvp_status": "active_in_current_contract",
+      "reviewed_by": "오세창",
+      "reviewed_at": "2026-09-22",
       "requires_all_of": [],
       "requires_any_of": [],
       "source_category_id": "team_candidate_enrichment",
       "source_answer_draft": "팀 작성 초안: '2점 투시' 레퍼런스를 찾을 때 '좌우 깊이 방향 선이 서로 다른 두 소실점으로 모임', '모서리가 화면을 향하고 수직선은 평행하게 유지되는 공간' 단서를 우선 확인한다.",
-      "review_status": "needs_osechang_review",
-      "runtime_eligible": false
+      "review_status": "reviewed",
+      "runtime_eligible": true
     }
   ]
 }
