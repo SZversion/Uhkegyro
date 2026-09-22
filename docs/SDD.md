@@ -114,4 +114,9 @@ Agent 메시지 제출 API(경로·계약 미정)는 사용자 메시지를 저�
 
 LLM adapter는 Langfuse에 요청 ID, 모델, 프롬프트 버전, 입력/출력 계약 통과 여부, 토큰 수, 지연, 비용, 재시도를 기록한다. 평가셋은 최소 30건이며 정상·경계·실패 유도를 포함한다. 회귀는 카드 허용 목록, 역할 필터, URL fragment 전용 생성, 모호성 질문, 카드에 저장된 출처 노출, `/health`를 검증한다.
 
-비밀값은 `.env`와 배포 Secret Manager에만 두며 UI와 git에 노출하지 않는다. 세션 토큰은 서버가 발급하는 불투명 랜덤 값이며 HttpOnly 쿠키로 전달한다. 세션·chat·구조화 결과·Pin URL은 Cloud SQL for PostgreSQL에 1개월 저장하고 Cloud Scheduler가 하루 한 번 만료 데이터를 삭제한다. Cloud Run CORS는 개발 중 localhost와 Vercel 도메인을 허용하고 배포 시 Vercel 도메인만 허용한다. Pinterest 검색 API·비즈니스 계정은 후속 확인 전까지 provider 구현을 교체 가능하게 유지한다. `main`에는 직접 push하지 않고 개인 브랜치·PR·리뷰 흐름을 따른다.
+비밀값은 `.env`와 배포 Secret Manager에만 두며 UI와 git에 노출하지 않는다. 세션 토큰은 서버가 발급하는 불투명 랜덤 값이며 HttpOnly 쿠키로 전달한다. 세션·chat·구조화 결과·Pin URL은 Cloud SQL for PostgreSQL에 1개월 저장하고 Cloud Scheduler가 하루 한 번 만료 데이터를 삭제한다.
+
+- 개발 환경: `http://localhost`를 허용하고, localhost HTTP 실행을 위해 쿠키 `Secure=false`를 사용한다. 개발 CORS에는 허용된 localhost origin만 둔다.
+- 운영 환경: Vercel·Cloud Run의 HTTPS만 허용하고 쿠키 `Secure=true`, `HttpOnly`, `SameSite=Lax`를 사용한다. 운영 CORS에는 배포된 Vercel 도메인만 둔다.
+
+Pinterest 검색 API·비즈니스 계정은 후속 확인 전까지 provider 구현을 교체 가능하게 유지한다. `main`에는 직접 push하지 않고 개인 브랜치·PR·리뷰 흐름을 따른다.
