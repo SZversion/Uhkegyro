@@ -5,6 +5,7 @@
 **작성자**: 윤태현 (YTH)
 **상태**: 강사님 회의(2026-09-22) 반영 · **비동기 확정** · PR #15(`OSC04/docs/self-managed-term-card-db`) 계약 정합 반영
 **근거 문서**:
+- `docs/PRD.md` — 제품 원칙·용어 단일 원본·실패 상태 정의 기준
 - 현행 계약(PR #15): `docs/specs/illustration-reference-current-failure-state-contract.md` — job 상태·사용자 의미 상태·failure enum·재시도
 - 현행 계약(PR #15): `docs/specs/frontend-api-contract.md` — endpoint·세션·폴링·retry
 - `docs/SDD.md` §3~5 — 자체 TERM_CARD DB·job 상태 전이·실패·폴백

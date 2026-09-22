@@ -5,11 +5,13 @@
 **작성자**: 윤태현 (YTH)
 **상태**: 강사님 회의(2026-09-22) 반영 · 트레이싱 계약 확정 · 프롬프트 네이밍·필수/금지 속성 합의 반영 · **PR #15 정합**
 **근거 문서**:
+- `docs/PRD.md` — 제품 원칙·용어 단일 원본·관측 요구 기준
 - 확정: `260921 강사님회의/06_트레이싱_정의.md` — 트레이싱 3층·trace 구조·기록 필드·span 배정
 - 합의 대상: 안건 3 (Langfuse 관측 속성 & 프롬프트 버전)
 - `docs/SDD.md` §6 — 관측·보안·검증
 - `EVAL_REPORT.md` §1~2 — 관측·프롬프트 운영 채점 항목
-- 현행 계약(PR #15): `frontend-api-contract.md` — 비동기 job 모델·`request_id`
+- 현행 계약(PR #15): `docs/specs/frontend-api-contract.md` — 비동기 job 모델·`request_id`
+- 현행 계약(PR #15): `docs/specs/illustration-reference-current-failure-state-contract.md` — 실패·재시도 계약 (trace 기록 기준)
 
 ---
 
