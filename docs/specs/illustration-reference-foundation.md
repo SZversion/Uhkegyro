@@ -1,15 +1,17 @@
 > **2026-09-22 폐기됨:** 아래 본문은 초기 골조·동기 단일 응답·브라우저 생성 식별자 계약의 이력이며, 구현·실행·평가 기준으로 사용하지 않는다. 현행 MVP는 서버 세션 쿠키와 비동기 job을 사용하는 `docs/PRD.md`, `docs/SDD.md`, [`frontend-api-contract.md`](./frontend-api-contract.md), [`illustration-reference-current-failure-state-contract.md`](./illustration-reference-current-failure-state-contract.md)의 자체 TERM_CARD DB 계약을 따른다.
 
-# 캐주얼 캐릭터 일러스트 레퍼런스 Agent — 기반 골조 Spec
+> 이 문서는 기존 동기 `POST /api/agent` 초안을 최신 비동기 모델로 대체한 문서다. 공개 API의 최종 경로·필드·상태는 별도 API 명세서에서 확정하며, PRD·SDD를 우선한다.
 
-## Why
+## 모델
 
-- **페르소나**: 캐주얼 캐릭터를 처음 그리며 체형/소체, 포즈, 구도 용어가 낯선 사용자
-- **상황**: 텍스트로 원하는 캐릭터를 설명하고, 실제로 언급한 조건만 바탕으로 레퍼런스를 탐색하고 싶다.
-- **문제**: 현재 저장소는 강의용 빈 FastAPI/MCP 뼈대만 있어 용어 ID, 역할 순서, 요청 형식, 검색 URL 생성 규칙이 코드로 고정되어 있지 않다.
-- **측정 지표**: 기반 단위 테스트에서 허용되지 않은 용어/축 조합을 100% 거부하고, 선택된 역할만 정해진 순서로 검색 계획에 포함한다.
+- 서버가 발급한 HttpOnly 쿠키로 세션 소유권을 검증한다.
+- 사용자는 자연어 텍스트만 입력한다. `role`, `term_id`, 검색어, Pin URL은 클라이언트가 보내지 않는다.
+- 메시지 제출은 즉시 완료 응답이 아니라 작업을 만들고 `job_status`를 조회하는 비동기 흐름이다.
+- `job_status`는 작업 envelope에, `agent_status`는 결과 payload에 둔다. 추가 `needs_clarification` boolean은 사용하지 않는다.
+- TERM_CARD의 활성 카드만 사용하며 백엔드가 역할·활성 여부·confidence/requires를 검증한다.
+- 검색은 검증된 `query_fragments`로 역할별 수행하고 최대 8개 Pin URL을 반환한다. 이미지는 저장하지 않는다.
 
-## Goal
+## 작업 실패와 재시도
 
 - **해결 목표**: 이후 LLM·정적 카드 검증 MCP·UI가 같은 계약을 사용할 수 있도록 FastAPI health check, Pydantic 요청/선택 모델, 자체 관리 정적 용어 카드, 도메인 검증, Pinterest 검색 URL 생성 함수를 구현한다.
 - **성공 기준**: `/health`가 서비스 상태를 반환하고, 입력 길이/추가 필드/UUID 형식과 term ID·축·구도 하위 역할을 검증한다. 유효한 LLM 선택은 팀 카드 정보와 함께 `body → pose → view → perspective → layout` 순서의 URL 계획으로 변환한다.
