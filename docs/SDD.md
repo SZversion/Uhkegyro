@@ -2,7 +2,7 @@
 
 ## 1. 기준 데이터와 불변 조건
 
-구현 후 프로젝트 자체 TERM_CARD DB는 LLM 출력·화면 피드백·Pinterest 검색어의 런타임 단일 원본이다. 역할별 JSON은 초기 74개 카드를 검수하고 DB에 적재하기 위한 시드 자료이며, 런타임 요청마다 읽지 않는다. 현재는 DB schema·적재·repository가 미구현이고 역할별 JSON만 존재한다. DB는 `runtime_eligible=true && mvp_status=active_in_current_contract` 카드만 `term_id` 사전으로 만든다. 현재 시드 기준 활성 20개 역할 분포는 body 5, pose 7, view 4, perspective 3, layout 1이다.
+구현 후 프로젝트 자체 TERM_CARD DB는 LLM 출력·화면 피드백·Pinterest 검색어의 런타임 단일 원본이다. 역할별 JSON은 초기 74개 카드를 검수하고 DB에 적재하기 위한 시드 자료이며, 런타임 요청마다 읽지 않는다. 현재는 DB schema·적재·repository가 미구현이고 역할별 JSON만 존재한다. DB는 `runtime_eligible=true && mvp_status=active_in_current_contract` 카드만 `term_id` 사전으로 만든다. 현재 시드 카드 74개는 모두 이 조건을 통과하며 역할 분포는 body 6, pose 52, view 9, perspective 5, layout 2이다.
 
 Getty AAT는 용어 조사 시 참고한 자료일 뿐 프로젝트 DB·MCP 응답·LLM 입력·사용자 화면에 저장하거나 표시하지 않는다. Getty API·SPARQL·웹 호출은 하지 않는다.
 
@@ -64,13 +64,13 @@ Langfuse <- LLM adapter의 요청 ID·모델·토큰·지연·비용·재시도
 ## 4. 상세 처리 순서
 
 1. 배포·시드 적재 시 Card repository가 역할별 JSON의 합계 `card_count=74`와 필수 필드를 검증한 뒤 자체 TERM_CARD DB에 적재한다. 런타임은 DB의 스키마·활성 카드 수를 검증하며, 실패하면 ready 상태로 만들지 않고 운영자 오류로 기록한다.
-2. repository는 활성 20개 카드만 인덱싱하고, 후보·미검수 카드는 메모리 모델에서 제외한다.
+2. repository는 검수 완료된 74개 활성 카드를 모두 인덱싱하고, 역할별 JSON에 없는 새 term ID·미검수 후속 카드는 메모리 모델에서 제외한다.
 3. `POST /api/sessions` route가 서버 생성 세션과 `HttpOnly` 쿠키를 만들고, `POST /api/sessions/{session_id}/messages`가 소유권·입력 규칙을 검증한 뒤 `queued` job과 request ID를 영속화한다.
 4. Job executor가 job을 claim해 lease와 `running` 상태를 저장한다. Cloud Run 중단으로 lease가 만료되면 recovery가 한 번만 `INSTANCE_INTERRUPTED` failed 상태로 종결한다.
 5. LLM adapter는 활성 카드의 ID·role·confidence gate만 근거로 구조화 후보를 생성한다.
 6. resolver는 (a) 선택 역할 여부, (b) 활성 사전 존재 여부, (c) 카드 role 일치, (d) `confidence_gate`, (e) `requires_all_of` 전체 충족, (f) `requires_any_of` 중 하나 충족을 검증한다.
 7. 단서가 없거나 검증을 통과하지 못하면 `needs_clarification` 결과를 만들어 `completed`로 종결한다.
-8. 유효 카드마다 response assembler가 자체 DB의 카드 피드백과 팀 검수 상태를 조립한다. Getty 데이터·귀속·외부 어휘 API·SPARQL·웹 조회는 사용하지 않는다.
+8. 유효 카드마다 response assembler가 자체 DB의 카드 피드백과 팀 검수 상태를 조립한다. `active_term_feedback`이 없는 승인 카드는 `label_ko`, `source_answer_draft`, `look_for`만 표시하고, 없는 초보자 피드백을 생성하지 않는다. Getty 데이터·귀속·외부 어휘 API·SPARQL·웹 조회는 사용하지 않는다.
 9. URL builder는 선택 카드의 `query_fragments` 배열만 합쳐 Pinterest 검색 URL을 만든다. `direct_search_disabled_term_ids`에 해당하면 링크를 만들지 않는다.
 10. PinterestSearchProvider가 역할별 결과를 반환하면 `{pin_url, thumbnail_url, status}`를 조립한다. 썸네일 URL이 없으면 `thumbnail_unavailable`로 원본 링크만 표시하고, 삭제 Pin은 `deleted`로 표시 대상에서 제외한다. 0건은 `no_results`, 검색 장애는 `search_error`와 재시도 안내로 구분한다.
 11. 카드 결과가 하나 이상이면 `completed`와 `AgentResult`를 저장한다. 안전하게 조립할 수 없는 LLM·DB·resolver 오류는 `failed`와 `PROCESSING_ERROR`, 앱 관리 job 제한 시간은 `JOB_TIMEOUT`으로 종결한다.

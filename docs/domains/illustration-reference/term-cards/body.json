@@ -204,15 +204,15 @@
           "특정 부위의 크기만 언급함"
         ]
       },
-      "mvp_status": "candidate_body",
-      "reviewed_by": null,
-      "reviewed_at": null,
+      "mvp_status": "active_in_current_contract",
+      "reviewed_by": "오세창",
+      "reviewed_at": "2026-09-22",
       "requires_all_of": [],
       "requires_any_of": [],
       "source_category_id": "team_candidate_enrichment",
       "source_answer_draft": "팀 작성 초안: '인체 비례' 레퍼런스를 찾을 때 '머리·몸통·팔다리의 길이와 폭이 전신에서 이루는 관계', '의상 외곽선이 아니라 인물 기본 골격의 비례' 단서를 우선 확인한다.",
-      "review_status": "needs_osechang_review",
-      "runtime_eligible": false
+      "review_status": "reviewed",
+      "runtime_eligible": true
     }
   ]
 }

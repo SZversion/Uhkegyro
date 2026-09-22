@@ -1,7 +1,7 @@
 {
   "dataset_name": "illustration_reference_master_term_cards",
-  "dataset_version": "0.6-self-managed-term-card-store-draft",
-  "status": "mixed_review_state_with_beginner_feedback_draft",
+  "dataset_version": "0.7-self-managed-term-card-store-reviewed",
+  "status": "fully_reviewed_runtime_approved",
   "purpose": "캐주얼 캐릭터 일러스트 레퍼런스 해석 Agent의 TERM_CARD DB 적재 전 역할별 시드·검수 자료입니다. index와 categories에 적힌 5개 파일을 함께 검증하며, 런타임 용어 선택은 자체 TERM_CARD DB만 사용합니다.",
   "source_documents": [
     "docs/domains/illustration-reference/term-cards/SOURCE_PROVENANCE.md"
@@ -23,7 +23,7 @@
       "perspective",
       "layout"
     ],
-    "promotion_rule": "후보 카드는 오세창 검수 후 query_fragments, look_for, confidence_gate, requires 조건을 확정하고, API 계약·Skill·평가셋을 함께 갱신한 뒤에만 runtime_eligible를 true로 바꿉니다.",
+    "promotion_rule": "현재 5개 역할 파일의 74개 카드는 오세창 검수를 거쳐 모두 runtime_eligible=true로 승인되었습니다. 이후 새 카드는 오세창 검수와 query_fragments, look_for, confidence_gate, requires 조건의 확정, API 계약·Skill·평가셋 검토 뒤에만 추가합니다.",
     "query_rule": "코드는 선택된 카드의 query_fragments만 결합합니다. 일상어 설명을 검색어에 그대로 덧붙이지 않고, 카드에 있는 표준 전문용어 조각만 사용합니다. requires_all_of는 모두, requires_any_of는 하나 이상 충족해야 합니다."
   },
   "pinterest_search_contract": {
@@ -65,14 +65,15 @@
     ],
     "term_selection_rule": "LLM은 입력의 실제 단서가 confidence_gate를 통과할 때만 term_id를 고릅니다. 단서가 부족하면 terminology와 Pinterest 링크를 만들지 않고 clarifying_question_ko를 사용합니다.",
     "body_term_notice": "체형 카드는 사람을 평가하거나 진단하는 분류가 아닙니다. 캐릭터의 실루엣과 비례를 찾기 위한 레퍼런스 용어입니다.",
-    "candidate_policy": "runtime_eligible가 false인 후보 카드는 초보자 화면과 검색 결과에 노출하지 않습니다. active_term_feedback은 오세창 검수를 완료했으며, 후보 카드는 별도 검수·계약 확정 뒤에만 승격합니다."
+    "candidate_policy": "현재 5개 역할 파일의 74개 카드는 모두 초보자 화면과 검색 결과의 선택 후보입니다. active_term_feedback은 그중 20개 카드에 대한 추가 초보자 피드백이며, 새 카드 또는 파일 밖 용어는 별도 검수·계약 확정 전까지 선택 후보가 아닙니다.",
+    "feedback_fallback_rule": "active_term_feedback 항목이 있는 20개 카드는 해당 초보자 피드백을 표시합니다. 항목이 없는 승인 카드 54개는 label_ko, source_answer_draft, look_for만 표시하고, 없는 쉬운 뜻·혼동 안내·추가 질문을 LLM이 지어내지 않습니다."
   },
   "beginner_feedback_review": {
     "status": "reviewed",
     "reviewed_by": "오세창",
-    "reviewed_at": "2026-09-21",
-    "scope": "runtime_eligible=true인 활성 20개 term_id와 active_term_feedback의 초보자용 용어 설명·선택 이유·혼동 안내·추가 질문",
-    "excluded": "runtime_eligible=false인 후보 80개 카드, 외부 검색 결과, 실제 외부 어휘 조회 결과, 평가 실행 결과"
+    "reviewed_at": "2026-09-22",
+    "scope": "5개 역할 파일의 74개 term_id 전체에 대한 런타임 승인 상태. active_term_feedback의 초보자용 용어 설명·선택 이유·혼동 안내·추가 질문은 20개 카드에 대한 추가 검수 자료입니다.",
+    "excluded": "외부 검색 결과, 실제 외부 어휘 조회 결과, 평가 실행 결과, 역할별 JSON에 없는 새 term_id"
   },
   "active_term_feedback": {
     "body_hourglass": {

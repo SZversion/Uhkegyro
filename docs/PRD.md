@@ -35,10 +35,10 @@
 
 ### TERM_CARDS 계약
 
-- 데이터셋: `illustration_reference_master_term_cards`, 버전 `0.6-self-managed-term-card-store-draft`, 총 74개 시드 카드. 역할별 JSON은 자체 TERM_CARD DB 적재 전의 검수·시드 자료이며, 구현 후 런타임 단일 원본은 자체 DB다.
+- 데이터셋: `illustration_reference_master_term_cards`, 버전 `0.7-self-managed-term-card-store-reviewed`, 총 74개 시드 카드. 역할별 JSON은 자체 TERM_CARD DB 적재 전의 검수·시드 자료이며, 구현 후 런타임 단일 원본은 자체 DB다.
 - 현재 선택 가능 조건: `runtime_eligible=true` **그리고** `mvp_status=active_in_current_contract`.
-- 현재 선택 가능 카드는 20개이며 역할별로 `body` 5, `pose` 7, `view` 4, `perspective` 3, `layout` 1개다.
-- `runtime_eligible=false` 카드는 API·UI·검색 결과에 노출하지 않는다. `detail`, `intent`, `style`은 현재 MVP 데이터셋과 역할별 파일에서 제외한다.
+- 현재 시드 카드 74개는 모두 선택 가능하며 역할별로 `body` 6, `pose` 52, `view` 9, `perspective` 5, `layout` 2개다.
+- 역할별 JSON에 없는 새 카드와 `detail`, `intent`, `style` 역할은 현재 MVP의 API·UI·검색 결과에 노출하지 않는다.
 - 카드의 `confidence_gate`, `requires_all_of`, `requires_any_of`를 만족하지 않으면 선택하지 않는다.
 
 ### 품질·안전 원칙

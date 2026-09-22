@@ -168,13 +168,13 @@
       },
       "requires_all_of": [],
       "requires_any_of": [],
-      "mvp_status": "candidate_view",
+      "mvp_status": "active_in_current_contract",
       "reviewed_by": "오세창",
       "reviewed_at": "2026-09-21",
       "source_category_id": "camera_views",
       "source_answer_draft": "인물을 옆에서 본 시점입니다.",
       "review_status": "reviewed",
-      "runtime_eligible": false
+      "runtime_eligible": true
     },
     {
       "term_id": "view_back",
@@ -202,13 +202,13 @@
       },
       "requires_all_of": [],
       "requires_any_of": [],
-      "mvp_status": "candidate_view",
+      "mvp_status": "active_in_current_contract",
       "reviewed_by": "오세창",
       "reviewed_at": "2026-09-21",
       "source_category_id": "camera_views",
       "source_answer_draft": "인물을 뒤에서 본 시점입니다.",
       "review_status": "reviewed",
-      "runtime_eligible": false
+      "runtime_eligible": true
     },
     {
       "term_id": "view_birds_eye",
@@ -236,13 +236,13 @@
       },
       "requires_all_of": [],
       "requires_any_of": [],
-      "mvp_status": "candidate_view",
+      "mvp_status": "active_in_current_contract",
       "reviewed_by": "오세창",
       "reviewed_at": "2026-09-21",
       "source_category_id": "camera_views",
       "source_answer_draft": "높은 곳에서 장면 전체를 내려다보는 시점입니다. 단순 하이 앵글보다 위쪽에 가깝습니다.",
       "review_status": "reviewed",
-      "runtime_eligible": false
+      "runtime_eligible": true
     },
     {
       "term_id": "view_worms_eye",
@@ -270,13 +270,13 @@
       },
       "requires_all_of": [],
       "requires_any_of": [],
-      "mvp_status": "candidate_view",
+      "mvp_status": "active_in_current_contract",
       "reviewed_by": "오세창",
       "reviewed_at": "2026-09-21",
       "source_category_id": "camera_views",
       "source_answer_draft": "아주 낮은 위치에서 위로 올려다보는 시점입니다. 단순 로우 앵글보다 아래쪽에 가깝습니다.",
       "review_status": "reviewed",
-      "runtime_eligible": false
+      "runtime_eligible": true
     },
     {
       "term_id": "view_dutch_angle",
@@ -304,13 +304,13 @@
       },
       "requires_all_of": [],
       "requires_any_of": [],
-      "mvp_status": "candidate_view",
+      "mvp_status": "active_in_current_contract",
       "reviewed_by": "오세창",
       "reviewed_at": "2026-09-21",
       "source_category_id": "camera_views",
       "source_answer_draft": "카메라의 수평선을 기울여 불안정하거나 긴장된 느낌을 만드는 시점입니다.",
       "review_status": "reviewed",
-      "runtime_eligible": false
+      "runtime_eligible": true
     }
   ]
 }
