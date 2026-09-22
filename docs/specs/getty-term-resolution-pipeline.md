@@ -1,6 +1,6 @@
 > 이 문서는 초기 Getty 용어 파이프라인 Spec입니다. 최신 제품·아키텍처 기준은 `docs/PRD.md`와 `docs/SDD.md`를 우선합니다.
 >
-> **2026-09-21 폐기됨:** 이 외부 어휘 파이프라인은 구현하거나 호출하지 않는다. 현재 용어 해석은 `docs/specs/self-managed-term-card-store.md`의 정적 카드 저장소만 사용한다.
+> **2026-09-21 폐기됨:** 아래 본문은 과거 검토 이력이며 구현·실행·평가 기준으로 사용하지 않는다. Getty는 용어 조사 시 사람이 참고한 자료일 뿐, 데이터·DB 레코드·MCP 응답·LLM 입력·사용자 화면에 포함하지 않는다. 현재 용어 선택은 `self-managed-term-card-store.md`의 자체 TERM_CARD DB 계약만 사용한다.
 
 # Getty Term Resolution Pipeline Spec
 

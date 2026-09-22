@@ -10,7 +10,7 @@
 ## Goal
 
 - 백엔드 FastAPI와 프론트 Next.js 사이의 **연결 계약**(요청·응답 전송, 식별자, 환경변수, CORS, 오류 처리, UI 상태 매핑)을 고정한다.
-- 응답 스키마의 상세 정의는 **`illustration-reference-failure-state-contract.md`를 참조**하여 중복하지 않는다. 이 문서는 전송·연결 계층만 다룬다.
+- 응답 스키마의 상세 정의는 **`illustration-reference-current-failure-state-contract.md`를 참조**하여 중복하지 않는다. 이 문서는 전송·연결 계층만 다룬다.
 - 성공 기준:
   - 브라우저는 `/mcp`, LLM SDK, 비밀값을 직접 호출하지 않는다.
   - 요청에 `request_text`, `anonymous_user_id`, `session_id`를 항상 포함한다.
@@ -72,7 +72,7 @@
 
 ### 3. 응답 계약
 
-응답 본문은 상태 코드와 함께 **`illustration-reference-failure-state-contract.md`의 `AgentResponse` 계약(공통 응답 계약 §1)을 그대로 따르고, 이 문서는 재정의하지 않는다.**
+응답 본문은 상태 코드와 함께 **`illustration-reference-current-failure-state-contract.md`의 `AgentResponse` 계약을 그대로 따르고, 이 문서는 재정의하지 않는다.**
 
 - 정상 및 의미 상태: HTTP `200` (예: `success`, `needs_clarification`, `partial_result`)
 - 재시도 필요: HTTP `503` (`service_unavailable`만 해당)
@@ -158,7 +158,7 @@ export async function requestReferencePlan(requestText: string) {
 - GIVEN: 요청 본문이 비었거나 `request_text`가 1~500자 제약을 위반한다.
 - WHEN: 백엔드가 요청을 검증한다.
 - THEN: HTTP `422`를 반환하고 `AgentResponse`의 `status` enum을 만들지 않는다.
-- AND THEN: LLM·Pinterest·외부 어휘 도구를 호출하지 않으며, 프론트는 입력 형식 안내를 표시한다.
+- AND THEN: LLM·Pinterest·런타임 외부 어휘 도구를 호출하지 않으며, 프론트는 입력 형식 안내를 표시한다. 자체 TERM_CARD DB 조회는 브라우저가 아니라 서버 내부에서만 수행한다.
 
 **AC-03 · 서비스 불가 시 503**
 - GIVEN: 검증 가능한 결과를 만들지 못했다.
@@ -181,5 +181,5 @@ export async function requestReferencePlan(requestText: string) {
 **AC-06 · 응답 스키마는 참조 스펙과 중복 정의하지 않는다**
 - GIVEN: 이 문서와 참조 스펙을 대조한다.
 - WHEN: 응답 필드 구조·검증 규칙을 확인한다.
-- THEN: 이 문서는 전송·연결 계약만 정의하고 `AgentResponse` 세부는 `illustration-reference-failure-state-contract.md`를 참조한다.
+- THEN: 이 문서는 전송·연결 계약만 정의하고 `AgentResponse` 세부는 `illustration-reference-current-failure-state-contract.md`를 참조한다.
 - AND THEN: 두 문서의 상태·HTTP 코드·UI 행동이 모순되지 않는다.

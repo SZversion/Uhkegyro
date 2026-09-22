@@ -56,7 +56,7 @@
 - 전문 용어의 초보자용 설명과 불확실성 표시
 - 선택된 역할별 Pinterest Pin 미리보기(기본 최대 8개, 설정으로 변경 가능)
 - 역할별 결과의 Pin URL 세션 저장 및 공식 `pinit.js` `embedPin` 렌더링
-- TERM_CARD JSON에 미리 기록된 용어·출처 정보
+- 자체 TERM_CARD DB에 적재할 팀 검수 용어·설명·검색 조각
 
 ### 제공하지 않을 것
 
@@ -74,7 +74,7 @@
   -> FastAPI Agent 메시지 API (명세 미정)
     -> LLM: 일상어를 허용된 term_id와 역할로 구조화
     -> 결정론 코드: Pydantic 검증, 역할 순서, 허용 ID, URL 인코딩
-    -> FastMCP: LLM이 필요하다고 판단한 도구 호출(도구 목록·계약 미정)
+    -> FastMCP: 자체 TERM_CARD DB의 검증된 카드 정보를 구조화 조회
     -> PinterestSearchProvider tool: 역할별 최대 8개 Pin URL 반환
     -> UI: 역할별 섹션에 pinit.js embedPin 미리보기 표시
 ```
@@ -83,7 +83,7 @@
 | --- | --- |
 | LLM | 일상어의 의미 해석, 조건 충돌·모호성 인식, 허용된 구조화 선택 생성 |
 | 결정론 코드 | Pydantic 스키마 검증, 허용 `term_id`, 역할 순서, URL 인코딩, 실패 응답 |
-| FastMCP | 향후 확정할 도구들을 담고 LLM이 필요하다고 판단한 호출을 중계 |
+| FastMCP | 자체 TERM_CARD DB의 검증된 카드 정보를 조회하고, Getty 데이터·외부 어휘 API·SPARQL·웹 호출은 하지 않음 |
 | UI | 입력 안내, 로딩·실패 안내, 용어·한계·외부 링크 표시 |
 
 LLM은 링크를 임의로 만들거나 데이터 출처를 지어내지 않습니다. 링크 생성과 출력 검증은 코드가 맡습니다.
@@ -92,10 +92,11 @@ LLM은 링크를 임의로 만들거나 데이터 출처를 지어내지 않습�
 
 | 구분 | 계획된 역할 | 출력에 보이는 정보 |
 | --- | --- | --- |
-| TERM_CARD category JSON | `term-cards/index.json`과 역할별 파일로 나눈 검토·승인 용어의 단일 원본 | term ID, 설명, query fragment, 검수 상태 |
+| 자체 TERM_CARD DB | 팀이 작성·검수한 용어의 런타임 단일 원본 | term ID, 설명, query fragment, 검수 상태 |
+| TERM_CARD category JSON | DB 적재 전 역할별 검수·시드 자료 | 역할별 카드 수와 활성 조건 검증 |
 | Pinterest | 사용자가 원본을 직접 확인할 외부 탐색 대상 | Pin URL 저장 및 공식 위젯 미리보기 |
 
-Pinterest 이미지는 저장하지 않습니다. 검색 도구가 반환한 Pin URL만 세션에 저장하고, 화면에서는 공식 `pinit.js` `embedPin`으로 원본 Pin을 렌더링합니다. 검색 제공자의 API·비즈니스 계정 요건은 확인 후 확정합니다. Pin 삭제와 렌더링/네트워크 오류를 공식 응답만으로 구분할 수 없으면 `render_error`로 처리합니다. 용어·출처는 TERM_CARD JSON을 그대로 사용하며, LLM이나 런타임 외부 조회로 보강하지 않습니다. 자체 카드와 권리 검토 기준은 팀 승인을 거쳐야 하며, 승인되지 않은 데이터는 완료된 카탈로그로 주장하지 않습니다.
+Pinterest 이미지는 저장하지 않습니다. 검색 도구가 반환한 Pin URL만 세션에 저장하고, 화면에서는 공식 `pinit.js` `embedPin`으로 원본 Pin을 렌더링합니다. 검색 제공자의 API·비즈니스 계정 요건은 확인 후 확정합니다. Pin 삭제와 렌더링/네트워크 오류를 공식 응답만으로 구분할 수 없으면 `render_error`로 처리합니다. 용어 선택·설명·검색 조각은 팀이 작성·검수한 자체 TERM_CARD DB만 사용합니다. Getty는 용어 조사 시 참고한 자료일 뿐, 서비스 데이터·사용자 화면·LLM 입력·런타임 조회에 포함하지 않습니다. 자체 카드와 권리 검토 기준은 팀 승인을 거쳐야 하며, 승인되지 않은 데이터를 완료된 카탈로그로 주장하지 않습니다.
 
 ## API와 MCP 상태
 
@@ -105,6 +106,7 @@ Pinterest 이미지는 저장하지 않습니다. 검색 도구가 반환한 Pin
 | Agent 메시지 API | 명세 미정 | 사용자 메시지를 저장하고 비동기 작업을 생성하는 공개 진입점 |
 | `/docs` | FastAPI 기본 문서에서 확인 가능 | 요청·응답 모델 및 오류 응답 확인 |
 | `/mcp` | 미구현. `example_tool` 골조만 존재 | FastMCP Streamable HTTP endpoint와 도구 호출 증거 |
+| 자체 TERM_CARD DB | 미구현·미적재 | 팀 검수 시드 카드를 적재하고 역할별 활성 카드만 조회 |
 | MCP 접근 제어 | 미구현 | 토큰 또는 허용 클라이언트 정책을 문서화하고 적용 |
 
 `/mcp`를 공개 데모 API처럼 무제한 노출하지 않습니다. 구현 시 연결 방법, 도구 목록, 실제 호출 결과, 접근 제어 방식을 이 README에 추가합니다.
@@ -172,7 +174,7 @@ docker compose down
 | [도메인 프로필](./docs/domains/illustration-reference/domain-profile.md) | 사용자, 업무 경험, 경쟁 서비스, 범위와 데이터 출처 |
 | [경쟁 서비스 분석](./docs/domains/illustration-reference/competitive-analysis.md) | 실제 시작 흐름 비교, 차별점과 조사 한계 |
 | [설계 문서](./docs/domains/illustration-reference/design.md) | LLM·결정론 코드·MCP의 책임 분리와 폴백 설계 |
-| [실패 상태 계약](./docs/specs/illustration-reference-failure-state-contract.md) | 성공·정보 부족·범위 밖·안전 거부·부분 결과·서비스 불가의 응답 및 LLM JSON 계약 |
+| [실패 상태 계약](./docs/specs/illustration-reference-current-failure-state-contract.md) | 성공·정보 부족·범위 밖·안전 거부·부분 결과·서비스 불가의 현행 응답 및 LLM JSON 계약 |
 | [NOT_BUILD.md](./NOT_BUILD.md) | MVP에서 의도적으로 만들지 않는 기능과 이유 |
 | [EVAL_REPORT.md](./EVAL_REPORT.md) | 관측, 프롬프트 운영, 평가, 비용·지연, 출시 게이트 |
 | [evals/](./evals/) | 평가셋과 판정 기준 |

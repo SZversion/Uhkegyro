@@ -13,7 +13,7 @@
 - Agent가 선택한 역할별로 Pinterest 검색 결과 상위 8개 Pin을 표시한다. 기본값 8은 설정으로 변경 가능하다.
 - Pin 이미지는 저장하지 않고 URL만 저장하며, 화면에는 Pinterest 공식 `pinit.js` `embedPin`으로 렌더링한다.
 - 사용자가 입력을 계속하는 하나의 chat 세션에 대화와 검색 결과를 누적한다.
-- LLM 출력은 `docs/domains/illustration-reference/term-cards/index.json`과 index가 명시한 역할별 카드 파일의 현재 런타임 허용 카드만 사용한다.
+- LLM 출력은 프로젝트 자체 TERM_CARD DB의 현재 런타임 허용 카드만 사용한다. 역할별 JSON은 DB 적재 전 검수·시드 자료이며, 런타임 조회 원본이 아니다.
 
 이미지 생성·편집·업로드 이미지 분석, 특정 작가 화풍 복제, Pinterest 이미지 파일·썸네일·메타데이터 저장·재게시, 카드 자동 생성·수정, 동적 외부 후보의 RAG 주입은 범위 밖이다. Pinterest 검색 결과를 가져오는 검색 제공자는 비즈니스 계정·API 확인 전까지 미정으로 둔다.
 
@@ -34,7 +34,7 @@
 
 ### TERM_CARDS 계약
 
-- 데이터셋: `illustration_reference_master_term_cards`, 버전 `0.5-self-managed-term-card-store-draft`, 총 74개 카드. `term-cards/index.json`이 현재 MVP에서 선택 가능한 5개 역할 파일 목록과 전역 계약을 제공한다.
+- 데이터셋: `illustration_reference_master_term_cards`, 버전 `0.6-self-managed-term-card-store-draft`, 총 74개 시드 카드. 역할별 JSON은 자체 TERM_CARD DB 적재 전의 검수·시드 자료이며, 구현 후 런타임 단일 원본은 자체 DB다.
 - 현재 선택 가능 조건: `runtime_eligible=true` **그리고** `mvp_status=active_in_current_contract`.
 - 현재 선택 가능 카드는 20개이며 역할별로 `body` 5, `pose` 7, `view` 4, `perspective` 3, `layout` 1개다.
 - `runtime_eligible=false` 카드는 API·UI·검색 결과에 노출하지 않는다. `detail`, `intent`, `style`은 현재 MVP 데이터셋과 역할별 파일에서 제외한다.
@@ -43,7 +43,7 @@
 ### 품질·안전 원칙
 
 - LLM은 의미 해석만 한다. 허용 ID 검증, 카드 로딩, 역할 순서, 링크 생성, URL 인코딩, 실패 응답은 결정론 코드가 맡는다.
-- TERM_CARD는 팀이 관리·검수하는 정적 저장소의 단일 원본이다. 외부 어휘 조회·URI·provider 결과가 새 `term_id`가 되거나 LLM에 자동 주입되면 안 된다.
+- TERM_CARD는 팀이 작성·검수한 자체 DB의 단일 원본이다. Getty는 용어 조사 시 참고한 자료일 뿐 서비스 DB·사용자 응답·런타임 도구 출처가 아니다. 외부 API·provider 결과·참고 자료가 새 `term_id`가 되거나 LLM에 자동 주입되면 안 된다.
 - 모호·상충 입력은 단정하지 않고 낮은 확신도, 한계, `pending_human_review`, 또는 추가 질문으로 처리한다.
 - 비밀값은 UI에 노출하지 않으며 `.env`만 사용한다. MCP는 무제한 공개 endpoint로 제공하지 않는다.
 - 사용자·LLM chat과 검색 이력은 Cloud SQL for PostgreSQL에 1개월 보관하고 하루 한 번 만료 데이터를 삭제한다. 세션 식별은 서버 발급 불투명 랜덤 토큰을 HttpOnly 쿠키로 전달한다.
@@ -55,7 +55,7 @@
 3. **Given** 카드 선택, **When** 검색 도구를 호출하면, **Then** 해당 카드의 `query_fragments`만 검색 입력으로 사용하고 역할별 최대 8개의 Pin URL을 반환한다.
 4. **Given** 단서 부족 또는 충돌 입력, **When** 해석하면, **Then** 용어·링크를 추측하지 않고 카드 기반 추가 질문 또는 `pending_human_review`를 반환한다.
 5. **Given** 특정 역할만 선택, **When** 링크를 만들면, **Then** 미선택 역할의 개별 링크는 없다.
-6. **Given** 활성 팀 카드, **When** 결과를 표시하면, **Then** 카드의 용어·검수된 설명·선택 근거만 표시하고 외부 어휘 URI·출처를 표시하지 않는다.
+6. **Given** 활성 자체 DB 카드, **When** 결과를 표시하면, **Then** 팀이 작성·검수한 용어·설명·선택 근거만 표시하고 Getty 데이터·URI·귀속 정보를 표시하거나 조회하지 않는다.
 7. **Given** 상태 점검, **When** `GET /health`를 호출하면, **Then** `{"status":"ok"}`를 반환한다.
 8. **Given** 활성 카드가 선택된 역할, **When** 검색이 완료되면, **Then** 해당 역할 섹션에 최대 8개의 Pin 미리보기를 표시한다.
 9. **Given** 사용자가 후속 chat으로 일부 역할만 다시 검색하라고 하면, **When** Agent가 처리하면, **Then** 지정된 Pin은 유지하고 요청된 역할의 새 결과만 누적한다.

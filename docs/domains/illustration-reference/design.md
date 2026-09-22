@@ -2,7 +2,7 @@
 
 ## 현재 구현 단계
 
-현재는 기반 골조 단계다. Pydantic 요청/선택 계약, 정적 term ID 카드, 역할 검증, Pinterest URL 생성, `/health`, 팀이 관리하는 TERM_CARD 정적 저장소 검증 FastMCP 파이프라인을 구현한다. OpenAI, Langfuse, 실제 영속 DB, UI, 배포는 아직 구현하거나 호출하지 않는다.
+현재는 기반 골조 단계다. Pydantic 요청/선택 계약, 자체 TERM_CARD DB, 역할 검증, Pinterest URL 생성, `/health`, 팀이 관리하는 카드 검증 FastMCP 파이프라인을 구현한다. DB schema·적재·조회는 목표 설계에 포함하지만 아직 구현·적재하지 않았다. Getty는 용어 조사 참고 자료일 뿐 서비스 데이터로 사용하지 않는다. OpenAI, Langfuse, UI, 배포는 아직 구현하거나 호출하지 않는다.
 
 ## 책임 분리
 
@@ -10,7 +10,7 @@
 | --- | --- |
 | LLM (향후) | 일상어를 허용 term ID·근거·대안으로 구조화 |
 | 결정론 코드 | 허용 ID, 역할 일치, 역할 순서, 검색어와 URL 인코딩 검증 |
-| FastMCP | LLM이 선택한 허용 term ID를 검증하고, 정적 `TERM_CARDS`의 용어·설명·검수 상태로 Pinterest 검색 계획을 반환한다. 외부 어휘 조회나 카탈로그 메타데이터를 반환하지 않는다. |
+| FastMCP | LLM이 선택한 허용 term ID를 검증하고, 자체 TERM_CARD DB의 용어·설명·검수 상태로 Pinterest 검색 계획을 반환한다. Getty API·SPARQL·웹 호출과 Getty 데이터 조회는 하지 않는다. |
 | UI (향후) | 용어·근거·한계·역할별 Pin 미리보기를 표시 |
 
 ## 기반 계약
@@ -22,14 +22,14 @@
 
 ## 자체 관리 TERM_CARD 저장소
 
-- 용어의 단일 원본은 역할별 정적 TERM_CARD JSON이며, index에 등록된 파일만 로드한다. 외부 어휘 API나 다중 provider를 조회·병합하지 않는다.
+- 용어 선택의 단일 원본은 자체 TERM_CARD DB다. 역할별 JSON은 DB 적재 전의 검수·시드 자료이며, 외부 API·다중 provider·Getty 데이터는 조회·병합하지 않는다.
 - 카드에 없는 표현 또는 저신뢰도 해석은 추가 질문 또는 `pending_human_review`로 처리한다. 사람 승인과 평가셋 회귀 확인 없이는 정적 카드·Skill에 자동 반영하지 않는다.
 - Langfuse 도입 후에는 원문 요청 대신 해시, confidence, limitation code, 선택된 팀 카드 ID만 기록한다. 이 단계에서는 실제 Langfuse 호출을 하지 않는다.
 
 ## 정적 카드 검증 실험
 
 - 실제 LLM 호출 전에는 `Selection`이 LLM의 구조화 출력을 나타낸다. MCP는 유효한 프로젝트 `role`·`term_id` 조합만 처리하며, 잘못된 역할 또는 term ID는 카드 저장소 조회 전에 거부한다.
-- 필요한 카드가 없거나 저장소를 읽을 수 없으면 외부 조회로 보완하지 않고 `TEAM_TERM_CARD_UNAVAILABLE` 또는 `STATIC_CARD_STORE_UNAVAILABLE`을 반환한다.
+- 필요한 카드가 없거나 저장소를 읽을 수 없으면 외부 조회로 보완하지 않고 `TEAM_TERM_CARD_UNAVAILABLE` 또는 `TERM_CARD_STORE_UNAVAILABLE`을 반환한다.
 - Pinterest 링크는 검증된 정적 카드의 `query_fragments`로만 생성한다.
 
 ## 다음 단계 전제

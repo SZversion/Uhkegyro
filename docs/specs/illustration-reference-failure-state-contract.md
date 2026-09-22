@@ -1,4 +1,4 @@
-> **2026-09-21 폐기됨:** 이 문서의 외부 어휘 조회·장애·폴백 분기는 현재 계약이 아니다. 구현은 `docs/specs/self-managed-term-card-store.md`와 최신 `docs/PRD.md`·`docs/SDD.md`의 정적 TERM_CARD 저장소 규칙을 따른다.
+> **2026-09-21 폐기됨:** 아래 본문의 외부 어휘 조회·장애·폴백 분기는 현재 계약이 아니며, 구현·실행·평가에 사용하지 않는다. 현재 구현 기준은 `docs/specs/self-managed-term-card-store.md`, 최신 `docs/PRD.md`·`docs/SDD.md`, 그리고 [`illustration-reference-current-failure-state-contract.md`](./illustration-reference-current-failure-state-contract.md)의 **자체 TERM_CARD DB** 규칙이다. Getty 데이터는 서비스 DB·MCP·LLM 입력·사용자 화면에 사용하지 않는다.
 
 # Illustration Reference Failure State Contract (historical)
 

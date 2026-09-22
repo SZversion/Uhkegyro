@@ -1,6 +1,6 @@
 > 이 문서는 초기 용어 공급자 Spec입니다. 최신 제품·아키텍처 기준은 `docs/PRD.md`와 `docs/SDD.md`를 우선합니다.
 >
-> **2026-09-21 폐기됨:** 외부 어휘 공급자 전제는 더 이상 사용하지 않는다. 구현·검토는 `docs/specs/self-managed-term-card-store.md`의 팀 관리 정적 TERM_CARD 계약을 따른다.
+> **2026-09-21 폐기됨:** 아래 본문은 과거 외부 어휘 공급자 검토 이력이며 구현·실행·평가에 사용하지 않는다. Getty는 용어 조사 시 사람이 참고한 자료일 뿐 서비스 DB·MCP 응답·LLM 입력·사용자 화면에 포함하지 않는다. 구현·검토는 팀 관리 자체 TERM_CARD DB 계약만 따른다.
 
 # Vocabulary Candidate Provider 교체 지점 Spec
 

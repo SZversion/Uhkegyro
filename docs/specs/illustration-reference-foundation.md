@@ -13,7 +13,7 @@
 
 - **해결 목표**: 이후 LLM·정적 카드 검증 MCP·UI가 같은 계약을 사용할 수 있도록 FastAPI health check, Pydantic 요청/선택 모델, 자체 관리 정적 용어 카드, 도메인 검증, Pinterest 검색 URL 생성 함수를 구현한다.
 - **성공 기준**: `/health`가 서비스 상태를 반환하고, 입력 길이/추가 필드/UUID 형식과 term ID·축·구도 하위 역할을 검증한다. 유효한 LLM 선택은 팀 카드 정보와 함께 `body → pose → view → perspective → layout` 순서의 URL 계획으로 변환한다.
-- **Out of Scope**: OpenAI 또는 Langfuse 호출, LLM 해석, PostgreSQL TERM_CARD 저장소·마이그레이션, Pinterest HTTP 요청·스크래핑·이미지 표시, Next.js UI, Docker Compose 확장, 배포, 평가 데이터 업로드, 외부 어휘 API.
+- **Out of Scope**: OpenAI 또는 Langfuse 호출, LLM 해석, PostgreSQL TERM_CARD DB의 실제 적재·마이그레이션, Pinterest HTTP 요청·스크래핑·이미지 표시, Next.js UI, Docker Compose 확장, 배포, 평가 데이터 업로드, Getty 데이터·외부 어휘 API·SPARQL·웹 호출.
 
 ## What
 
@@ -42,7 +42,7 @@
 - `backend/app/domain/term_cards.py`는 허용된 term ID와 축·역할·검색 조각·관찰 기준을 고정한다.
 - `backend/app/services/validator.py`는 LLM을 호출하지 않고 선택이 정적 카드와 일치하는지만 검증한다.
 - `backend/app/services/search_plan.py`는 `urllib.parse.urlencode`로 역할별·통합 Pinterest 검색 URL을 만든다. Pinterest에 HTTP 요청하지 않는다.
-- 현재 TERM_CARD 저장소는 역할별 JSON이며, index에 선언된 파일만 로드한다. 실제 영속 DB 도입은 별도 Spec에서 repository·스키마·마이그레이션과 함께 진행한다.
+- 역할별 JSON은 TERM_CARD DB 적재 전 시드·검수 자료다. 런타임 선택 저장소는 자체 TERM_CARD DB이며, 실제 repository·스키마·마이그레이션·적재는 별도 구현 작업이다. Getty 데이터는 사용하지 않는다.
 - 이번 단계에는 `POST /api/agent`를 구현하지 않는다. LLM Structured Output과 재시도 정책이 준비되는 다음 단계에서 최신 응답 계약과 함께 추가한다.
 
 ## AC (Given-When-Then)
