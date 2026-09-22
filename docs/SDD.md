@@ -10,21 +10,22 @@
 
 ```text
 Next.js UI
-  -> POST /api/sessions
-  -> POST /api/sessions/{session_id}/messages
+  -> POST /api/agent
   -> GET /api/jobs/{job_id} polling
 
-FastAPI route -> job queue/worker -> LLM adapter -> Card resolver -> Search provider -> response assembler
-                                         ^
-                              JSON catalog memory lookup
+FastAPI route -> job queue/worker -> LLM adapter -> Pydantic candidate validation
+                                             -> FastMCP get_active_term_card -> Card resolver
+                                             -> Search provider -> response assembler
+FastMCP startup -> JSON catalog validation -> immutable active-card memory
 ```
 
 | 컴포넌트 | 책임 | 금지 |
 | --- | --- | --- |
-| Next.js UI | 세션 생성, 메시지 전송, polling, 결과·질문·일반 실패 표시 | LLM/MCP 직접 호출, 비밀값·카드 결정 |
+| Next.js UI | `/api/agent` 제출, polling, 결과·질문·일반 실패 표시 | LLM/MCP 직접 호출, 비밀값·카드 결정 |
 | FastAPI route | 쿠키 소유권, 요청 검증, job 생성/조회 | 도메인 해석 |
 | LLM adapter | 카드 후보·근거·모호성 신호 생성 | 자유 term ID·검색 URL·최종 상태 결정 |
-| Card resolver | 메모리 카탈로그의 역할·활성·조건 검증 | 외부 어휘 병합 |
+| FastMCP TERM_CARD tool | 시작 검증을 통과한 JSON 메모리에서 활성 카드 한 건을 구조화 조회 | 외부 어휘 병합·새 카드 생성·검색 실행 |
+| Card resolver | MCP가 반환한 카드의 역할·활성·조건을 재검증 | 외부 어휘 병합 |
 | Search provider | 검증된 검색 조각으로 Pin 결과 반환 | 크롤링·이미지 저장 |
 | Response assembler | 상태·카드 피드백·Pin 결과 조립 | 오류 원문·비밀값 노출 |
 
@@ -38,7 +39,7 @@ LLM timeout/429/일시적 5xx·구조화 출력 오류, 검색 provider timeout/
 
 ## 4. API·프론트 경계
 
-정확한 endpoint, Pydantic 모델, 상태 enum, failure code는 [api-contract.md](./specs/api-contract.md)가 단일 기준이다. UI는 Next.js이며 `NEXT_PUBLIC_API_BASE_URL=/api`, `credentials:"include"`, HttpOnly same-origin 세션 쿠키를 사용한다. 브라우저의 `/api/*` 요청은 Next.js rewrite를 거쳐 내부 FastAPI로 전달하며, FastAPI origin 직접 호출·cross-origin credential cookie·Vite proxy는 사용하지 않는다. 요청·응답 변환이 필요해질 때만 Next.js Route Handler BFF를 추가한다. `pinit.js`, 사용자 retry endpoint는 사용하지 않는다.
+정확한 endpoint, Pydantic 모델, 상태 enum, failure code는 [api-contract.md](./specs/api-contract.md)가 단일 기준이다. UI는 Next.js이며 `NEXT_PUBLIC_API_BASE_URL=/api`, `credentials:"include"`, HttpOnly same-origin 세션 쿠키를 사용한다. 브라우저의 `/api/*` 요청은 Next.js rewrite를 거쳐 내부 FastAPI로 전달하며, FastAPI origin 직접 호출·cross-origin credential cookie·Vite proxy는 사용하지 않는다. 요청·응답 변환이 필요해질 때만 Next.js Route Handler BFF를 추가한다. `/mcp`는 브라우저가 직접 호출하지 않는 Streamable HTTP 도구 endpoint이며, 계약은 [mcp-contract.md](./specs/mcp-contract.md)가 단일 기준이다. `pinit.js`, 사용자 retry endpoint는 사용하지 않는다.
 
 ## 5. 데이터·보안·관측
 
