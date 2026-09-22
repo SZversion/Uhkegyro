@@ -25,7 +25,7 @@
 
 - MCP 도구 이름·입력·출력·전송 방식과 Pinterest 검색 제공자 계약. 이는 별도 MCP Spec에서 확정한다.
 - 이미지 바이너리·썸네일 저장, Pinterest Pin 재게시, 이미지 생성·편집·업로드 이미지 분석.
-- 자동 재시도. 사용자가 명시적으로 재시도를 요청할 때만 새 작업을 만든다.
+- 무제한 재시도. 재시도 가능한 실패는 최대 3회(`max_attempts=3`)까지만 처리한다.
 
 ## What
 
@@ -55,7 +55,7 @@
 
 ### 공통 규칙
 
-- 모든 `/api/*` 경로는 서버가 설정한 세션 쿠키를 검증한다. 세션 쿠키는 `HttpOnly`, `Secure`, `SameSite=Lax`, `Path=/` 속성을 가진다.
+- 모든 `/api/*` 경로는 서버가 설정한 세션 쿠키를 검증한다. 운영 쿠키는 `HttpOnly`, `Secure=true`, `SameSite=Lax`, `Path=/` 속성을 가진다. localhost HTTP 개발에서는 `Secure=false`를 사용하고 localhost origin만 CORS에 허용한다.
 - `session_id`와 `job_id`는 서버가 생성한 불투명 UUID다. 클라이언트는 새 값을 만들지 않는다.
 - `GET /health`를 제외한 요청·응답은 JSON UTF-8을 사용한다.
 - 공개 요청 본문에서 허용하는 사용자 결정 값은 `request_text`뿐이다. 역할·용어·검색어·Pin URL은 백엔드만 결정한다.
@@ -173,15 +173,17 @@ GET /api/jobs/{job_id}
 - 이 초안의 `agent_status`와 `needs_clarification` 표현은 확정 계약이 아니다. 구현 시에는 SDD의 내부 LLM 출력 규칙을 따른다: `needs_clarification`은 boolean 필드이며, `true`이면 용어·링크 조립을 중단하고 사용자 질문 경로로 전환한다.
 - 역할별 `pins`는 최대 8개다. Pin의 `render_status`는 `active` 또는 `deleted`다. 역할의 `search_status`는 `active`, `no_results`, `search_error` 중 하나다.
 - `deleted` Pin은 URL 이력으로만 반환하고 프론트는 `embedPin`을 만들지 않는다. `no_results`와 `search_error`는 빈 `pins` 및 역할 상태·사용자 안내로 반환한다.
-- `agent_status=service_unavailable` 또는 `job_status=failed`이면 `retryable`은 실패 원인에 따라 결정한다.
+- `job_status=failed`는 envelope 상태이며 `result=null`, `failure_code`, `user_message`, `retryable`을 가진다. `agent_status`는 결과 payload에만 존재하고 작업 실패 envelope에는 존재하지 않는다.
 
 실패 응답은 `job_status=failed`, `result=null`, `failure_code`, `user_message`, `retryable`을 포함한다. `failure_code`는 `JOB_TIMEOUT`, `INSTANCE_INTERRUPTED`, `PROCESSING_ERROR` 중 하나이며, 내부 오류 원문·비밀값은 포함하지 않는다.
+
+확정 시 사용할 실패 매핑 초안: `JOB_TIMEOUT`과 `INSTANCE_INTERRUPTED`는 `retryable=true`로 시작하고, `attempt=3`이면 `false`로 전환한다. `PROCESSING_ERROR`는 기본 `retryable=false`이며, 명세서에서 재시도 가능한 처리 오류 목록을 별도로 승인한 경우에만 `true`로 둔다.
 
 조회 오류는 `401 SESSION_REQUIRED` 또는 `404 JOB_NOT_FOUND`다. 소유하지 않은 작업도 `404`로 처리한다.
 
 ### 5. `POST /api/jobs/{job_id}/retry`
 
-`failed`이고 `retryable=true`인 작업만 사용자가 명시적으로 재시도한다. 백엔드는 원래 입력과 실패 원인을 연결한 새 메시지·새 작업을 만든다. 자동 재시도는 하지 않는다.
+`failed`이고 `retryable=true`인 작업만 재시도한다. 재시도 가능한 실패는 기본 `retryable=true`이며 `attempt`가 3회에 도달하면 `retryable=false`로 종결한다. 백엔드는 원래 입력과 실패 원인을 연결한 새 메시지·새 작업을 만든다.
 
 성공 시 `202 Accepted`:
 
