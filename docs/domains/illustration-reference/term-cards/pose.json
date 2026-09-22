@@ -45,8 +45,7 @@
       "label_en": "weight-shift standing pose",
       "source_type": "team_card",
       "query_fragments": [
-        "weight shift standing pose",
-        "reference"
+        "stand weight shift reference"
       ],
       "look_for": [
         "무게가 한쪽 다리로 치우침",
@@ -80,8 +79,7 @@
       "label_en": "S-curve pose",
       "source_type": "team_card",
       "query_fragments": [
-        "S curve pose",
-        "reference"
+        "s curve pose"
       ],
       "look_for": [
         "머리부터 골반까지 부드럽게 이어지는 S자 흐름",
@@ -115,8 +113,7 @@
       "label_en": "standing pose",
       "source_type": "team_card",
       "query_fragments": [
-        "standing pose",
-        "reference"
+        "standing pose reference"
       ],
       "look_for": [
         "발로 바닥을 지지함",
@@ -150,8 +147,7 @@
       "label_en": "seated pose",
       "source_type": "team_card",
       "query_fragments": [
-        "seated pose",
-        "reference"
+        "seated pose reference"
       ],
       "look_for": [
         "엉덩이 또는 허벅지가 의자·바닥·소파에 지지됨",
@@ -221,8 +217,7 @@
       "label_en": "reclining pose",
       "source_type": "team_card",
       "query_fragments": [
-        "reclining pose",
-        "reference"
+        "reclining pose reference"
       ],
       "look_for": [
         "등·팔꿈치·옆구리 등으로 몸을 지지함",
@@ -256,9 +251,7 @@
       "label_en": "legs crossed at knee",
       "source_type": "team_card",
       "query_fragments": [
-        "seated",
-        "legs crossed at knee",
-        "pose reference"
+        "leg crossing pose reference"
       ],
       "look_for": [
         "한쪽 다리가 다른 다리의 무릎 위로 올라감",
@@ -294,9 +287,7 @@
       "label_en": "ankles crossed",
       "source_type": "team_card",
       "query_fragments": [
-        "seated",
-        "ankles crossed",
-        "pose reference"
+        "crossed ankles reference"
       ],
       "look_for": [
         "두 다리는 나란히 두고 발목만 교차함",
@@ -474,8 +465,7 @@
       "label_en": "pointing hand gesture",
       "source_type": "team_card",
       "query_fragments": [
-        "pointing hand gesture",
-        "pose reference"
+        "pointing hand gesture"
       ],
       "look_for": [
         "검지가 특정 방향을 향함",
@@ -509,8 +499,7 @@
       "label_en": "open palm gesture",
       "source_type": "team_card",
       "query_fragments": [
-        "open palm hand gesture",
-        "pose reference"
+        "open palm hand gesture"
       ],
       "look_for": [
         "손가락이 펴짐",
@@ -544,8 +533,7 @@
       "label_en": "clenched fist gesture",
       "source_type": "team_card",
       "query_fragments": [
-        "clenched fist hand pose",
-        "reference"
+        "clenched fist hand pose"
       ],
       "look_for": [
         "손가락이 손바닥 안쪽으로 접힘",
@@ -579,8 +567,7 @@
       "label_en": "two-handed aiming action",
       "source_type": "team_card",
       "query_fragments": [
-        "character",
-        "two hand aiming pose",
+        "rifle aiming",
         "reference"
       ],
       "look_for": [
@@ -618,8 +605,7 @@
       "label_en": "Kneeling",
       "source_type": "team_card",
       "query_fragments": [
-        "kneeling",
-        "pose reference"
+        "kneeling pose reference"
       ],
       "look_for": [
         "무릎이 바닥이나 지지면에 닿는 자세입니다. 상체가 세워졌는지 숙여졌는지를 함께 확인합니다."
@@ -686,8 +672,7 @@
       "label_en": "A-Pose",
       "source_type": "team_card",
       "query_fragments": [
-        "a-pose",
-        "pose reference"
+        "sheet pose reference"
       ],
       "look_for": [
         "양팔을 아래 방향으로 약간 벌려 A자에 가깝게 선 기준 자세입니다."
@@ -754,8 +739,7 @@
       "label_en": "Military Stand",
       "source_type": "team_card",
       "query_fragments": [
-        "military stand",
-        "pose reference"
+        "military stand pose"
       ],
       "look_for": [
         "발과 몸통을 정렬해 바르게 선 자세입니다. 팔과 손의 위치는 별도 조건으로 둡니다."
@@ -824,8 +808,7 @@
       "label_en": "Sitting Upright",
       "source_type": "team_card",
       "query_fragments": [
-        "sitting upright",
-        "pose reference"
+        "upright sitting pose"
       ],
       "look_for": [
         "등을 세우고 상체를 비교적 수직으로 유지한 앉은 자세입니다."
@@ -860,8 +843,7 @@
       "label_en": "Sitting on Edge",
       "source_type": "team_card",
       "query_fragments": [
-        "sitting on edge",
-        "pose reference"
+        "sitting on edge reference"
       ],
       "look_for": [
         "좌석 앞쪽 끝에 앉아 체중이 앞으로 실린 자세입니다."
@@ -933,8 +915,7 @@
       "label_en": "Leaning Forward",
       "source_type": "team_card",
       "query_fragments": [
-        "leaning forward",
-        "pose reference"
+        "leaning forward reference"
       ],
       "look_for": [
         "앉은 상태에서 상체를 앞쪽으로 기울인 자세입니다."
@@ -1079,8 +1060,7 @@
       "label_en": "Seiza",
       "source_type": "team_card",
       "query_fragments": [
-        "seiza",
-        "pose reference"
+        "seiza pose reference"
       ],
       "look_for": [
         "무릎을 꿇고 발 위에 앉는 일본식 좌법입니다."
@@ -1116,8 +1096,7 @@
       "label_en": "Squatting",
       "source_type": "team_card",
       "query_fragments": [
-        "squatting",
-        "pose reference"
+        "squatting pose reference"
       ],
       "look_for": [
         "무릎과 엉덩이를 낮추고 발 또는 발바닥으로 몸을 지지하는 자세입니다."
