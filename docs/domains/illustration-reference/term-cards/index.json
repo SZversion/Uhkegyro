@@ -1,18 +1,18 @@
 {
   "dataset_name": "illustration_reference_master_term_cards",
-  "dataset_version": "0.7-self-managed-term-card-store-reviewed",
+  "dataset_version": "0.7-json-runtime-catalog-reviewed",
   "status": "fully_reviewed_runtime_approved",
-  "purpose": "캐주얼 캐릭터 일러스트 레퍼런스 해석 Agent의 TERM_CARD DB 적재 전 역할별 시드·검수 자료입니다. index와 categories에 적힌 5개 파일을 함께 검증하며, 런타임 용어 선택은 자체 TERM_CARD DB만 사용합니다.",
+  "purpose": "캐주얼 캐릭터 일러스트 레퍼런스 해석 Agent의 런타임 TERM_CARD 카탈로그입니다. index와 categories에 적힌 5개 JSON 파일을 함께 검증하고 메모리에 로드해 런타임 용어 선택에 사용합니다.",
   "source_documents": [
     "docs/domains/illustration-reference/term-cards/SOURCE_PROVENANCE.md"
   ],
   "card_count": 74.0,
   "data_governance": {
-    "source_of_truth": "self_managed_term_card_database_target",
-    "json_role": "database_seed_and_review_input",
+    "source_of_truth": "versioned_json_runtime_catalog",
+    "json_role": "runtime_source_and_review_input",
     "external_vocabulary_lookup": "disabled",
     "change_control": "카드 변경은 사람 검수, API 계약, Skill, 평가셋 갱신을 함께 검토한 뒤 반영합니다.",
-    "persistent_database_status": "not_implemented_seed_json_only"
+    "persistent_database_status": "not_used_for_term_cards"
   },
   "runtime_contract": {
     "load_rule": "runtime_eligible가 true이고 mvp_status가 active_in_current_contract인 카드만 현재 Agent의 선택 후보로 로드합니다.",

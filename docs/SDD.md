@@ -38,11 +38,11 @@ LLM timeout/429/일시적 5xx·구조화 출력 오류, 검색 provider timeout/
 
 ## 4. API·프론트 경계
 
-정확한 endpoint, Pydantic 모델, 상태 enum, failure code는 [api-contract.md](./specs/api-contract.md)가 단일 기준이다. UI는 Next.js이며 `NEXT_PUBLIC_API_BASE_URL`, `credentials:"include"`, HttpOnly same-origin 세션 쿠키를 사용한다. Vite proxy, `pinit.js`, 사용자 retry endpoint는 사용하지 않는다.
+정확한 endpoint, Pydantic 모델, 상태 enum, failure code는 [api-contract.md](./specs/api-contract.md)가 단일 기준이다. UI는 Next.js이며 `NEXT_PUBLIC_API_BASE_URL=/api`, `credentials:"include"`, HttpOnly same-origin 세션 쿠키를 사용한다. 브라우저의 `/api/*` 요청은 Next.js rewrite를 거쳐 내부 FastAPI로 전달하며, FastAPI origin 직접 호출·cross-origin credential cookie·Vite proxy는 사용하지 않는다. 요청·응답 변환이 필요해질 때만 Next.js Route Handler BFF를 추가한다. `pinit.js`, 사용자 retry endpoint는 사용하지 않는다.
 
 ## 5. 데이터·보안·관측
 
-세션·chat·job 이력 저장소는 TERM_CARD 카탈로그와 분리한다. Pin URL과 상태는 보관할 수 있으나 이미지 바이트·썸네일 URL·Pin 메타데이터·LLM 원문 응답은 저장하지 않는다. trace에는 요청 원문·토큰·비밀값 대신 해시와 안전한 운영 필드만 남긴다.
+세션·chat·job 이력 저장소는 TERM_CARD 카탈로그와 분리한다. Pin URL·상태·이미지 바이트·썸네일 URL·Pin 메타데이터·LLM 원문 응답은 저장하지 않는다. trace에는 요청 원문·토큰·비밀값 대신 해시와 안전한 운영 필드만 남긴다.
 
 ## 6. 검증
 

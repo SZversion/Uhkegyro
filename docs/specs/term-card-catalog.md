@@ -32,6 +32,8 @@
 
 모든 카드의 `source_type`은 `team_card`다. Getty URI·외부 어휘 결과·이미지·Pin 메타데이터는 카드에 저장하지 않는다.
 
+`pinterest_search_contract.direct_search_disabled_term_ids`에 든 카드는 검색 계획에 사용할 수 없다. 해당 카드 또는 추상 의도만 후보이면 resolver는 Pinterest URL을 만들거나 provider를 호출하지 않고 `completed + needs_clarification`과 질문 하나를 반환한다. 다음 사용자 메시지에서 구체 단서를 얻은 뒤 검색 가능한 활성 카드가 선택된 경우에만 검색한다.
+
 ## AC
 
 **AC-01 · 동적 활성 카드 로드**
@@ -52,3 +54,9 @@
 - GIVEN: 요청 처리 중 LLM 후보가 있다.
 - WHEN: resolver가 후보를 검증한다.
 - THEN: 메모리 사전에 존재하는 활성 카드만 선택·검색 계획에 사용한다.
+
+**AC-04 · 직접 검색 금지 카드**
+
+- GIVEN: 후보가 `direct_search_disabled_term_ids`에 있다.
+- WHEN: resolver가 검색 계획을 만든다.
+- THEN: URL·provider 호출 없이 `needs_clarification`과 질문 하나를 반환한다.
