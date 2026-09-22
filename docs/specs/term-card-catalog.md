@@ -32,6 +32,8 @@
 
 모든 카드의 `source_type`은 `team_card`다. Getty URI·외부 어휘 결과·이미지·Pin 메타데이터는 카드에 저장하지 않는다.
 
+화면 피드백은 `active_term_feedback[term_id]`를 우선한다. 이 경우 `plain_meaning_ko`, `selection_reason_template_ko`, `reference_checkpoints_ko`를 API의 `plain_meaning_ko`, `selection_reason`, `reference_checkpoints`로 각각 매핑한다. 피드백이 없는 새 활성 카드는 `source_answer_draft`를 `plain_meaning_ko`로, `look_for`를 `reference_checkpoints`로 사용하며 `selection_reason=null`이다. LLM은 fallback 문구를 보완하거나 새로 만들지 않는다.
+
 `pinterest_search_contract.direct_search_disabled_term_ids`에 든 카드는 검색 계획에 사용할 수 없다. 해당 카드 또는 추상 의도만 후보이면 resolver는 Pinterest URL을 만들거나 provider를 호출하지 않고 `completed + needs_clarification`과 질문 하나를 반환한다. 다음 사용자 메시지에서 구체 단서를 얻은 뒤 검색 가능한 활성 카드가 선택된 경우에만 검색한다.
 
 ## AC
