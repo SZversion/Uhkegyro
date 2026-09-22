@@ -12,11 +12,53 @@
 
 ---
 
+## 0. Why · Goal · What · How · AC
+
+### Why
+
+- **페르소나**: 도메인(오세창)·백엔드(윤태현)·프런트/MCP(김호섭) 구현자, 평가자, 강사님
+- **상황**: 어떤 출처가 런타임 단일 원본이고 어느 것이 참고·표시용인지가 뒤섞이면 PRD 원칙 "승인된 출처만 완료 카탈로그로 주장한다"가 깨진다.
+- **문제**: (1) Getty 참고 자료가 런타임 데이터로 쓰일 위험 (2) 승인(검수) 상태가 명확하지 않으면 완료 카탈로그 주장 오류
+- **측정 지표**: 계약 준수율 케이스 "외부 데이터 주입 없음" 통과, 출처별 검증 상태 표가 README·EVAL과 일치
+
+### Goal
+
+- **해결 목표**: 출처별 검증·라이선스·출력 표시를 문서로 고정해 구현자가 이 문서만 보고 런타임 의존과 표시 제약을 판단하게 한다.
+- **성공 기준**: 74개 카드(v0.7) 전체가 런타임 승인 상태로 표기되고, 신규 카드 승인 절차·LICENSE 결정이 팀에 할당된다.
+- **Out of Scope**: 외부 이미지 저작권 심사, Pinterest API 승인 절차(별도), 카드 개별 콘텐츠 재검토
+
+### What
+
+- 자체 TERM_CARD DB 74개(v0.7, 분포 6/52/9/5/2) — 런타임 단일 원본
+- Getty AAT — 조사 참고 한정, 런타임에서 제거
+- Pinterest `pin_url` + 원격 `thumbnail_url` — 표시·세션 이력(1개월)만
+- `pending_human_review`·`PIN_SEARCH_UNAVAILABLE` — 사람 검토 게이트·provider 교체 지점
+- LICENSE 추가 여부 미결
+
+### How
+
+- 출처별 검증 상태 표를 README·EVAL에 반영하고, `input-output-pydantic-schema.md`(PinResult)·렌더링 규칙과 정합화한다.
+- §4 담당자·데드라인을 팀에서 확정한다.
+
+### AC
+
+**AC-01 · 74개 카드 승인 상태**
+- GIVEN: v0.7 시드 데이터(5개 역할 파일)를 로드하면
+- WHEN: TERM_CARD DB 적재 전 카드 상태를 확인하면
+- THEN: 74개 전체가 `reviewed`·`runtime_eligible=true`·`active_in_current_contract`이고, 분포는 body 6 · pose 52 · view 9 · perspective 5 · layout 2다.
+
+**AC-02 · 피드백 없는 카드 설명 생성 금지**
+- GIVEN: `active_term_feedback`이 없는 54개 승인 카드가 선택됐을 때
+- WHEN: 화면 설명을 조립하면
+- THEN: `label_ko`·`source_answer_draft`·`look_for`만 표시하고, 없는 쉬운 설명·질문을 LLM이 지어내지 않는다.
+
+---
+
 ## 1. 한눈에 보기
 
 | 출처 | 형태 | 검증·라이선스 상태 | 출력 표시 |
 | --- | --- | --- | --- |
-| 역할별 카드 JSON → 자체 TERM_CARD DB | 팀 카드 (시드 74개 / 활성 20, v0.6-self-managed-term-card-store-draft) | **승인 기준 미정**, 원저작·출처 처리 미확인 | `term_id`·설명·`query_fragments` |
+| 역할별 카드 JSON → 자체 TERM_CARD DB | 팀 카드 (시드 74개 / **전체 런타임 승인 74**, v0.7-self-managed-term-card-store-reviewed) | **74개 승인 완료** (오세창 검수 2026-09-22) · 신규 카드용 승인 절차만 수립 필요 | `term_id`·설명·`query_fragments` |
 | Getty AAT | 조사 참고 자료 | **런타임 데이터 아님** — DB·MCP 응답·LLM 입력·사용자 화면에 저장·표시 금지 | 없음 |
 | Pinterest Pin URL | 외부 링크 + 응답 전용 원격 썸네일 | 이미지 저장·스크래핑 금지, `pin_url`·상태만 저장 | 원본 `pin_url` 링크 · 원격 썸네일(`thumbnail_url`) |
 | 경쟁 분석·페르소나 | 문서/사람 | 자체 관찰 — 출처 표기 원칙만 | (문서 전용) |
@@ -28,12 +70,12 @@
 
 ### 2-1. 자체 TERM_CARD DB (팀 카드 — 런타임 단일 원본)
 
-- 시드 자료: `term-cards/index.json` + index가 열거한 5개 역할 파일(`body`/`pose`/`view`/`perspective`/`layout`), 총 74개 고유 카드, 버전 `0.6-self-managed-term-card-store-draft`
+- 시드 자료: `term-cards/index.json` + index가 열거한 5개 역할 파일(`body`/`pose`/`view`/`perspective`/`layout`), 총 74개 고유 카드, 버전 `0.7-self-managed-term-card-store-reviewed`
+- 승인 상태(2026-09-22 오세창 검수): 74개 **전체** `reviewed`·`runtime_eligible=true`·`mvp_status=active_in_current_contract` — 카드 분포는 body 6 · pose 52 · view 9 · perspective 5 · layout 2
 - 런타임 단일 원본: 구현 후 자체 TERM_CARD DB. 역할별 JSON은 DB 적재 전 검수·시드 입력이며, 런타임 요청마다 읽지 않는다.
-- 현재 활성 20: body 5 · pose 7 · view 4 · perspective 3 · layout 1. 런타임 조건: `runtime_eligible=true` **&&** `mvp_status=active_in_current_contract`
 - 역할: LLM 출력·화면 피드백·Pinterest 검색어의 runtime single source of truth
 - 확인 필요:
-  - 카드 승인 기준 (누가·어떤 절차로 승인하는가)
+  - **신규 카드**에 적용할 승인 절차·검토 이력 (현 74개는 오세창 검수를 거쳐 해당 저장소 버전에서 승인 완료)
   - 원저작·출처 필드 처리 (인용 표기, 검토 이력)
   - 승인되지 않은 카드를 "완료 카탈로그"로 주장하지 않는다는 규칙 유지
 
@@ -66,7 +108,7 @@
 
 | 데이터 | 근거 | 표시 |
 | --- | --- | --- |
-| 자체 TERM_CARD DB 카드 | 팀 검수 카드의 `label_ko`·`explanation_ko`·`look_for` | 용어·설명·확인 지점과 함께 |
+| 자체 TERM_CARD DB 카드 | 팀 검수 카드의 `label_ko`·`source_answer_draft`·`look_for` (+ `active_term_feedback`을 가진 20개 카드의 초보자 피드백) | 용어·설명·확인 지점과 함께 (피드백 없는 54개는 지어내지 않음) |
 | Pinterest 검색 결과 | provider 반환 `pin_url` + `thumbnail_url`(응답 전용) | 원본 Pin 링크·원격 썸네일 (`thumbnail_unavailable`/`deleted` 상태 구분) |
 
 > 출처 필드는 "이 이미지/용어가 추천·저작권을 보증한다"로 오해되지 않도록, 출처와 한계를 항상 함께 표시한다. 원칙: **승인된 출처만 완료 카탈로그로 주장한다.** Getty·외부 어휘 주입은 없다.

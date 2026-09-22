@@ -12,6 +12,51 @@
 
 ---
 
+## 0. Why · Goal · What · How · AC
+
+### Why
+
+- **페르소나**: 프런트(김호섭)·백엔드(윤태현) 구현자, 평가자
+- **상황**: 실패를 동기 HTTP 오류로 표현하면 폴링·retry·trace가 오류 형태에 따라 제각각이 된다.
+- **문제**: (1) job 실패와 HTTP 오류 혼동 (2) 상태 판정을 LLM이 하면 지어낸 실패가 나옴
+- **측정 지표**: 평가셋 실패 유도 케이스에서 3축 상태가 기대값과 일치하는 비율, 계약 준수율
+
+### Goal
+
+- **해결 목표**: 모든 경로의 최종 상태가 3축(`job_status` · `agent_status` 5종 · pin `status`) 중 하나로만 결정되게 한다.
+- **성공 기준**: `completed` job 안에서만 5종이 결정되고, 실행 실패는 `failed`+`JobFailure`로만 표현된다.
+- **Out of Scope**: 실제 worker 구현 상세(별도), MCP 재시도 정책(별도 MCP Spec)
+
+### What
+
+- 상태 3축, 사용자 의미 상태 5종+`reason_codes`, `failure_code` 3종·retryable 매핑
+- 비동기 계약(엔드포인트 5종·HTTP 오류·retry), `reference_plan` pin 상태, 세션 보안
+- 시나리오별 최종 상태 통합 표, LLM 출력 계약(`InterpretationOutput`)
+
+### How
+
+- `llm.py`·job executor·recovery가 이 계약을 구현하고, 평가셋 30건으로 상태 전이를 검증한다.
+- `illustration-reference-current-failure-state-contract.md`·`frontend-api-contract.md`와 함께 정합화한다.
+
+### AC
+
+**AC-01 · 실패는 job 실패로만**
+- GIVEN: worker가 앱 관리 job 제한 시간을 초과했다
+- WHEN: worker가 job을 종결하면
+- THEN: `job_status=failed`, `result=null`, `failure_code=JOB_TIMEOUT`, `attempt<3`이면 `retryable=true`이며 HTTP는 `200`(본문 폴링)이다.
+
+**AC-02 · 상태 5종과 reference_plan 규칙**
+- GIVEN: 완료 job의 응답을 받을 때
+- WHEN: `agent_status`를 결정하면
+- THEN: 5종(`success`/`needs_clarification`/`out_of_scope`/`unsafe_input`/`partial_result`) 중 하나이고, `success`·`partial_result`만 `reference_plan`을 가진다.
+
+**AC-03 · 카드 설명은 실데이터만**
+- GIVEN: `success` 상태의 카드 설명을 만들 때
+- WHEN: 화면 설명을 조립하면
+- THEN: 20개 피드백 카드는 상세 피드백, 나머지 54개는 `source_answer_draft`·`look_for`만 표시하고 없는 설명을 지어내지 않는다.
+
+---
+
 ## 1. 한눈에 보기
 
 | 구분 | 현재 상태 (PR #15 정합) |
@@ -46,7 +91,7 @@ PR #15 이후 축이 겹치지 않도록 다음 세 축으로 분리한다.
 
 | 상태 | `reference_plan` | 대표 `reason_codes` | 화면 행동 | 외부 도구 |
 | --- | --- | --- | --- | --- |
-| `success` | 필수 | 없음 | 용어 설명·확인 지점·검색 결과 표시 | 검증된 카드의 검색만 |
+| `success` | 필수 | 없음 | 용어·설명·확인 지점·검색 결과 표시 — 20개 `active_term_feedback` 카드는 상세 피드백, 54개는 `source_answer_draft`·`look_for`만 (없는 설명 생성 금지) | 검증된 카드의 검색만 |
 | `needs_clarification` | null | `ABSTRACT_INTENT_ONLY`, `INSUFFICIENT_VISUAL_EVIDENCE`, `CONFLICTING_CONSTRAINTS`, `TEAM_TERM_CARD_UNAVAILABLE` | 질문 한 개만 표시 | 호출 안 함 |
 | `out_of_scope` | null | `IMAGE_GENERATION_REQUEST`, `IMAGE_ANALYSIS_REQUEST`, `STYLE_REPLICATION_REQUEST`, `PIN_COLLECTION_REQUEST`, `UNSUPPORTED_SUBJECT` | 텍스트 기반 해석 범위 안내 | 호출 안 함 |
 | `unsafe_input` | null | `PROMPT_INJECTION_ATTEMPT`, `SECRET_EXTRACTION_ATTEMPT`, `HARMFUL_OR_ILLICIT_REQUEST` | 안전 범위 안내 (원문 반복 금지) | 호출 안 함 |

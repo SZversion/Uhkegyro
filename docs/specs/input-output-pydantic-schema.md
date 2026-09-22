@@ -12,6 +12,50 @@
 
 ---
 
+## 0. Why · Goal · What · How · AC
+
+### Why
+
+- **페르소나**: 프런트(김호섭)·백엔드(윤태현)·MCP 구현자, 평가자
+- **상황**: 요청·응답·실패·LLM 출력이 각자 다른 형식으로 구현되면 인증·검증·응답 형식이 제각각이 된다.
+- **문제**: (1) HTTP 오류와 job 실패가 섞이면 프런트 폴링이 추측하게 됨 (2) 응답의 화면 설명 필드가 카드 JSON과 어긋나면 LLM이 없는 설명을 지어냄
+- **측정 지표**: 계약 준수율(스키마 통과율), 평가셋 30건의 응답 형식 검증 통과
+
+### Goal
+
+- **해결 목표**: 모든 응답이 `JobEnvelope` 봉투를 통과하고, 카드 설명 필드가 74개 카드 실데이터(`active_term_feedback` 20개 / `source_answer_draft`+`look_for` 54개)와 정합된다.
+- **성공 기준**: Pydantic 모델 하나로 프런트·백엔드·trace 검증이 동작하고, 없는 피드백을 생성하는 케이스가 평가셋에서 실패로 잡힌다.
+- **Out of Scope**: 실제 저장소/DB 스키마(별도), MCP 도구 입출력 스키마(별도 MCP Spec)
+
+### What
+
+- 요청(`AgentMessageRequest`·세션), 응답 봉투(`JobEnvelope`), 완료 결과(`AgentResult`), `ReferencePlan`·`TermResult`·`PinResult`, 실패(`JobFailure`), LLM 출력(`InterpretationOutput`), enum·검증 규칙
+- **카드 설명 필드**: 20개 피드백 카드는 index.json `active_term_feedback`의 7필드, 54개는 `source_answer_draft`·`look_for`만 — 카드 JSON에 공통 설명 필드가 없음
+
+### How
+
+- `backend/services/llm.py`가 이 모델을 import하고, resolver·응답 조립이 실데이터에서 필드를 조립한다.
+- `illustration-reference-current-failure-state-contract.md`의 Pydantic 필드 표와 함께 정합화한다.
+
+### AC
+
+**AC-01 · 피드백 없는 카드의 설명 필드**
+- GIVEN: `active_term_feedback`이 없는 54개 승인 카드가 선택됐을 때
+- WHEN: `TermResult`를 조립하면
+- THEN: `label_ko`·`label_en`·`source_answer_draft`·`look_for`만 채우고, 피드백 필드는 `null`이며 LLM이 쉬운 설명·질문을 만들지 않는다.
+
+**AC-02 · 피드백 있는 카드의 설명 필드**
+- GIVEN: `active_term_feedback`을 가진 20개 카드(예: `pose_contrapposto`)가 선택됐을 때
+- WHEN: `TermResult`를 조립하면
+- THEN: `plain_meaning_ko` 등 index.json과 동일 키의 초보자 피드백이 채워지고, `source_answer_draft`는 `null`이다.
+
+**AC-03 · 상태별 스키마 규칙**
+- GIVEN: 완료 job을 받을 때
+- WHEN: 응답을 검증하면
+- THEN: `success`·`partial_result`는 `reference_plan` 필수, 나머지 3종은 `reference_plan=null`, `failed` job은 `result=null`+`JobFailure`만 가진다.
+
+---
+
 ## 1. 한눈에 보기
 
 | 구분 | 모델 | 내용 |
@@ -20,7 +64,7 @@
 | 응답 봉투 (공통) | `JobEnvelope` | `job_id` · `session_id` · `request_id` · `job_status` · `attempt` · `max_attempts` · `poll_after_ms` · `retryable` · `result` · `failure` |
 | 완료 결과 | `AgentResult` | `agent_status`(5종) · `reason_codes` · `reference_plan` · `clarifying_question` · `user_message` |
 | 레퍼런스 플랜 | `ReferencePlan` | `terms[]`(역할당 1) · `unresolved_roles[]` |
-| 역할별 결과 | `TermResult` | `role` · `term_id` · 카드 정보 · `evidence` · `look_for` · `search_url` · `pins[]`(최대 8) |
+| 역할별 결과 | `TermResult` | `role` · `term_id` · 카드 설명(`feedback` or `source_answer_draft`) · `evidence` · `look_for` · `search_url` · `pins[]`(최대 8) |
 | Pin 결과 | `PinResult` | `pin_url` · `thumbnail_url` · `status` |
 | 실패 봉투 | `JobFailure` | `failure_code`(3종) · `user_message` · `retryable` |
 | LLM 기본 출력 | `InterpretationOutput` | 해석 상태 4종 + 활성 `term_id` 후보만 선택 |
@@ -92,7 +136,19 @@
         "term_id": "pose_contrapposto",
         "label_ko": "콘트라포스토",
         "label_en": "contrapposto",
-        "explanation_ko": "한쪽 다리에 무게를 싣는 자세로 서 있는 초보자용 설명입니다.",
+        "feedback": {
+          "plain_meaning_ko": "한쪽 다리에 체중을 실어 골반과 어깨가 서로 반대 방향으로 기우는 서 있는 자세입니다.",
+          "selection_reason_template_ko": "입력에 한쪽 다리 지지와 골반·어깨의 기울기가 함께 확인될 때 '콘트라포스토'로 해석합니다.",
+          "pinterest_search_notice_ko": "Pinterest에서는 'contrapposto pose'라는 표준 검색 조각으로 찾습니다.",
+          "reference_checkpoints_ko": [
+            "체중을 받는 지지 다리",
+            "골반과 어깨의 반대 기울기"
+          ],
+          "common_confusion_ko": [
+            "몸을 단순히 S자로 휘는 것만으로는 콘트라포스토가 아닙니다."
+          ],
+          "clarifying_question_ko": "양발에 고르게 서 있나요, 아니면 한쪽 다리에 몸을 기대고 있나요?"
+        },
         "evidence": ["한쪽 다리에 힘을 주는 그림"],
         "look_for": ["무게 중심이 실린 다리"],
         "search_url": "https://www.pinterest.com/search/pins/?q=...",
@@ -107,6 +163,8 @@
   "user_message": "선택된 역할의 용어·확인 지점·검색 결과를 표시합니다."
 }
 ```
+
+> 위 예시의 `pose_contrapposto`는 20개 `active_term_feedback` 카드 중 하나이므로 초보자 피드백 필드를 가진다. 피드백이 없는 54개 승인 카드는 §4-3의 피드백 필드를 모두 `null`로 두고, `source_answer_draft`·`look_for`만 표시한다. 두 경우 모두 카드·index에 없는 쉬운 설명·질문을 LLM이 만들지 않는다.
 
 ### 4-1. 필드 정의
 
@@ -131,12 +189,15 @@
 | --- | --- | --- |
 | `role` | enum | `body` / `pose` / `view` / `perspective` / `layout` |
 | `term_id` | string | 현재 활성 카드만 (`runtime_eligible=true` && `mvp_status=active_in_current_contract`) |
-| `label_ko` / `label_en` | string | 팀 검수 용어 |
-| `explanation_ko` | string | 카드에서 조립한 초보자용 설명 |
+| `label_ko` / `label_en` | string | 팀 검수 용어 (모든 승인 카드 — 카드 JSON `label_ko`·`label_en`) |
+| `feedback` | object \| null | **20개 `active_term_feedback` 카드 전용** — index.json의 `active_term_feedback.{term_id}`와 동일 키: `plain_meaning_ko`·`selection_reason_template_ko`·`pinterest_search_notice_ko`·`reference_checkpoints_ko`·`common_confusion_ko`·`clarifying_question_ko`. 피드백이 없는 54개 카드는 `null` |
+| `source_answer_draft` | string \| null | **54개 승인 카드 전용** — 카드 JSON의 검수된 용어 설명. 20개 피드백 카드는 `null` |
 | `evidence` | list[string] | 사용자 입력의 짧은 근거 |
-| `look_for` | list[string] | 레퍼런스에서 확인할 지점 |
+| `look_for` | list[string] | 레퍼런스에서 확인할 지점 (카드 JSON `look_for`) |
 | `search_url` | string | 자체 DB 카드의 `query_fragments`로 조립한 Pinterest 검색 URL |
 | `pins` | list[`PinResult`] | 최대 8개, 0건·검색 오류 시 빈 배열 |
+
+- 카드 설명 조립 규칙: **`reference_plan.terms[].feedback`와 `source_answer_draft` 중 하나만 채운다.** 20개 피드백 카드는 `feedback`을, 나머지 54개는 `source_answer_draft`를 표시하고, 어느 쪽도 없으면 화면 설명을 만들지 않는다 — LLM·결정론 코드 모두 지어내지 않는다 (`index.json` `feedback_fallback_rule` 준수).
 
 ### 4-4. PinResult
 
@@ -177,6 +238,7 @@ LLM이 최종 상태·`reason_codes`·역할 순서·Pinterest URL을 만들지 
 
 - LLM은 활성 카드 ID만 출력하도록 프롬프트와 structured-output enum으로 제한한다. 출력 후에도 resolver가 자체 TERM_CARD DB를 기준으로 독립 검증한다.
 - `needs_clarification=true` 또는 ID 검증 실패이면 용어·링크 조립을 중단하고 질문 경로로 전환한다.
+- `pending_human_review`는 응답 enum이 아니라 **사람 검토 게이트**다. DB에 없는 표현은 `needs_clarification` 질문으로 처리하고, 검토가 필요한 사례는 별도 게이트 로그만 남긴다 — LLM이 임시 용어·URL을 만들지 않는다.
 
 ### 5-2. Enum 정의 (하나씩)
 

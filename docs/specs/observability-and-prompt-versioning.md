@@ -15,6 +15,46 @@
 
 ---
 
+## 0. Why · Goal · What · How · AC
+
+### Why
+
+- **페르소나**: 관측 담당(김호섭, Langfuse)·백엔드(윤태현, `llm.py`)·평가자
+- **상황**: trace와 로그가 제각각이면 요청 단위로 실패 원인·프롬프트 버전을 추적할 수 없다.
+- **문제**: (1) Langfuse와 stdout이 다른 이벤트를 남기면 "trace 없음/로그 없음"이 갈림 (2) 프롬프트 버전 규칙이 없으면 교체·롤백 판단 불가
+- **측정 지표**: EVAL_REPORT §1 추적 가능성·§2 프롬프트 운영 채점 통과, trace 필수 5종 항상 기록
+
+### Goal
+
+- **해결 목표**: 요청 단위 trace와 stdout 로그가 같은 이벤트를 남기고, 프롬프트 네이밍·필수/금지 속성이 고정된다.
+- **성공 기준**: 완료·실패·수동 retry 경로 모두 `request_id`로 trace가 묶이고 금지 2종(원문·비밀값) 위반이 없다.
+- **Out of Scope**: MCP 도구명 확정(별도 MCP Spec), Langfuse 계정·권한 관리
+
+### What
+
+- 트레이싱 3층, 요청 단위 trace 구조(비동기 job 기준), 기록 필드 20종·개인정보 제한
+- 프롬프트 네이밍 규칙, trace 필수 5종·금지 2종, 실패 경로에서도 남는 값
+- **스팬 명칭**: MCP 도구명 미확정이므로 `pinterest_search_provider` 같은 provider/논리 span으로만 표기
+
+### How
+
+- Langfuse Python SDK v4(OpenAI wrapper, `max_retries=0`)·구조화 stdout 로그로 동일 이벤트를 남긴다.
+- Langfuse Prompt 1개(`uhkegryo-interpreter-v1`)를 등록하고, MCP Spec 확정 시 도구명 스팬을 갱신한다.
+
+### AC
+
+**AC-01 · trace 구조**
+- GIVEN: 비동기 job이 완료됐을 때
+- WHEN: trace를 남기면
+- THEN: `api_agent`·`llm_interpret`·`pinterest_search_provider`·`response_validate`가 동일 `request_id`로 묶이고 `output_schema_valid`가 기록된다.
+
+**AC-02 · 도구명 미확정 표기**
+- GIVEN: MCP Spec이 아직 확정되지 않았을 때
+- WHEN: trace·문서에 검색 provider를 표기하면
+- THEN: 확정 도구명(`mcp_*`)을 쓰지 않고 `pinterest_search_provider` 같은 provider/논리 span으로만 표기한다.
+
+---
+
 ## 1. 한눈에 보기
 
 | 항목 | 상태 |
@@ -47,12 +87,12 @@
 POST /api/sessions/{session_id}/messages (202) → GET /api/jobs/{job_id} polling (동일 request_id)
   ├─ span: api_agent            (status 200/202/404/422, latency, job_id)
   ├─ span: llm_interpret        (attempt 1..n)
-  ├─ span: mcp_pinterest_links  (선택 역할만 검색 계획/결과 — PinterestSearchProvider)
+  ├─ span: pinterest_search_provider  (선택 역할만 검색 계획/결과 — PinterestSearchProvider · 잠정 논리 span, 도구명은 MCP Spec에서 확정)
   └─ span: response_validate    (output_schema_valid, 링크 역할 수)
 ```
 
 - 자동 재시도는 없다(PR #15). 재시도는 사용자 `POST /api/jobs/{job_id}/retry` → 새 `job_id`가 trace에 연결되며, 원 job의 `failure_code`·`attempt`를 남긴다.
-- Getty·외부 어휘 조회 span(`mcp_getty_terms`, `resolve_illustration_reference_plan`, `search_getty_aat_terms`)은 PR #15 계약에서 제거되어 기록하지 않는다. MCP 도구명은 별도 МCP Spec 확정 시 반영한다.
+- Getty·외부 어휘 조회 span(`mcp_getty_terms`, `resolve_illustration_reference_plan`, `search_getty_aat_terms`)은 PR #15 계약에서 제거되어 기록하지 않는다. MCP 도구명은 별도 MCP Spec 확정 시 반영한다 — 그 전까지 검색 provider는 `pinterest_search_provider`(잠정 논리 span)로만 표기한다.
 - `request_id`는 `POST /api/sessions/{session_id}/messages`에서 생성해 `JobEnvelope`와 trace에 동일 값으로 남긴다.
 
 ---

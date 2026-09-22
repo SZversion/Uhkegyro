@@ -13,6 +13,50 @@
 
 ---
 
+## 0. Why · Goal · What · How · AC
+
+### Why
+
+- **페르소나**: 프런트(김호섭)·백엔드(윤태현)·MCP 구현자
+- **상황**: HTTP API와 MCP 도구 경계가 뒤섞이면 인증·오류·스키마가 섞인다.
+- **문제**: (1) 어떤 엔드포인트가 확정됐는지 불명확 (2) MCP 도구명이 아직 미정인데 문서에서 확정처럼 보임
+- **측정 지표**: 평가셋의 HTTP 오류코드·폴링 전이 케이스 통과, 도구명 미정 표기 일관성
+
+### Goal
+
+- **해결 목표**: 공개 HTTP 5종·비공개 금지 경계·MCP(미정)를 구분해 구현 인원별 작업 단위를 고정한다.
+- **성공 기준**: 배포되는 엔드포인트가 §2 표와 일치하고, MCP 영역은 "구현 전 — 별도 MCP Spec" 상태를 유지한다.
+- **Out of Scope**: MCP 도구명·입출력·전송 방식(별도 MCP Spec)
+
+### What
+
+- 공개 HTTP API 5종(비동기 확정), MCP 영역(도구 목록 미정, provider 중계만), 비공개 경계(브라우저 직접 호출 금지)
+- 트레이싱 span ↔ 엔드포인트/도구 대응, 회의 확정 5건
+
+### How
+
+- 백엔드 FastAPI 라우터·Langfuse span을 이 표 기준으로 구현하고, MCP Spec 확정 시 본 문서를 갱신한 뒤 도구 구현을 시작한다.
+- `frontend-api-contract.md`·`current-failure-state-contract.md`와 함께 정합화한다.
+
+### AC
+
+**AC-01 · 엔드포인트 목록**
+- GIVEN: 배포된 백엔드 엔드포인트를 열거할 때
+- WHEN: 구현을 확인하면
+- THEN: `/health`·`/api/sessions`·`/api/sessions/{id}/messages`·`/api/jobs/{id}`·`/api/jobs/{id}/retry` 5종만 공개되고 나머지는 비공개/금지 경계로 남는다.
+
+**AC-02 · 형식 오류는 HTTP 422**
+- GIVEN: `request_text`가 공백만이거나 500자를 넘으면
+- WHEN: 요청 검증을 거치면
+- THEN: `422 INVALID_REQUEST_TEXT`가 반환되고 LLM·도구를 호출하지 않는다.
+
+**AC-03 · 도구명 미확정 표기**
+- GIVEN: MCP Spec이 확정되지 않았을 때
+- WHEN: trace·문서에 검색 provider를 표기하면
+- THEN: 확정 도구명(`mcp_*`)을 쓰지 않고 provider/논리 span(`pinterest_search_provider` 등)으로만 표기한다.
+
+---
+
 ## 1. 한눈에 보기
 
 | 계층 | 호출자 | 엔드포인트/도구 | 확정 상태 |
@@ -67,8 +111,10 @@ PR #15 계약에서는 FastMCP 도구 목록·계약이 **미정**이다. 용어
 | --- | --- | --- |
 | `api_agent` | HTTP API (세션·메시지·job 조회·retry) | 상태 코드 · 스키마 통과 · request_id · job_id · failure_code |
 | `llm_interpret` | 기본 LLM 해석 호출 | 모델 · 프롬프트 버전 · 재시도 · 지연 |
-| `mcp_pinterest_links` | 검색 provider 중계 (PinterestSearchProvider) | 입력 role 수 · `pins[].status` (available/thumbnail_unavailable/deleted) |
+| `pinterest_search_provider` (잠정 논리 span) | 검색 provider 중계 (PinterestSearchProvider) | 입력 role 수 · `pins[].status` (available/thumbnail_unavailable/deleted) |
 | `response_validate` | 최종 응답 검증 | `output_schema_valid` · 링크 역할 수 |
+
+> MCP 도구명은 별도 MCP Spec에서 확정한다 — 확정 전까지 위 span은 provider/논리 span 명칭이며 도구명으로 간주하지 않는다.
 
 > Getty/외부 어휘 조회 span(`mcp_getty_terms`, `resolve_illustration_reference_plan`, `search_getty_aat_terms`)은 PR #15 계약에서 제거되어 기록하지 않는다.
 
