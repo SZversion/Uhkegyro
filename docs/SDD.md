@@ -2,9 +2,9 @@
 
 ## 1. 기준 데이터와 불변 조건
 
-`docs/domains/illustration-reference/TERM_CARDS_MASTER_100_DRAFT.json`은 LLM 출력·화면 피드백·Pinterest 검색어의 단일 원본이다. 런타임 시작 시 JSON을 한 번 로드하여 `runtime_eligible=true && mvp_status=active_in_current_contract` 카드만 `term_id` 사전으로 만든다. 현재 활성 20개 역할 분포는 body 5, pose 7, view 4, perspective 3, layout 1이다.
+`docs/domains/illustration-reference/term-cards/index.json`과 index가 명시한 역할별 JSON은 LLM 출력·화면 피드백·Pinterest 검색어의 단일 원본이다. 런타임 시작 시 index의 `categories` 순서대로 역할별 파일을 로드하고, `runtime_eligible=true && mvp_status=active_in_current_contract` 카드만 `term_id` 사전으로 만든다. 현재 활성 20개 역할 분포는 body 5, pose 7, view 4, perspective 3, layout 1이다.
 
-모든 선택 결과는 이 사전에 존재해야 하며, 원본 카드의 `role`, `label_ko`, `label_en`, `query_fragments`, `look_for`, `confidence_gate`, `requires_all_of`, `requires_any_of`, `source_type`, `getty_aat`, 초보자 피드백을 변경 없이 참조한다. 카드 파일 밖의 자유 형식 용어, 검색어, 외부 Getty 후보는 런타임 선택 경로에 들어갈 수 없다.
+모든 선택 결과는 이 사전에 존재해야 하며, 원본 카드의 `role`, `label_ko`, `label_en`, `query_fragments`, `look_for`, `confidence_gate`, `requires_all_of`, `requires_any_of`, `source_type`, 초보자 피드백을 변경 없이 참조한다. 카드 파일 밖의 자유 형식 용어·검색어·외부 어휘 후보는 런타임 선택 경로에 들어갈 수 없다.
 
 ## 2. 컴포넌트와 책임
 
@@ -22,7 +22,7 @@ React + Vite UI
   <- GET /api/jobs/{job_id} 결과
        -> pinit.js embedPin 렌더링
 
-TERM_CARDS_MASTER_100_DRAFT.json -> Card repository -> Card resolver
+term-cards/index.json + 역할별 카드 JSON -> Card repository -> Card resolver
 FastMCP -> LLM이 필요하다고 판단한 도구 호출을 중계 (도구 목록·계약 미정)
 Langfuse <- LLM adapter의 요청 ID·모델·토큰·지연·비용·재시도
 ```
@@ -83,13 +83,13 @@ Agent 메시지 제출 API(경로·계약 미정)는 사용자 메시지를 저�
 
 ## 4. 상세 처리 순서
 
-1. 앱 시작 시 Card repository가 JSON의 `card_count=100`과 필수 필드를 검증한다. 실패하면 앱을 ready 상태로 만들지 않고 운영자 오류로 기록한다.
+1. 앱 시작 시 Card repository가 index와 5개 역할 파일의 합계 `card_count=70` 및 필수 필드를 검증한다. 실패하면 앱을 ready 상태로 만들지 않고 운영자 오류로 기록한다.
 2. repository는 활성 20개 카드만 인덱싱하고, 후보·미검수 카드는 메모리 모델에서 제외한다.
 3. API 명세서가 확정되면 route가 그 명세서의 입력 규칙과 쿠키·세션 소유권을 검증하고 요청 ID를 생성한다.
 4. LLM adapter는 활성 카드의 ID·role·confidence gate만 근거로 구조화 후보를 생성한다.
 5. resolver는 (a) 선택 역할 여부, (b) 활성 사전 존재 여부, (c) 카드 role 일치, (d) `confidence_gate`, (e) `requires_all_of` 전체 충족, (f) `requires_any_of` 중 하나 충족을 검증한다.
 6. 단서가 없거나 검증을 통과하지 못하면 해당 역할에 카드를 선택하지 않고 카드의 `clarifying_question_ko` 또는 일반 확인 상태를 반환한다.
-7. 유효 카드마다 response assembler가 카드 JSON에 저장된 원문 피드백과 출처를 조립한다. `getty_aat`가 존재하면 해당 카드의 AAT URI·label·attribution을 그대로 표시하며, 외부 조회나 보강은 하지 않는다.
+7. 유효 카드마다 response assembler가 카드 JSON에 저장된 원문 피드백과 팀 검수 상태를 조립한다. 외부 어휘 URI·label·attribution을 표시하거나 외부 조회·보강을 하지 않는다.
 8. URL builder는 선택 카드의 `query_fragments` 배열만 합쳐 Pinterest 검색 URL을 만든다. `direct_search_disabled_term_ids`에 해당하면 링크를 만들지 않는다.
 9. PinterestSearchProvider가 역할별 결과를 반환하면 삭제된 Pin은 `deleted` 상태로 표시하고 화면에 `이 Pin은 삭제되었습니다`를 남긴 뒤 렌더링 대상에서 제외한다. 0건은 `no_results`, 검색 장애는 `search_error`와 재시도 안내로 구분한다.
 10. 작업이 Cloud Run 종료로 중단되면 job을 `failed`로 기록하고 클라이언트에 상태와 재시도 안내를 반환한다. 자동 재시도는 하지 않는다.

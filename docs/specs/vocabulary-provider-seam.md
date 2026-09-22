@@ -1,4 +1,6 @@
 > 이 문서는 초기 용어 공급자 Spec입니다. 최신 제품·아키텍처 기준은 `docs/PRD.md`와 `docs/SDD.md`를 우선합니다.
+>
+> **2026-09-21 폐기됨:** 외부 어휘 공급자 전제는 더 이상 사용하지 않는다. 구현·검토는 `docs/specs/self-managed-term-card-store.md`의 팀 관리 정적 TERM_CARD 계약을 따른다.
 
 # Vocabulary Candidate Provider 교체 지점 Spec
 
