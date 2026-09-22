@@ -56,7 +56,7 @@
 - 전문 용어의 초보자용 설명과 불확실성 표시
 - 선택된 역할별 Pinterest 원격 썸네일 미리보기와 원본 Pin 링크(기본 최대 8개, 설정으로 변경 가능)
 - Pin URL·상태의 세션 저장과 썸네일 URL의 응답 전용 사용
-- 자체 TERM_CARD DB의 팀 검수 용어·설명·검색 조각
+- 팀 검수 TERM_CARD JSON 카탈로그의 용어·설명·검색 조각
 
 ### 제공하지 않을 것
 
@@ -71,13 +71,12 @@
 
 ```text
 사용자 UI
-  -> POST /api/sessions (미구현, 서버 세션 쿠키 발급)
-  -> POST /api/sessions/{session_id}/messages (미구현, 202 + job_id)
+  -> POST /api/agent (미구현, 서버 세션 쿠키 발급·재사용, 202 + job_id)
   -> GET /api/jobs/{job_id} polling (미구현, completed/failed까지)
 Job executor / recovery (미구현)
   -> LLM: 일상어를 허용된 term_id와 역할로 구조화
   -> 결정론 코드: Pydantic 검증, 역할 순서, 허용 ID, URL 인코딩
-  -> FastMCP: 자체 TERM_CARD DB의 검증된 카드 정보를 구조화 조회
+  -> FastMCP: TERM_CARD JSON 카탈로그의 활성 카드 정보를 구조화 조회
   -> PinterestSearchProvider tool: 역할별 최대 8개 {pin_url, thumbnail_url, status} 반환
   -> UI: 원격 썸네일을 원본 Pin 링크로 표시
 ```
@@ -86,7 +85,7 @@ Job executor / recovery (미구현)
 | --- | --- |
 | LLM | 일상어의 의미 해석, 조건 충돌·모호성 인식, 허용된 구조화 선택 생성 |
 | 결정론 코드 | Pydantic 스키마 검증, 허용 `term_id`, 역할 순서, URL 인코딩, 실패 응답 |
-| FastMCP | 자체 TERM_CARD DB의 검증된 카드 정보를 조회하고, Getty 데이터·외부 어휘 API·SPARQL·웹 호출은 하지 않음 |
+| FastMCP | 시작 시 검증해 메모리에 로드한 TERM_CARD JSON 카탈로그의 활성 카드만 조회하고, Getty 데이터·외부 어휘 API·SPARQL·웹 호출은 하지 않음 |
 | UI | 입력 안내, 로딩·실패 안내, 용어·한계·외부 링크 표시 |
 
 LLM은 링크를 임의로 만들거나 데이터 출처를 지어내지 않습니다. 링크 생성과 출력 검증은 코드가 맡습니다.
@@ -95,24 +94,21 @@ LLM은 링크를 임의로 만들거나 데이터 출처를 지어내지 않습�
 
 | 구분 | 계획된 역할 | 출력에 보이는 정보 |
 | --- | --- | --- |
-| 자체 TERM_CARD DB | 팀이 작성·검수한 용어의 런타임 단일 원본 | term ID, 설명, query fragment, 검수 상태 |
-| TERM_CARD category JSON | DB 적재 전 역할별 검수·시드 자료 | 역할별 카드 수와 활성 조건 검증 |
+| TERM_CARD JSON 카탈로그 | `index.json`과 다섯 역할 JSON으로 이루어진 팀 검수 런타임 단일 원본 | term ID, 설명, query fragment, 검수 상태 |
 | Pinterest | 사용자가 원본을 직접 확인할 외부 탐색 대상 | 원본 Pin 링크와 응답 전용 원격 썸네일 미리보기 |
 
-Pinterest 이미지 바이트를 저장·재게시하지 않습니다. 검색 도구가 반환한 `pin_url`과 상태만 세션에 저장하고, `thumbnail_url`은 현재 응답을 표시할 때만 사용합니다. UI는 원격 썸네일을 원본 Pin 링크로 표시하며, 썸네일 URL이 없으면 링크만 제공합니다. 검색 제공자의 API·비즈니스 계정 요건은 확인 후 확정합니다. Pin 삭제·썸네일 부재·검색 오류는 provider가 반환한 상태로 구분합니다. 용어 선택·설명·검색 조각은 구현 후 팀이 작성·검수한 자체 TERM_CARD DB만 사용합니다. Getty는 용어 조사 시 참고한 자료일 뿐, 서비스 데이터·사용자 화면·LLM 입력·런타임 조회에 포함하지 않습니다. 자체 카드와 권리 검토 기준은 팀 승인을 거쳐야 하며, 승인되지 않은 데이터를 완료된 카탈로그로 주장하지 않습니다.
+Pinterest 이미지 바이트를 저장·재게시하지 않습니다. 검색 도구가 반환한 `pin_url`과 상태만 세션에 저장하고, `thumbnail_url`은 현재 응답을 표시할 때만 사용합니다. UI는 원격 썸네일을 원본 Pin 링크로 표시하며, 썸네일 URL이 없으면 링크만 제공합니다. 검색 제공자의 API·비즈니스 계정 요건은 확인 후 확정합니다. Pin 삭제·썸네일 부재·검색 오류는 provider가 반환한 상태로 구분합니다. 용어 선택·설명·검색 조각은 구현 후 팀이 작성·검수한 TERM_CARD JSON 카탈로그만 사용합니다. 카탈로그는 시작 시 검증해 메모리에 로드하며 요청 중 파일을 다시 읽거나 DB에 적재하지 않습니다. Getty는 용어 조사 시 참고한 자료일 뿐, 서비스 데이터·사용자 화면·LLM 입력·런타임 조회에 포함하지 않습니다. 자체 카드와 권리 검토 기준은 팀 승인을 거쳐야 하며, 승인되지 않은 데이터를 완료된 카탈로그로 주장하지 않습니다.
 
 ## API와 MCP 상태
 
 | 항목 | 현재 상태 | 최종 목표 |
 | --- | --- | --- |
 | `GET /health` | 구현됨. `{"status":"ok"}` 반환 | Cloud Run 상태 확인 |
-| `POST /api/sessions` | 명세 확정·미구현 | 서버 세션과 `HttpOnly` 쿠키 발급 |
-| `POST /api/sessions/{session_id}/messages` | 명세 확정·미구현 | 사용자 요청을 받아 `202`와 비동기 `job_id` 반환 |
+| `POST /api/agent` | 명세 확정·미구현 | 가이드 제출용 Agent API. 서버 세션 쿠키를 발급·재사용하고 `202`와 비동기 `job_id` 반환 |
 | `GET /api/jobs/{job_id}` | 명세 확정·미구현 | 소유 job의 실제 상태·완료 결과·실패·재시도 가능 여부 반환 |
-| `POST /api/jobs/{job_id}/retry` | 명세 확정·미구현 | 사용자가 실패 job을 수동으로 재시도 |
 | `/docs` | FastAPI 기본 문서에서 확인 가능 | 요청·응답 모델 및 오류 응답 확인 |
-| `/mcp` | 미구현. `example_tool` 골조만 존재 | FastMCP Streamable HTTP endpoint와 도구 호출 증거 |
-| 자체 TERM_CARD DB | 미구현·미적재 | 팀 검수 시드 카드를 적재하고 역할별 활성 카드만 조회 |
+| `/mcp` | 미구현. `example_tool` 골조만 존재 | `get_active_term_card(term_id)` FastMCP Streamable HTTP endpoint와 도구 호출 증거 |
+| TERM_CARD JSON 카탈로그 | 문서화·미구현 | 시작 검증 뒤 역할별 활성 카드를 메모리에서 조회 |
 | MCP 접근 제어 | 미구현 | 토큰 또는 허용 클라이언트 정책을 문서화하고 적용 |
 
 `/mcp`를 공개 데모 API처럼 무제한 노출하지 않습니다. 구현 시 연결 방법, 도구 목록, 실제 호출 결과, 접근 제어 방식을 이 README에 추가합니다.
@@ -180,7 +176,8 @@ docker compose down
 | [도메인 프로필](./docs/domains/illustration-reference/domain-profile.md) | 사용자, 업무 경험, 경쟁 서비스, 범위와 데이터 출처 |
 | [경쟁 서비스 분석](./docs/domains/illustration-reference/competitive-analysis.md) | 실제 시작 흐름 비교, 차별점과 조사 한계 |
 | [설계 문서](./docs/domains/illustration-reference/design.md) | LLM·결정론 코드·MCP의 책임 분리와 폴백 설계 |
-| [실패 상태 계약](./docs/specs/illustration-reference-current-failure-state-contract.md) | 비동기 job 상태, 완료 결과, worker 실패·재시도 및 LLM JSON 계약 |
+| [API 계약](./docs/specs/api-contract.md) | `POST /api/agent`, 비동기 job 상태, 완료 결과, worker 실패·재시도 및 LLM JSON 계약 |
+| [MCP 계약](./docs/specs/mcp-contract.md) | JSON 카탈로그 기반 `get_active_term_card` 도구의 입력·출력·접근 제어 |
 | [NOT_BUILD.md](./NOT_BUILD.md) | MVP에서 의도적으로 만들지 않는 기능과 이유 |
 | [EVAL_REPORT.md](./EVAL_REPORT.md) | 관측, 프롬프트 운영, 평가, 비용·지연, 출시 게이트 |
 | [evals/](./evals/) | 평가셋과 판정 기준 |
