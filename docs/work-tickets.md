@@ -16,8 +16,10 @@
 | --- | --- | --- |
 | JSON 카탈로그 loader·시작 검증 | backend catalog service | `term-card-catalog.md` |
 | FastMCP 활성 카드 조회 도구·`/mcp` 접근 제어 | mcp server, 호출 증거 | `mcp-contract.md`, JSON 카탈로그 loader |
-| `POST /api/agent`·job route와 worker | FastAPI routes/worker | `api-contract.md` |
-| 자동 재시도·failure code 관측 | worker/trace | `api-contract.md`, 관측 Spec |
+| 세션·job 영속화 | PostgreSQL storage | `session-job-persistence.md`, `api-contract.md` |
+| PostgreSQL job worker | worker/lease recovery | `postgres-job-worker.md`, `api-contract.md` |
+| OpenRouter LLM adapter | model configuration·structured output | `openrouter-llm-adapter.md`, `api-contract.md` |
+| failure code·관측 | worker/trace | `api-contract.md`, 관측 Spec |
 | Next.js UI | frontend | `api-contract.md` |
 | PinterestCrawlerProvider | 서버 Playwright 공개 검색·Pin ID widget 조회 | `pinterest-widget-crawler.md`, `api-contract.md` |
 

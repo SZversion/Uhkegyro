@@ -15,12 +15,12 @@
 | Endpoint | Method | 성공 | 오류 |
 | --- | --- | --- |
 | `/health` | GET | `200 {"status":"ok"}` | — |
-| `/api/agent` | POST | `202 {message_id, job_id, job_status:"queued", poll_after_ms:1000}`와 신규·기존 서버 세션의 HttpOnly cookie | `422 INVALID_REQUEST_TEXT` |
+| `/api/agent` | POST | `202 {message_id, job_id, job_status:"queued", poll_after_ms:1000}`와 신규·기존 서버 세션의 HttpOnly cookie | `409 IDEMPOTENCY_KEY_CONFLICT`, `422 INVALID_REQUEST_TEXT` |
 | `/api/jobs/{job_id}` | GET | `200 JobEnvelope` | `401 SESSION_REQUIRED`, `404 JOB_NOT_FOUND` |
 
 `POST /api/jobs/{job_id}/retry`는 없다. 사용자의 후속 메시지는 새 job이다.
 
-`AgentRequest`는 공백만으로 이루어지지 않은 `request_text` 1~500자만 가진다. 허용하지 않은 추가 필드는 거부한다. 서버는 수락한 `request_text` 원문을 해당 job의 `request_text` 필드에 기록한다. `POST /api/agent`는 유효한 기존 세션 쿠키가 있으면 재사용하고, 없으면 서버가 새 익명 세션을 발급해 동일 응답에 HttpOnly cookie로 설정한다. 브라우저는 `role`, `term_id`, 검색어, Pin URL, 세션 토큰, `anonymous_user_id`를 전송하지 않는다.
+`AgentRequest`는 공백만으로 이루어지지 않은 `request_text` 1~500자만 가진다. 허용하지 않은 추가 필드는 거부한다. `POST /api/agent`는 유효한 기존 세션 쿠키가 있으면 재사용하고, 없으면 서버가 새 익명 세션을 발급해 동일 응답에 HttpOnly cookie로 설정한다. 브라우저는 `role`, `term_id`, 검색어, Pin URL, 세션 토큰, `anonymous_user_id`를 전송하지 않는다. 요청은 UUID `Idempotency-Key` 헤더가 필요하며, 10분 안에 같은 세션·키·원문을 재전송하면 기존 job을 반환한다.
 
 `JobEnvelope`는 `job_id`, `session_id`, `request_id`, `job_status`, `attempt`, `max_attempts`, `poll_after_ms`, `result`, `failure`를 가진다. `job_status`는 `queued | running | validating | searching | rendering | completed | failed`이고 `completed`, `failed`만 종결 상태다. 진행 상태는 `result=null`, `failure=null`, `poll_after_ms=1000`이다. `completed`는 `result` 필수, `failure=null`, `poll_after_ms=null`이다. `failed`는 `result=null`, `failure` 필수, `poll_after_ms=null`이다.
 
@@ -38,15 +38,12 @@
 
 ## How
 
-- `POST /api/agent`는 서버 발급 `HttpOnly`, `SameSite=Lax`, `Path=/`, `Max-Age=90일` 세션 쿠키를 발급 또는 재사용하고, 유효한 세션의 활동마다 만료를 다시 90일로 갱신한다. `GET /api/jobs/{job_id}`는 이 쿠키를 검증한다. 배포에서는 `Secure=true`이며 로컬 HTTP에서만 명시적 local 설정으로 `false`를 허용한다. job 조회에서 세션이 job 소유자가 아니어도 `JOB_NOT_FOUND`를 반환한다.
-- 세션 저장소는 무작위 쿠키 토큰의 SHA-256 해시만 저장한다. 원문 토큰은 발급 시 HttpOnly cookie에만 담고, 수신 시 해시해 조회하며 DB·trace·로그에 저장하지 않는다.
-- 세션과 job은 별도 테이블로 관리한다. job은 `session_id` 외래키와 수락한 사용자 원문 `request_text`를 가진다. 세션과 job에는 자동 만료·보관 기한을 두지 않는다. session 행을 명시적으로 삭제하면 연결된 job 행은 foreign key cascade로 함께 삭제한다. 별도 users·messages·Pin 결과 테이블은 만들지 않는다.
-- job은 최종 성공 여부 `succeeded: bool | null`과 단일 `final_payload_json` 필드를 가진다. 진행 중에는 둘 다 `null`, 성공하면 `succeeded=true`와 저장 전 `thumbnail_url`을 제거한 `AgentResult`, 실패하면 `succeeded=false`와 `failure` 객체를 기록한다. 성공 payload의 각 Pin은 widget 재조회용 `pin_id`·원본 `pin_url`·`status`를 유지한다.
+- 세션 쿠키의 발급·90일 갱신, session/job 저장 구조, idempotency 저장 규칙은 [session-job-persistence.md](./session-job-persistence.md)가 단일 기준이다. `GET /api/jobs/{job_id}`는 이 쿠키를 검증하며, job 조회에서 세션이 job 소유자가 아니어도 `JOB_NOT_FOUND`를 반환한다.
 - Next.js 프론트는 `NEXT_PUBLIC_API_BASE_URL=/api`와 `credentials:"include"`를 사용한다. 브라우저는 FastAPI origin을 직접 호출하지 않는다. Next.js rewrite가 동일 origin의 `/api/*` 요청을 내부 FastAPI로 전달하며, BFF가 필요해질 때만 Route Handler를 추가한다. 세션 토큰·`anonymous_user_id`를 localStorage, URL, 로그에 저장하지 않는다.
-- 같은 job의 자동 실행은 최초 실행을 포함해 최대 3회다. `LLM_*`, `SEARCH_*`, `JOB_INSTANCE_INTERRUPTED`의 회복 가능한 경우에만 내부적으로 재시도한다.
+- worker의 polling, lease, 세션별 실행 순서와 재실행은 [postgres-job-worker.md](./postgres-job-worker.md)가 단일 기준이다. 같은 job은 최초 실행을 포함해 최대 3회다.
 - `CONFIGURATION_ERROR`, `DATABASE_MIGRATION_ERROR`, `INTERNAL_CODE_ERROR`는 즉시 `failed`다. 사용자 UI는 failure code·오류 원문·비밀값을 보이지 않고 “현재 요청을 처리하지 못했습니다. 잠시 후 새 메시지로 다시 시도해 주세요.”만 표시한다.
 - 단서 부족·상충은 실패가 아니라 `completed + needs_clarification`이며 질문 하나를 반환한다. 다음 사용자 메시지는 새 job이고 기존 attempt를 승계하지 않는다.
-- LLM adapter는 `InterpretationOutput={interpretation_state, selections, unresolved_constraints, clarifying_question}`만 반환한다. 각 `selections` 항목은 `{role, term_id, evidence, confidence}`다. LLM은 최종 `agent_status`, `reason_codes`, 검색 URL을 만들지 않으며, resolver가 활성 JSON 카탈로그·안전 규칙과 대조한 뒤 최종 응답을 조립한다. 구조화 출력이 이 계약을 만족하지 않으면 `LLM_INVALID_STRUCTURED_OUTPUT`으로 처리한다.
+- LLM adapter는 `InterpretationOutput={interpretation_state, selections, unresolved_constraints, clarifying_question}`만 반환한다. 각 `selections` 항목은 `{role, term_id, evidence, confidence}`다. LLM은 최종 `agent_status`, `reason_codes`, 검색 URL을 만들지 않으며, resolver가 활성 JSON 카탈로그·안전 규칙과 대조한 뒤 최종 응답을 조립한다. provider·model 설정과 timeout은 [openrouter-llm-adapter.md](./openrouter-llm-adapter.md)가 단일 기준이다.
 - `PinterestCrawlerProvider`는 서버 Playwright에서 활성 카드의 `query_fragments`만 사용해 공개 검색을 수행하고, 모든 수집 Pin ID를 widget endpoint로 조회한다. 브라우저는 Pinterest·widget endpoint를 직접 호출하지 않으며 Pinterest API v5도 사용하지 않는다.
 - 검색·widget 재시도가 소진돼도 하나 이상의 카드가 유효하면 `completed + partial_result`다. 실패 역할은 `pins=[]`, `PIN_SEARCH_UNAVAILABLE`을 반환하고 UI는 검색 결과 미수신 안내와 용어·검색 URL을 표시한다. widget이 이미지 URL을 주지 않으면 오류가 아니라 `thumbnail_unavailable`과 원본 링크만 반환한다. 정상 0건은 `PIN_RESULTS_EMPTY`이며 재시도하지 않는다.
 - 잘못된 Secret·provider 인증 설정은 `CONFIGURATION_ERROR`, job/session 저장소 연결 불가는 `DATABASE_UNAVAILABLE`, 시작 JSON 카탈로그 검증 실패는 `CATALOG_INVALID_AT_STARTUP`, 코드 버그는 `INTERNAL_CODE_ERROR`로 즉시 실패한다. `CATALOG_INVALID_AT_STARTUP`이면 서비스는 ready가 아니며 job을 수신하지 않는다. 이 네 경우는 자동 재시도하지 않는다.
