@@ -2,6 +2,7 @@
 import os
 import warnings
 from functools import lru_cache
+from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -28,6 +29,9 @@ class Settings(BaseSettings):
     # MCP (기본 비활성화 — 실제 도구 준비 후 true로 변경)
     mcp_enabled: bool = False
 
+    # TERM_CARD 카탈로그 경로
+    term_cards_path: str = "/app/term-cards"
+
 
 @lru_cache
 def get_settings() -> Settings:
@@ -40,3 +44,43 @@ def get_settings() -> Settings:
             stacklevel=2,
         )
     return s
+
+
+def resolve_term_cards_dir(settings: Settings | None = None) -> Path:
+    """TERM_CARD 디렉터리 경로 해결.
+    
+    우선순위:
+    1. TERM_CARDS_PATH 환경변수 (settings.term_cards_path)
+    2. Docker 기본 경로: /app/term-cards
+    3. 로컬 개발: 레포 루트/docs/domains/illustration-reference/term-cards/
+    4. 모두 실패 시 예외 발생
+    """
+    if settings is None:
+        settings = get_settings()
+    
+    # 1. 환경변수/설정에서 지정한 경로
+    configured_path = Path(settings.term_cards_path)
+    if configured_path.exists():
+        return configured_path
+    
+    # 2. Docker 기본 경로
+    docker_path = Path("/app/term-cards")
+    if docker_path.exists():
+        return docker_path
+    
+    # 3. 로컬 개발: 현재 파일 기준 레포 루트 탐색
+    current_file = Path(__file__).resolve()
+    # backend/shared/config.py -> backend/ -> proj2-4/
+    repo_root = current_file.parent.parent.parent
+    local_path = repo_root / "docs" / "domains" / "illustration-reference" / "term-cards"
+    if local_path.exists():
+        return local_path
+    
+    # 4. 모두 실패
+    raise FileNotFoundError(
+        f"TERM_CARD 디렉터리를 찾을 수 없습니다. "
+        f"다음을 확인하세요: "
+        f"TERM_CARDS_PATH={settings.term_cards_path}, "
+        f"Docker경로=/app/term-cards, "
+        f"로컬경로={local_path}"
+    )

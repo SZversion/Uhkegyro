@@ -2,14 +2,15 @@
 # 트리거: GitHub main 브랜치 push, backend/** 경로 변경 감지
 # 무료 티어: Cloud Run min-instances=0, Neon PostgreSQL (Free Tier), VPC 커넥터 없음
 # Neon: 0.5GB 스토리지, 5분 유휴 시 자동 일시정지, 브랜칭 기능 포함
+# 배포: 단일 이미지, 두 서비스(api, mcp) — 진입점만 다름
 steps:
   # 1. Docker 이미지 빌드
   - name: "gcr.io/cloud-builders/docker"
     id: "build-image"
     args:
       - "build"
-      - "--tag=${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/${_SERVICE_NAME}:${SHORT_SHA}"
-      - "--tag=${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/${_SERVICE_NAME}:latest"
+      - "--tag=${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/${_API_SERVICE_NAME}:${SHORT_SHA}"
+      - "--tag=${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/${_API_SERVICE_NAME}:latest"
       - "."
 
   # 2. Artifact Registry에 푸시
@@ -18,17 +19,17 @@ steps:
     args:
       - "push"
       - "--all-tags"
-      - "${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/${_SERVICE_NAME}"
+      - "${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/${_API_SERVICE_NAME}"
 
-  # 3. Cloud Run 서비스 배포 (무료 티어 설정)
+  # 3a. 공개 API Cloud Run 서비스 배포 (인증 불필요)
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
-    id: "deploy-cloud-run"
+    id: "deploy-api"
     entrypoint: "gcloud"
     args:
       - "run"
       - "deploy"
-      - "${_SERVICE_NAME}"
-      - "--image=${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/${_SERVICE_NAME}:${SHORT_SHA}"
+      - "${_API_SERVICE_NAME}"
+      - "--image=${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/${_API_SERVICE_NAME}:${SHORT_SHA}"
       - "--region=${_REGION}"
       - "--platform=managed"
       - "--allow-unauthenticated"
@@ -46,11 +47,56 @@ steps:
       - "--set-secrets=DATABASE_URL=DATABASE_URL:latest"
       - "--set-secrets=SESSION_SECRET=SESSION_SECRET:latest"
 
+  # 3b. 내부 MCP Cloud Run 서비스 배포 (인증 필요, IAM으로 보호)
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
+    id: "deploy-mcp"
+    entrypoint: "gcloud"
+    args:
+      - "run"
+      - "deploy"
+      - "${_MCP_SERVICE_NAME}"
+      - "--image=${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/${_API_SERVICE_NAME}:${SHORT_SHA}"
+      - "--region=${_REGION}"
+      - "--platform=managed"
+      - "--no-allow-unauthenticated"
+      - "--port=8000"
+      - "--cpu=1"
+      - "--memory=512Mi"
+      - "--min-instances=0"
+      - "--max-instances=3"
+      - "--concurrency=80"
+      - "--timeout=300"
+      - "--command=uvicorn"
+      - "--args=backend.mcp.main:app,--host,0.0.0.0,--port,8000"
+      - "--set-env-vars=ENVIRONMENT=production"
+      - "--set-secrets=OPENROUTER_API_KEY=OPENROUTER_API_KEY:latest"
+      - "--set-secrets=LANGFUSE_PUBLIC_KEY=LANGFUSE_PUBLIC_KEY:latest"
+      - "--set-secrets=LANGFUSE_SECRET_KEY=LANGFUSE_SECRET_KEY:latest"
+      - "--set-secrets=DATABASE_URL=DATABASE_URL:latest"
+      - "--set-secrets=SESSION_SECRET=SESSION_SECRET:latest"
+
+  # 4. MCP 서비스에 호출자 서비스 계정 권한 부여 (mcp-caller)
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
+    id: "bind-mcp-invoker"
+    entrypoint: "gcloud"
+    args:
+      - "run"
+      - "services"
+      - "add-iam-policy-binding"
+      - "${_MCP_SERVICE_NAME}"
+      - "--region=${_REGION}"
+      - "--platform=managed"
+      - "--member=serviceAccount:${_MCP_CALLER_SA}@${PROJECT_ID}.iam.gserviceaccount.com"
+      - "--role=roles/run.invoker"
+      - "--project=${PROJECT_ID}"
+
 substitutions:
   _REGION: "asia-northeast3"
   _ARTIFACT_REGISTRY: "asia-northeast3-docker.pkg.dev"
   _ARTIFACT_REPO: "docker-repo"
-  _SERVICE_NAME: "api"
+  _API_SERVICE_NAME: "api"
+  _MCP_SERVICE_NAME: "mcp"
+  _MCP_CALLER_SA: "mcp-caller"
 
 options:
   logging: CLOUD_LOGGING_ONLY

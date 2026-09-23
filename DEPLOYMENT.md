@@ -5,23 +5,34 @@
 ```
 ┌─────────────┐     HTTPS      ┌──────────────────┐
 │   Vercel    │ ─────────────► │  Cloud Run (api) │  --min-instances=0 (유휴 시 $0)
-│  (Frontend) │   REST + MCP   │  FastAPI + MCP   │  --max-instances=3
+│  (Frontend) │   REST API     │  FastAPI (공개)  │  --max-instances=3
 └─────────────┘                └────────┬─────────┘
-                                         │ Public Internet + SSL
-                                         ▼
-                                ┌──────────────────┐
-                                │  Neon PostgreSQL │  -- Free Tier: 0.5GB storage
-                                │  (Free Tier)     │  -- Auto-suspend 5min 유휴
-                                └──────────────────┘
+                                        │
+                                        │ Internal (OIDC 토큰)
+                                        ▼
+                               ┌──────────────────┐
+                               │ Cloud Run (mcp)  │  --no-allow-unauthenticated
+                               │  MCP (내부 전용)  │  --min-instances=0
+                               └────────┬─────────┘
+                                        │
+                                        ▼
+                               ┌──────────────────┐
+                               │  Neon PostgreSQL │  -- Free Tier: 0.5GB storage
+                               │  (Free Tier)     │  -- Auto-suspend 5min 유휴
+                               └──────────────────┘
 ```
 
-- **백엔드**: 단일 Cloud Run 서비스 `api` (FastAPI + MCP 마운트)
+- **공개 API**: Cloud Run 서비스 `api` (FastAPI, `/health`, `/api/*`) — `--allow-unauthenticated`
+- **내부 MCP**: Cloud Run 서비스 `mcp` (FastMCP, `/mcp`) — `--no-allow-unauthenticated`, IAM 보호
 - **프론트엔드**: 별도 레포 `proj2-frontend` → Vercel 연동 (Hobby 플랜 무료)
 - **DB**: **Neon 무료 PostgreSQL** (Cloud SQL 대신 — 월 $0)
 - **시크릿**: Secret Manager
 - **CI/CD**: Cloud Build (GitHub push → 빌드 → 배포)
 - **MCP 인증**: Cloud Run IAM (서비스 간 호출만 허용, 브라우저 직접 접근 차단)
+- **이미지**: **단일 Docker 이미지** 사용, 진입점만 다름 (`backend.main:app` vs `backend.mcp.main:app`)
 - **예상 월 비용**: **$0** (무료 할당량 내, 초과 시 과금 가능)
+
+---
 
 ---
 
@@ -107,7 +118,7 @@ gcloud secrets create DATABASE_URL --data-file=- --project=proj2-509406 <<< 'pos
 | **브랜치** | `^main$` |
 | **포함된 파일 필터** | `backend/**`, `Dockerfile`, `cloudbuild.yaml`, `.env.example` |
 | **빌드 구성** | `cloudbuild.yaml` (레포 루트) |
-| **Substitutions** | `_REGION=asia-northeast3`, `_ARTIFACT_REGISTRY=asia-northeast3-docker.pkg.dev`, `_ARTIFACT_REPO=docker-repo`, `_SERVICE_NAME=api` |
+| **Substitutions** | `_REGION=asia-northeast3`, `_ARTIFACT_REGISTRY=asia-northeast3-docker.pkg.dev`, `_ARTIFACT_REPO=docker-repo`, `_API_SERVICE_NAME=api`, `_MCP_SERVICE_NAME=mcp`, `_MCP_CALLER_SA=mcp-caller` |
 
 > **참고**: 실제 트리거는 Cloud Build 콘솔에서 생성·관리됩니다. 위 설정은 `cloudbuild.yaml` 주석과 이 문서에 기록해 둡니다.
 
@@ -115,40 +126,45 @@ gcloud secrets create DATABASE_URL --data-file=- --project=proj2-509406 <<< 'pos
 
 ## 4-2. MCP 인증 (Cloud Run IAM)
 
-MCP 엔드포인트(`/mcp`)는 **Cloud Run IAM**으로 보호됩니다.
+MCP 서비스(`mcp`, `/mcp`)는 **Cloud Run IAM**으로 보호됩니다.
 
 ### 인증 방식
-- **허용**: Cloud Run 서비스 간 호출 (메인 API 서비스 → MCP 서비스, 동일 프로젝트 내)
+- **허용**: Cloud Run 서비스 간 호출 (공개 API 서비스 `api` → MCP 서비스 `mcp`, 동일 프로젝트 내)
 - **차단**: 일반 브라우저의 `/mcp` 직접 호출, 인증되지 않은 외부 요청
+- **호출자**: `mcp-caller` 서비스 계정 (`roles/run.invoker` 권한 보유)
 
-### 설정 방법
-1. Cloud Run 서비스 `api` 배포 시 `--allow-unauthenticated`는 **메인 API 엔드포인트(`/health`, `/api/*`)에만 적용**
-2. MCP 도구는 내부 호출만 허용하므로 별도 IAM 권한 필요:
-   ```bash
-   # MCP 호출용 서비스 계정 생성 (필요 시)
-   gcloud iam service-accounts create mcp-caller --project=proj2-509406
-   
-   # Cloud Run 호출 권한 부여
-   gcloud run services add-iam-policy-binding api \
-     --region=asia-northeast3 \
-     --member="serviceAccount:mcp-caller@proj2-509406.iam.gserviceaccount.com" \
-     --role="roles/run.invoker" \
-     --project=proj2-509406
-   ```
-3. 메인 API(`backend/main.py`)에서 MCP 호출 시 `Authorization: Bearer <OIDC 토큰>` 헤더 포함
+### 설정 방법 (Cloud Build에서 자동 수행)
+1. **공개 API 서비스 `api`**: `--allow-unauthenticated`로 배포 (`/health`, `/api/*` 공개)
+2. **MCP 서비스 `mcp`**: `--no-allow-unauthenticated`로 배포 (인증 필수)
+3. **IAM 바인딩**: `mcp-caller@<project>.iam.gserviceaccount.com`에 `roles/run.invoker` 부여 (Cloud Build 단계 4에서 자동)
+4. **메인 API에서 MCP 호출 시**: `Authorization: Bearer <OIDC 토큰>` 헤더 포함 (Google Cloud 클라이언트 라이브러리가 자동 처리)
 
 ### 로컬 개발·테스트 시 주의사항
-- **로컬에서는 IAM 검증 불가** → `MCP_ENABLED=false`(기본값)로 MCP 비활성화 상태에서 개발
-- 로컬에서 MCP 테스트 필요 시:
-  - `MCP_ENABLED=true` 설정 후 `docker compose up`
-  - 로컬에서는 인증 없이 접근 가능 (개발 편의)
-  - 배포 시에는 반드시 IAM 정책 적용 확인
+- **로컬에서는 IAM 검증 불가** → 단일 컨테이너로 실행 (`MCP_ENABLED=true` 시 MCP 마운트)
+- `docker compose up` 시 공개 API와 MCP가 동일 포트(8000)에서 서비스됨
+- 로컬에서는 인증 없이 접근 가능 (개발 편의)
+- 배포 시에는 반드시 두 서비스 분리 + IAM 정책 적용 확인
 
 ### 기존 JWT 인증 제거
 - `backend/shared/auth.py`에서 MCP용 JWT(`verify_token`, `create_token`) 제거 완료
 - 메인 API 세션 인증은 쿠키 기반(`get_session_id`, `get_current_user`)만 유지
 
 ---
+
+## 4-3. 서비스 계정 생성 (최초 1회)
+
+```bash
+# MCP 호출용 서비스 계정 생성
+gcloud iam service-accounts create mcp-caller --project=proj2-509406
+
+# Cloud Build가 배포 시 자동으로 IAM 바인딩 수행 (cloudbuild.yaml의 bind-mcp-invoker 단계)
+# 수동 실행 필요 시:
+gcloud run services add-iam-policy-binding mcp \
+  --region=asia-northeast3 \
+  --member="serviceAccount:mcp-caller@proj2-509406.iam.gserviceaccount.com" \
+  --role="roles/run.invoker" \
+  --project=proj2-509406
+```
 
 ## 5. 로컬 개발
 
@@ -157,19 +173,25 @@ MCP 엔드포인트(`/mcp`)는 **Cloud Run IAM**으로 보호됩니다.
 cp .env.example .env
 # .env 편집: OPENROUTER_API_KEY, LANGFUSE_* 등 입력
 # DATABASE_URL에는 Neon dev 브랜치 연결 문자열 필수 입력
+# TERM_CARDS_PATH 미설정 시 자동 탐지 (레포 내 term-cards 디렉터리)
 
 # 전체 스택 실행 (Neon dev 브랜치 사용)
 docker compose up --build
 
 # API 확인
 curl http://localhost:8000/health
+# MCP는 로컬에서 동일 컨테이너에 마운트됨 (MCP_ENABLED=true 시)
+MCP_ENABLED=true docker compose up --build
 curl http://localhost:8000/mcp/health
 ```
 
-- FastAPI: `http://localhost:8000`
-- MCP 엔드포인트: `http://localhost:8000/mcp` (Streamable HTTP, `MCP_ENABLED=true` 시에만)
+- FastAPI (공개 API): `http://localhost:8000` — `/health`, `/api/*`
+- MCP 엔드포인트: `http://localhost:8000/mcp` (Streamable HTTP, `MCP_ENABLED=true` 시에만 마운트)
 - 로컬 DB: **Neon dev 브랜치** 사용 (운영과 동일 환경, 브랜칭 기능 활용)
 - `.env` 파일이 없거나 `DATABASE_URL`이 설정되지 않으면 컨테이너 시작 실패
+- TERM_CARD 경로: `TERM_CARDS_PATH` 미설정 시 레포 내 `docs/domains/illustration-reference/term-cards/` 자동 탐지
+
+> **참고**: 로컬에서는 단일 컨테이너로 공개 API + MCP 동시 실행. 프로덕션은 별도 Cloud Run 서비스(`api`, `mcp`)로 분리 배포.
 
 ---
 
@@ -205,24 +227,36 @@ gcloud run services update api \
 
 | 서비스 | 명령어 |
 |---|---|
-| Cloud Run | `gcloud run domain-mappings create --service=api --domain=api.myapp.com --region=asia-northeast3` |
+| Cloud Run (공개 API) | `gcloud run domain-mappings create --service=api --domain=api.myapp.com --region=asia-northeast3` |
+| Cloud Run (MCP) | `gcloud run domain-mappings create --service=mcp --domain=mcp.myapp.com --region=asia-northeast3` |
 | Vercel | 대시보드 → Project → Settings → Domains → Add |
+
+> **참고**: MCP 서비스는 내부 전용이므로 커스텀 도메인 불필요. 필요 시에만 설정.
 
 ---
 
 ## 8. 주요 명령어 치트시트
 
 ```bash
-# Cloud Run 로그 확인
+# Cloud Run 로그 확인 (공개 API)
 gcloud run services logs read api --region=asia-northeast3 --limit=50
 
-# Cloud Run 서비스 업데이트 (환경변수만 변경 시)
+# Cloud Run 로그 확인 (MCP)
+gcloud run services logs read mcp --region=asia-northeast3 --limit=50
+
+# Cloud Run 서비스 업데이트 - 공개 API (환경변수만 변경 시)
 gcloud run services update api --region=asia-northeast3 --update-env-vars=KEY=VALUE --project=proj2-509406
+
+# Cloud Run 서비스 업데이트 - MCP (환경변수만 변경 시)
+gcloud run services update mcp --region=asia-northeast3 --update-env-vars=KEY=VALUE --project=proj2-509406
 
 # Secret Manager 시크릿 업데이트
 echo -n "new-value" | gcloud secrets versions add SECRET_NAME --data-file=- --project=proj2-509406
 
 # Neon 콘솔에서 DB 상태 확인: https://console.neon.tech
+
+# MCP 서비스 IAM 바인딩 확인
+gcloud run services get-iam-policy mcp --region=asia-northeast3 --project=proj2-509406
 ```
 
 ---
@@ -234,7 +268,8 @@ echo -n "new-value" | gcloud secrets versions add SECRET_NAME --data-file=- --pr
 | 배포 후 500 에러 | 시크릿 누락 | Secret Manager에 5개 시크릿 모두 버전 확인 |
 | DB 연결 실패 | Neon 일시정지 | Neon 콘솔에서 프로젝트 'Resume' 클릭 또는 연결 문자열 재확인 |
 | CORS 에러 | ALLOWED_ORIGINS 불일치 | Vercel 도메인 정확히 추가 (프로토콜 `https://` 포함) |
-| MCP 엔드포인트 404 | 마운트 경로 틀림 또는 비활성화 | `/mcp` 경로 확인, `MCP_ENABLED=true` 환경변수 설정 필요 (기본값 false) |
+| MCP 엔드포인트 401/403 | 인증 없음/권한 없음 | `mcp-caller` 서비스 계정에 `roles/run.invoker` 부여 확인 |
+| MCP 서비스 시작 실패 | 카탈로그 검증 실패 | TERM_CARD 파일 검증 오류 확인 (`gcloud run services logs read mcp`) |
 | 빌드 실패 | requirements.txt 의존성 | 로컬에서 `docker compose build`로 선검증 |
 | Neon SSL 에러 | `sslmode=require` 누락 | 연결 문자열에 `?sslmode=require` 필수 |
 
