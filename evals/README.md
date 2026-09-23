@@ -6,10 +6,10 @@
 
 | 파일 | 역할 | 현재 실행 기준 |
 | --- | --- | --- |
-| [dataset.jsonl](./dataset.jsonl) | 30건 원문 평가셋 | baseline·개선 후 재측정에 사용하는 유일한 실행 원본 |
+| [dataset.jsonl](./dataset.jsonl) | 30건 원문 평가셋 | 의미 품질 평가와 계약 평가의 원문 기준 |
 | [evaluation-set.md](./evaluation-set.md) | 30건 사람이 읽는 요약표 | 문항 의도와 커버리지 검토 |
 | [rubric-and-baseline.md](./rubric-and-baseline.md) | rubric·baseline 기록 양식 | 사람이 채점하고 Langfuse 결과를 기록하는 기준 |
-| [contract-variants.jsonl](./contract-variants.jsonl) | 70건 고정 변형 초안 | **현재 baseline에서는 제외**. 최신 비동기 API 계약 이행 뒤 별도 PR에서 활성화 |
+| [contract-variants.jsonl](./contract-variants.jsonl) | 70건 고정 계약 변형 | 최신 비동기 API 계약의 고정 변형. 원문과 합쳐 100건 계약 준수 평가 입력 |
 
 `dataset.jsonl`의 각 줄은 독립 JSON이다. 줄 순서와 ID는 개선 전후 비교를 위해 고정하며, 입력·기대값을 바꾸면 dataset 버전과 변경 이유를 함께 기록한다.
 
@@ -74,4 +74,4 @@ LLM-as-judge를 사용할 때는 생성 모델과 다른 모델 또는 사람 �
 4. 30건을 Langfuse Dataset으로 등록하고, dataset 버전·Git commit·TERM_CARD catalog version·프롬프트 버전을 baseline에 기록한다.
 5. 모델 또는 프롬프트 변경은 한 번에 하나만 하고, 같은 30건을 다시 실행해 회귀 문항을 기록한다.
 
-현재 `contract-variants.jsonl`은 이전 동기식 계약의 필드를 포함한 보관용 초안이다. 이를 현재 30건과 합쳐 100건 평가라고 주장하지 않으며, 이행 전에는 Langfuse Dataset·출시 게이트·baseline 수치에 사용하지 않는다.
+`dataset.jsonl` 30건과 `contract-variants.jsonl` 70건은 합쳐 100건 계약 준수 평가 입력이다. 아직 실제 실행 결과는 기록되지 않았으므로, Langfuse Dataset 등록·출시 게이트·baseline 수치는 실행 후에만 채운다.

@@ -1,8 +1,8 @@
 # Contract Evaluation Variants
 
-> **상태: 보관 초안.** 이 문서는 70개 고정 변형을 최신 비동기 계약으로 이행할 목표를 설명한다. 현재
-> `evals/contract-variants.jsonl`은 이전 동기식 필드를 포함하므로 baseline, Langfuse Dataset, 출시 게이트의
-> 실행 수치에 사용하지 않는다. 현재 실행 기준은 `evals/dataset.jsonl`의 30건 원문뿐이다.
+> **상태: 현재 계약 이행 완료.** `evals/contract-variants.jsonl`의 70개 고정 변형은 최신 비동기 job
+> 계약을 사용한다. 30개 원문과 함께 계약 준수 평가 입력으로 사용하되, 실제 실행 전에는 baseline·Langfuse
+> Dataset·출시 게이트의 측정 수치를 주장하지 않는다.
 
 ## Why
 
@@ -50,8 +50,9 @@
 - 검증 스크립트 또는 정적 검사는 JSON 파싱, 정확히 70개인지, ID 중복 여부, 원문 참조 존재,
   변형 유형 분포, 활성 TERM_CARD·사유 코드·Pin 상태·외부 어휘 참조 부재를 확인한다.
 
-현재 JSONL은 위 이행 전의 동기식 필드와 이전 사유 코드를 포함한다. 이 문서 변경만으로 실행
-가능한 계약 데이터가 되지는 않으며, 원문 30개와 70개 변형은 같은 후속 데이터 변경에서 함께 이행한다.
+70개 변형은 위 계약에 맞춰 제출과 종결 상태를 분리한다. `runtime_fixture`는 외부 Pin URL이 아닌
+테스트 double 상태만 가지며, 검색 0건·재시도 소진·삭제 Pin·worker 중단은 최신 reason code와
+failure code로 검증한다.
 
 ## AC
 
