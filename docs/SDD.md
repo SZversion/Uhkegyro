@@ -45,7 +45,7 @@ Langfuse <- LLM adapter의 요청 ID·모델·토큰·지연·비용·재시도
 
 ## 3. API 계약의 강제성
 
-공개 API의 단일 기준은 [frontend-api-contract.md](./specs/frontend-api-contract.md)다. 브라우저는 `POST /api/sessions`로 서버 세션을 받고, `POST /api/sessions/{session_id}/messages`의 `request_text`로 비동기 job을 생성한다. 메시지 endpoint는 `202`와 `job_id`만 반환하며, `GET /api/jobs/{job_id}`의 job envelope가 최종 결과 기준이다. 결과의 `agent_status`, `reason_codes`, `ReferencePlan` 구조와 job 실패 계약은 [illustration-reference-current-failure-state-contract.md](./specs/illustration-reference-current-failure-state-contract.md)가 유일한 기준이다.
+공개 API의 단일 기준은 [api-contract.md](./specs/api-contract.md)다. 브라우저는 `POST /api/agent`로 요청을 제출하고(신규 세션 시 HttpOnly cookie 발급), `GET /api/jobs/{job_id}`의 job envelope가 최종 결과 기준이다. 결과의 `agent_status`, `reason_codes`, `ReferencePlan` 구조와 job 실패 계약 모두 `api-contract.md`가 유일한 기준이다.
 
 - `GET /health`는 상태 확인 전용이다. `/api/sessions`, `/api/sessions/{session_id}/messages`, `/api/jobs/{job_id}`, `/api/jobs/{job_id}/retry`가 MVP 공개 API다.
 - 클라이언트는 `request_text`와 서버가 반환한 현재 화면의 `session_id`만 경로에 사용한다. `role`·`term_id`·검색어·Pin URL·세션 토큰·`anonymous_user_id`는 서버가 결정한다.
@@ -63,41 +63,37 @@ Langfuse <- LLM adapter의 요청 ID·모델·토큰·지연·비용·재시도
 
 ## 4. 상세 처리 순서
 
-1. 배포·시드 적재 시 Card repository가 역할별 JSON의 합계 `card_count=74`와 필수 필드를 검증한 뒤 자체 TERM_CARD DB에 적재한다. 런타임은 DB의 스키마·활성 카드 수를 검증하며, 실패하면 ready 상태로 만들지 않고 운영자 오류로 기록한다.
-2. repository는 검수 완료된 74개 활성 카드를 모두 인덱싱하고, 역할별 JSON에 없는 새 term ID·미검수 후속 카드는 메모리 모델에서 제외한다.
-3. `POST /api/sessions` route가 서버 생성 세션과 `HttpOnly` 쿠키를 만들고, `POST /api/sessions/{session_id}/messages`가 소유권·입력 규칙을 검증한 뒤 `queued` job과 request ID를 영속화한다.
-4. Job executor가 job을 claim해 lease와 `running` 상태를 저장한다. Cloud Run 중단으로 lease가 만료되면 recovery가 한 번만 `INSTANCE_INTERRUPTED` failed 상태로 종결한다.
-5. LLM adapter는 활성 카드의 ID·role·confidence gate만 근거로 구조화 후보를 생성한다.
-6. resolver는 (a) 선택 역할 여부, (b) 활성 사전 존재 여부, (c) 카드 role 일치, (d) `confidence_gate`, (e) `requires_all_of` 전체 충족, (f) `requires_any_of` 중 하나 충족을 검증한다.
-7. 단서가 없거나 검증을 통과하지 못하면 `needs_clarification` 결과를 만들어 `completed`로 종결한다.
-8. 유효 카드마다 response assembler가 자체 DB의 카드 피드백과 팀 검수 상태를 조립한다. `active_term_feedback`이 없는 승인 카드는 `label_ko`, `source_answer_draft`, `look_for`만 표시하고, 없는 초보자 피드백을 생성하지 않는다. Getty 데이터·귀속·외부 어휘 API·SPARQL·웹 조회는 사용하지 않는다.
-9. URL builder는 선택 카드의 `query_fragments` 배열만 합쳐 Pinterest 검색 URL을 만든다. `direct_search_disabled_term_ids`에 해당하면 링크를 만들지 않는다.
-10. PinterestSearchProvider가 역할별 결과를 반환하면 `{pin_url, thumbnail_url, status}`를 조립한다. 썸네일 URL이 없으면 `thumbnail_unavailable`로 원본 링크만 표시하고, 삭제 Pin은 `deleted`로 표시 대상에서 제외한다. 0건은 `no_results`, 검색 장애는 `search_error`와 재시도 안내로 구분한다.
-11. 카드 결과가 하나 이상이면 `completed`와 `AgentResult`를 저장한다. 안전하게 조립할 수 없는 LLM·DB·resolver 오류는 `failed`와 `PROCESSING_ERROR`, 앱 관리 job 제한 시간은 `JOB_TIMEOUT`으로 종결한다.
+1. 앱 시작 시 `term-card-catalog.md`의 시작 검증을 실행해 JSON 카탈로그를 메모리에 로드한다. 검증 실패 시 `CATALOG_INVALID_AT_STARTUP`로 ready 상태를 거부한다.
+2. resolver는 메모리의 활성 카드 사전만 사용해 후보를 검증한다. DB 적재·외부 어휘 조회는 하지 않는다.
+3. `POST /api/agent`가 입력(1~500자, 추가 필드 거부)을 검증하고, 신규 세션 시 HttpOnly cookie를 발급해 `202 {job_id, job_status:"queued"}`를 반환한다. 기존 세션 쿠키가 있으면 재사용한다.
+4. Worker가 job을 claim해 `running`→`validating`→`searching`→`rendering` 전이를 기록한다. 회복 가능한 LLM·검색 오류는 사용자에게 노출하지 않고 최초 포함 최대 3회 자동 재시도한다. `JOB_INSTANCE_INTERRUPTED`는 lease 만료 시 한 번만 종결한다.
+5. LLM adapter는 `InterpretationOutput`(세션·후보·모호성 질문)만 반환한다. 최종 `agent_status`, `reason_codes`, 검색 URL은 resolver가 조립한다.
+6. resolver는 메모리 카탈로그의 활성 `term_id`·`role`·조건(`confidence_gate`, `requires_all_of`, `requires_any_of`)을 통과한 후보만 선택한다.
+7. 단서 부족·상충은 실패가 아니라 `completed + needs_clarification`이며 질문 하나를 반환한다. 다음 사용자 메시지는 새 job이다.
+8. 유효 카드마다 `active_term_feedback[term_id]`가 있으면 `plain_meaning_ko`, `selection_reason_template_ko`, `reference_checkpoints_ko`를 API 필드에 매핑한다. 없으면 `source_answer_draft`, `look_for`를 fallback으로 사용하고 LLM이 문구를 생성하지 않는다.
+9. URL builder는 선택 카드의 `query_fragments`만 합쳐 Pinterest 검색 URL을 만든다. `direct_search_disabled_term_ids` 해당 시 URL·provider 호출 없이 `needs_clarification`을 반환한다.
+10. PinterestSearchProvider가 역할별 결과를 반환하면 `{pin_url, thumbnail_url, status}`를 조립한다. 검색 재시도 소진 시 `PIN_SEARCH_UNAVAILABLE`, 정상 0건 시 `PIN_RESULTS_EMPTY`를 역할 `reason_codes`에 기록한다. 하나 이상의 카드가 유효하면 `partial_result`로 종결한다.
+11. 모든 카드 유효하고 검색 성공 시 `completed + success`. 재시도 소진 또는 결정적 운영 오류 시 `failed`와 안정된 `failure_code`(예: `LLM_TIMEOUT`, `SEARCH_RATE_LIMITED`, `CONFIGURATION_ERROR` 등)로 종결한다.
 
 ## 5. 실패와 폴백
 
-| 실패 | 응답/운영 처리 |
+상세 실패 코드·자동 재시도 규칙·UI 표시 규칙은 [api-contract.md](./specs/api-contract.md) §How·§AC를 단일 기준으로 따른다. 요약:
+
+| 실패 유형 | 결과 처리 |
 | --- | --- |
-| JSON 누락·파싱 실패·스키마 불일치 | 서비스 준비 실패, 운영 로그 기록; 빈 허용 목록으로 실행 금지 |
-| 입력 계약 위반 | 검증 오류; LLM·MCP를 호출하지 않음 |
-| LLM timeout·형식 오류 | `failed` job과 `JOB_TIMEOUT` 또는 `PROCESSING_ERROR` 기록; 사용자 수동 재시도 가능 상태와 trace 기록 |
-| 앱 관리 job 제한 시간 초과 | `failed` job과 `JOB_TIMEOUT`으로 종결 |
-| Cloud Run 종료 | lease 만료 뒤 recovery가 `failed` job과 `INSTANCE_INTERRUPTED`로 종결 |
-| 게이트웨이 timeout·브라우저 연결 단절 | job 상태를 바꾸지 않음; 브라우저 전송 실패 안내 후 같은 job polling 또는 새 요청 |
-| 카드 밖 또는 비활성 ID | resolver가 폐기; 링크 생성 금지 |
-| 단서 부족·상충 | 추측 금지, 질문 또는 `pending_human_review` |
-| 카드 필수 필드 누락 | 해당 카드를 검증 오류로 기록하고, 외부 출처를 생성·조회하지 않음 |
-| 자체 TERM_CARD DB 미연결·미적재 | `TERM_CARD_STORE_UNAVAILABLE`을 기록하고 결과·링크를 만들지 않음 |
-| Pinterest URL 생성 불가 | URL 생략 및 사유 표시; 대체 자유 문장 URL 금지 |
-| 검색 결과 0건 | 해당 역할에 `no_results`와 `검색 결과가 없습니다` 표시 |
-| Pin 썸네일 부재 | `thumbnail_unavailable`으로 원본 Pin 링크만 표시 |
-| Pin 삭제 | URL은 세션 이력에 남기되 `deleted` 상태와 `이 Pin은 삭제되었습니다` 표시 |
-| 검색 시스템 오류 | `search_error`와 재시도 안내 표시 |
-| term card로 해결 불가 | 추가 질문을 저장하고 사용자 다음 입력을 기다림; 계속 해결하지 못하면 휴먼 피드백 필요 상태 |
+| 카탈로그 검증 실패 | `CATALOG_INVALID_AT_STARTUP` — ready 거부, job 수신 안 함 |
+| 입력 계약 위반(길이·필드) | `422 INVALID_REQUEST_TEXT` — LLM·MCP 미호출 |
+| 회복 가능한 LLM 오류 | 자동 재시도(최대 3회), 소진 시 `LLM_TIMEOUT`·`LLM_RATE_LIMITED`·`LLM_UPSTREAM_UNAVAILABLE`·`LLM_INVALID_STRUCTURED_OUTPUT` |
+| 회복 가능한 검색 오류 | 자동 재시도(최대 3회), 소진 시 `SEARCH_TIMEOUT`·`SEARCH_RATE_LIMITED`·`SEARCH_UPSTREAM_UNAVAILABLE` |
+| 결정적 운영 오류 | 즉시 `failed` — `CONFIGURATION_ERROR`·`DATABASE_MIGRATION_ERROR`·`DATABASE_UNAVAILABLE`·`INTERNAL_CODE_ERROR` |
+| 단서 부족·상충 | `completed + needs_clarification` + 질문 (실패 아님) |
+| 카드 밖·비활성 ID | resolver가 폐기, 검색 URL·provider 호출 안 함 |
+| 검색 0건 | `PIN_RESULTS_EMPTY` (재시도 안 함) |
+| 검색 재시도 소진 | `PIN_SEARCH_UNAVAILABLE` (유효 카드 있으면 `partial_result`) |
+| Pin 썸네일 부재/삭제 | `thumbnail_unavailable`·`deleted` — 표시만 제한, job 상태 영향 없음 |
 
 ## 6. 관측·보안·검증
 
-LLM adapter는 Langfuse에 요청 ID, 모델, 프롬프트 버전, 입력/출력 계약 통과 여부, 토큰 수, 지연, 비용, 재시도를 기록한다. 평가셋은 최소 30건이며 정상·경계·실패 유도를 포함한다. 회귀는 카드 허용 목록, 역할 필터, URL fragment 전용 생성, 모호성 질문, 카드에 저장된 출처 노출, `/health`를 검증한다.
+관측·프롬프트 버전·구조화 로그·retry event 계약은 [observability-and-prompt-versioning.md](./specs/observability-and-prompt-versioning.md)를 단일 기준으로 따른다.
 
-비밀값은 `.env`와 배포 Secret Manager에만 두며 UI와 git에 노출하지 않는다. `anonymous_user_id`, `session_id`, 세션 토큰 원문은 로그·trace에 남기지 않고 해시만 기록한다. 세션·chat·job 상태·구조화 결과·Pin URL과 상태는 Cloud SQL for PostgreSQL에 1개월 저장하고 Cloud Scheduler가 하루 한 번 만료 데이터를 삭제한다. 썸네일 URL과 이미지 바이트·Pin 메타데이터는 저장하지 않는다. 세션 쿠키는 배포에서 `HttpOnly`, `Secure=true`, `SameSite=Lax`로 설정한다. 로컬 HTTP 개발에서만 명시적 local 설정의 `Secure=false`를 허용하며 배포 설정에 재사용하지 않는다. `SameSite=Lax` 쿠키 MVP는 UI와 API를 같은 origin으로 제공하며, 개발 환경은 Vite proxy로 연결한다. Vercel UI와 별도 Cloud Run API의 교차 사이트 cookie 호출은 BFF 또는 별도 쿠키 정책을 확정하기 전까지 범위 밖이다. Pinterest 검색 API·비즈니스 계정은 후속 확인 전까지 provider 구현을 교체 가능하게 유지한다. `main`에는 직접 push하지 않고 개인 브랜치·PR·리뷰 흐름을 따른다.
+비밀값은 `.env`와 배포 Secret Manager에만 두며 UI와 git에 노출하지 않는다. `session_id`, 세션 토큰 원문은 로그·trace에 남기지 않고 해시만 기록한다. 세션·job 상태·구조화 결과·Pin URL과 상태는 1개월 저장하고 만료 삭제한다(로컬 SQLite, 운영 Neon PostgreSQL). 썸네일 URL과 이미지 바이트·Pin 메타데이터는 저장하지 않는다. 세션 쿠키는 배포에서 `HttpOnly`, `Secure=true`, `SameSite=Lax`로 설정한다. 로컬 HTTP 개발에서만 명시적 local 설정의 `Secure=false`를 허용하며 배포 설정에 재사용하지 않는다. Next.js 프론트는 동일 origin(`/api/*` rewrite)으로 API 호출하며, cross-site cookie는 범위 밖이다. Pinterest 검색 API·비즈니스 계정은 provider 구현을 교체 가능하게 유지한다. `main`에는 직접 push하지 않고 개인 브랜치·PR·리뷰 흐름을 따른다.

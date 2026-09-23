@@ -180,7 +180,11 @@ docker compose down
 | [도메인 프로필](./docs/domains/illustration-reference/domain-profile.md) | 사용자, 업무 경험, 경쟁 서비스, 범위와 데이터 출처 |
 | [경쟁 서비스 분석](./docs/domains/illustration-reference/competitive-analysis.md) | 실제 시작 흐름 비교, 차별점과 조사 한계 |
 | [설계 문서](./docs/domains/illustration-reference/design.md) | LLM·결정론 코드·MCP의 책임 분리와 폴백 설계 |
-| [실패 상태 계약](./docs/specs/illustration-reference-current-failure-state-contract.md) | 비동기 job 상태, 완료 결과, worker 실패·재시도 및 LLM JSON 계약 |
+| [공개 API 계약](./docs/specs/api-contract.md) | 비동기 job, 세션, LLM 출력, 검증, 실패·재시도, Pydantic 스키마 단일 기준 |
+| [TERM_CARD 카탈로그](./docs/specs/term-card-catalog.md) | JSON 카탈로그 구조, 활성 조건, 시작 검증, 피드백 조립 |
+| [MCP 도구 계약](./docs/specs/mcp-contract.md) | `get_active_term_card` 도구, 접근 제어, 호출 증거 |
+| [신뢰 경계](./docs/specs/trust-boundary.md) | 신뢰 원본·외부 데이터 격리·사전 안전 검사 |
+| [관측·프롬프트 버전](./docs/specs/observability-and-prompt-versioning.md) | Langfuse trace, 프롬프트 버전, retry event, 구조화 로그 |
 | [NOT_BUILD.md](./NOT_BUILD.md) | MVP에서 의도적으로 만들지 않는 기능과 이유 |
 | [EVAL_REPORT.md](./EVAL_REPORT.md) | 관측, 프롬프트 운영, 평가, 비용·지연, 출시 게이트 |
 | [evals/](./evals/) | 평가셋과 판정 기준 |

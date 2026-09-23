@@ -7,7 +7,7 @@
 **근거 문서**:
 - `README.md` §"도메인 데이터와 출처 경계" — 자체 TERM_CARD DB·Pinterest 출처 경계
 - `NOT_BUILD.md` — 수집·저장·재게시 금지 범위
-- `docs/specs/self-managed-term-card-store.md`·`term-card-category-split.md` — 자체 TERM_CARD DB·시드 자료 계약
+- `docs/specs/term-card-catalog.md` — TERM_CARD JSON 카탈로그 구조·활성 조건·시작 검증·피드백 조립
 - PRD — "승인된 출처만 완료 카탈로그로 주장한다"
 
 ---
@@ -37,7 +37,7 @@
 
 ### How
 
-- 출처별 검증 상태 표를 README·EVAL에 반영하고, `input-output-pydantic-schema.md`(PinResult)·렌더링 규칙과 정합화한다.
+- 출처별 검증 상태 표를 README·EVAL에 반영하고, `api-contract.md`(PinResult)·렌더링 규칙과 정합화한다.
 - §4 담당자·데드라인을 팀에서 확정한다.
 
 ### AC
@@ -140,5 +140,5 @@
 1. 담당자·데드라인 확정 → README에 출처별 검증 상태 표 갱신
 2. 자체 TERM_CARD DB schema·시드 적재 계획 확정 (SDD §4와 연동)
 3. `LICENSE` 추가 판단 (추가 시 저장소에 반영)
-4. Pin `status`·원격 썸네일 표시 규칙을 `input-output-pydantic-schema.md`(PinResult)와 정합화
+4. Pin `status`·원격 썸네일 표시 규칙을 `api-contract.md`(PinResult)와 정합화
 5. 평가셋: 출처 필드·Pin 상태 구분·`pending_human_review` 케이스 포함 (9/23 마일스톤)

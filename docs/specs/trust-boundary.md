@@ -6,9 +6,8 @@
 **상태**: 강사님 회의(2026-09-22) 반영 · 신뢰 출처 4종 등급·게이트 확정 · **PR #15 정합**
 **근거 문서**:
 - 3주차 11강 교안 (참조: 안건 4 신뢰 경계)
-- 현행 계약(PR #15): `illustration-reference-current-failure-state-contract.md` (unsafe_input·사전 안전 검사)
+- 현행 계약(PR #15): `docs/specs/api-contract.md` (unsafe_input·사전 안전 검사·세션 소유권·HttpOnly 쿠키)
 - PRD: "LLM은 의미 해석만, 결정론 코드가 허용 ID 검증·URL 생성"
-- 현행 계약(PR #15): `frontend-api-contract.md` (세션 소유권·HttpOnly 쿠키)
 
 ---
 
@@ -35,7 +34,7 @@
 ### How
 
 - 사전 안전 검사·resolver·결정론 URL 빌더를 이 표의 게이트 그대로 구현하고, 평가셋으로 인젝션 케이스를 검증한다.
-- `untrusted_data` 태깅 대안(<RAG 금지>)·`frontend-api-contract.md`·`current-failure-state-contract.md`와 함께 정합화한다.
+- `untrusted_data` 태깅 대안(<RAG 금지>)·`api-contract.md`와 함께 정합화한다.
 
 ### AC
 
@@ -156,6 +155,6 @@
 ## 8. Next Task
 
 1. 확정 6건 → 스펙에 4종 표 + 적용 지점 + 평가 케이스 반영 (본 문서)
-2. 스펙 반영 PR: `frontend-api-contract`·`current-failure-state-contract`와 신뢰 경계 문구 정합화 (PR #15 병합 시점 이후)
+2. 스펙 반영 PR: `api-contract.md`와 신뢰 경계 문구 정합화 (PR #15 병합 시점 이후)
 3. `backend/services/llm.py` + 결정론 컴포넌트 구현 시: 사전 안전 검사 모듈, 자체 TERM_CARD DB 기준 resolver 재검증, `<untrusted_data>` 금지 규칙 반영
 4. 평가셋 실패 유도 10건(EVAL-21~30)에 인젝션 방어 케이스 반영 → 계약 준수율 측정 (9/23 마일스톤)

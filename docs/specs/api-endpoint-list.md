@@ -6,10 +6,11 @@
 **상태**: 강사님 회의(2026-09-22) 반영 · **비동기 확정** · PR #15(`OSC04/docs/self-managed-term-card-db`) 계약 정합 반영
 **근거 문서**:
 - `docs/PRD.md` — 제품 원칙·용어 단일 원본·범위 정의 기준
-- 현행 계약(PR #15): `docs/specs/frontend-api-contract.md` — 공개 HTTP API · 세션·job 모델
-- 현행 계약(PR #15): `docs/specs/illustration-reference-current-failure-state-contract.md` — job·실패·재시도 계약
+- 현행 계약(PR #15): `docs/specs/api-contract.md` — 공개 HTTP API · 세션·job·Pydantic·실패·재시도 단일 기준
 - `docs/SDD.md` §3 — 자체 TERM_CARD DB·job executor·recovery
 - `260921 강사님회의/06_트레이싱_정의.md`: MCP span·도구명
+- `docs/specs/mcp-contract.md` — MCP 도구 계약 (신규)
+- `docs/specs/term-card-catalog.md` — TERM_CARD JSON 카탈로그 (신규)
 
 ---
 
@@ -24,26 +25,25 @@
 
 ### Goal
 
-- **해결 목표**: 공개 HTTP 5종·비공개 금지 경계·MCP(미정)를 구분해 구현 인원별 작업 단위를 고정한다.
-- **성공 기준**: 배포되는 엔드포인트가 §2 표와 일치하고, MCP 영역은 "구현 전 — 별도 MCP Spec" 상태를 유지한다.
-- **Out of Scope**: MCP 도구명·입출력·전송 방식(별도 MCP Spec)
+- **해결 목표**: 공개 HTTP 2종·비공개 금지 경계·MCP(신규 Spec)를 구분해 구현 인원별 작업 단위를 고정한다.
+- **성공 기준**: 배포되는 엔드포인트가 §2 표와 일치하고, MCP 영역은 `mcp-contract.md` 확정 상태를 유지한다.
+- **Out of Scope**: MCP 도구 상세(별도 `mcp-contract.md`)
 
 ### What
 
-- 공개 HTTP API 5종(비동기 확정), MCP 영역(도구 목록 미정, provider 중계만), 비공개 경계(브라우저 직접 호출 금지)
+- 공개 HTTP API 2종(비동기 확정: `POST /api/agent`, `GET /api/jobs/{job_id}`), MCP 도구 1종(`get_active_term_card`), 비공개 경계(브라우저 직접 호출 금지)
 - 트레이싱 span ↔ 엔드포인트/도구 대응, 회의 확정 5건
 
 ### How
 
-- 백엔드 FastAPI 라우터·Langfuse span을 이 표 기준으로 구현하고, MCP Spec 확정 시 본 문서를 갱신한 뒤 도구 구현을 시작한다.
-- `frontend-api-contract.md`·`current-failure-state-contract.md`와 함께 정합화한다.
+- 백엔드 FastAPI 라우터·Langfuse span을 `api-contract.md` 기준으로 구현하고, `mcp-contract.md` 확정 시 본 문서를 갱신한 뒤 도구 구현을 시작한다.
 
 ### AC
 
 **AC-01 · 엔드포인트 목록**
 - GIVEN: 배포된 백엔드 엔드포인트를 열거할 때
 - WHEN: 구현을 확인하면
-- THEN: `/health`·`/api/sessions`·`/api/sessions/{id}/messages`·`/api/jobs/{id}`·`/api/jobs/{id}/retry` 5종만 공개되고 나머지는 비공개/금지 경계로 남는다.
+- THEN: `/health`·`/api/agent`·`/api/jobs/{job_id}` 3종만 공개되고 나머지는 비공개/금지 경계로 남는다.
 
 **AC-02 · 형식 오류는 HTTP 422**
 - GIVEN: `request_text`가 공백만이거나 500자를 넘으면
@@ -61,41 +61,39 @@
 
 | 계층 | 호출자 | 엔드포인트/도구 | 확정 상태 |
 | --- | --- | --- | --- |
-| 공개 HTTP API | 브라우저(프런트) → 백엔드 | `GET /health` · `POST /api/sessions` · `POST /api/sessions/{id}/messages` · `GET /api/jobs/{id}` · `POST /api/jobs/{id}/retry` | **비동기 확정** (PR #15 기준) |
-| MCP 도구 | LLM → 백엔드 (서버 간) | 자체 TERM_CARD DB 조회·검색 provider 중계 — **도구 목록·계약 미정** (별도 MCP Spec으로 확정) | 구현 전 — 별도 MCP Spec으로 확정 |
+| 공개 HTTP API | 브라우저(프런트) → 백엔드 | `GET /health` · `POST /api/agent` · `GET /api/jobs/{job_id}` | **비동기 확정** (`api-contract.md`) |
+| MCP 도구 | LLM → 백엔드 (서버 간) | `get_active_term_card(term_id)` — 자체 TERM_CARD DB 조회 | `mcp-contract.md` 확정 |
 | 비공개 경계 | 브라우저 | `/mcp`·LLM SDK·비밀값 **직접 호출 금지** | 현행 계약으로 확정 |
 
 > 프런트가 부르는 것(HTTP API)과 LLM이 도구로 부르는 것(MCP)을 이 표로 구분한다. 두 계층은 스키마·오류·인증이 별개다.
 
 ---
 
-## 2. 공개 HTTP API (비동기 확정 — PR #15 기준)
+## 2. 공개 HTTP API (비동기 확정 — `api-contract.md` 기준)
 
 | 엔드포인트 | 메서드 | 성공 응답 | 권한 | 오류 |
 | --- | --- | --- | --- | --- |
 | `/health` | GET | `200 {"status":"ok"}` | 쿠키 불필요 | — |
-| `/api/sessions` | POST | `201` + `Set-Cookie` + `{session_id, expires_at}` | — | — |
-| `/api/sessions/{session_id}/messages` | POST | `202 {message_id, job_id, job_status:queued, poll_after_ms:1000}` | 쿠키 소유 | `401 SESSION_REQUIRED` / `404 SESSION_NOT_FOUND` / `422 INVALID_REQUEST_TEXT` |
-| `/api/jobs/{job_id}` | GET | `200` (항상, 본문 `JobEnvelope`에 상태) | 쿠키 소유 | `401 SESSION_REQUIRED` / `404 JOB_NOT_FOUND`(타인 접근 포함) |
-| `/api/jobs/{job_id}/retry` | POST | `202 {job_id, retry_of_job_id, job_status:queued, poll_after_ms:1000}` | 쿠키 소유 | `401` / `404` / `409 JOB_NOT_RETRYABLE` |
+| `/api/agent` | POST | `202 {message_id, job_id, job_status:"queued", poll_after_ms:1000}` + HttpOnly cookie(신규/기존) | 쿠키 소유(신규 세션 발급 가능) | `422 INVALID_REQUEST_TEXT` |
+| `/api/jobs/{job_id}` | GET | `200 JobEnvelope` (진행 중: `poll_after_ms=1000`, 종결: `poll_after_ms=null`) | 쿠키 소유 | `401 SESSION_REQUIRED` / `404 JOB_NOT_FOUND`(타인 접근 포함) |
 
 ### 세부 계약 포인트
 
 - **요청**: 공개 body의 사용자 결정 값은 `request_text`(1~500자)뿐. `role`·`term_id`·검색어·Pin URL은 백엔드만 결정.
-- **세션**: 서버 생성 불투명 UUID. 쿠키 `HttpOnly`·`Secure`·`SameSite=Lax`·`Path=/`.
+- **세션**: 서버 생성 불투명 UUID. 쿠키 `HttpOnly`·`Secure`·`SameSite=Lax`·`Path=/`. 신규 세션 시 쿠키 발급, 기존 세션 쿠키 재사용.
 - **폴링**: 조회는 항상 `200` — 처리 실패는 본문 `job_status=failed` + `failure`(`JobFailure`)로 표현 (HTTP 레벨과 본문 상태 레벨 구분). 진행 중 `poll_after_ms=1000`, 종결 후 `null`.
-- **재시도**: 자동 재시도 금지. `failed`+`retryable=true`일 때만 사용자가 명시적으로 재시도 (`max_attempts=3`).
-- **스키마 참조**: `input-output-pydantic-schema.md` (JobEnvelope · AgentResult · ReferencePlan · TermResult · PinResult)
+- **재시도**: 사용자 재시도 endpoint 없음(`POST /api/jobs/{job_id}/retry` 제거). 자동 재시도는 서버가 내부적으로 최대 3회(최초 포함) 실행. 다음 사용자 메시지는 새 job.
+- **스키마 참조**: `api-contract.md` (JobEnvelope · AgentResult · ReferencePlan · TermResult · PinResult · AgentRequest · InterpretationOutput)
 
 ---
 
 ## 3. MCP 도구 (LLM → 백엔드)
 
-PR #15 계약에서는 FastMCP 도구 목록·계약이 **미정**이다. 용어 원본이 자체 TERM_CARD DB로 고정되면서 MCP는 자체 DB 카드 조회와 검색 provider 중계를 담당하며, Getty·외부 어휘 조회 도구는 만들지 않는다.
+`mcp-contract.md`에서 확정: `get_active_term_card(term_id)` 1개 도구. FastMCP Streamable HTTP `/mcp`로 제공.
 
 | 도구 | 용도 | 확정 상태 |
 | --- | --- | --- |
-| (미정 — 2~3개 예상) | 자체 TERM_CARD DB 조회 · 검증된 카드의 `query_fragments`로 검색 계획 생성 | 구현 전 — 별도 MCP Spec으로 확정 (SDD §2 기준: FastMCP는 LLM이 필요하다고 판단한 도구 호출 중계, 도구 목록·계약 미정) |
+| `get_active_term_card` | 활성 `term_id`에 대한 팀 검수 설명·검색 조각 반환 | `mcp-contract.md` 확정 |
 
 ### 확정 원칙 (현행 계약)
 
@@ -109,12 +107,11 @@ PR #15 계약에서는 FastMCP 도구 목록·계약이 **미정**이다. 용어
 
 | span | 대응 | 남기는 값 |
 | --- | --- | --- |
-| `api_agent` | HTTP API (세션·메시지·job 조회·retry) | 상태 코드 · 스키마 통과 · request_id · job_id · failure_code |
+| `api_agent` | HTTP API (`/api/agent`, `/api/jobs/{job_id}`) | 상태 코드 · 스키마 통과 · request_id · job_id · failure_code |
 | `llm_interpret` | 기본 LLM 해석 호출 | 모델 · 프롬프트 버전 · 재시도 · 지연 |
 | `pinterest_search_provider` (잠정 논리 span) | 검색 provider 중계 (PinterestSearchProvider) | 입력 role 수 · `pins[].status` (available/thumbnail_unavailable/deleted) |
 | `response_validate` | 최종 응답 검증 | `output_schema_valid` · 링크 역할 수 |
-
-> MCP 도구명은 별도 MCP Spec에서 확정한다 — 확정 전까지 위 span은 provider/논리 span 명칭이며 도구명으로 간주하지 않는다.
+| `mcp_get_active_term_card` | MCP 도구 호출 | term_id · status(found/not_found) |
 
 > Getty/외부 어휘 조회 span(`mcp_getty_terms`, `resolve_illustration_reference_plan`, `search_getty_aat_terms`)은 PR #15 계약에서 제거되어 기록하지 않는다.
 
@@ -124,17 +121,17 @@ PR #15 계약에서는 FastMCP 도구 목록·계약이 **미정**이다. 용어
 
 | # | 결정 포인트 | 결과 (2026-09-22 회의 기준 · PR #15 정합) |
 | --- | --- | --- |
-| 1 | 공개 HTTP API 목록 | **PR #15 채택 (비동기)** — 표 2장 기준으로 고정 |
-| 2 | 소유권 미노출 404 | `404`로 존재 여부 미노출 유지 (타인 접근 포함) |
-| 3 | MCP 도구 목록 | **미정 상태로 고정** — 구현 전 별도 MCP Spec에서 도구명·입출력·전송 방식 확정 (SDD와 일치) |
-| 4 | MCP Spec 분리 | 별도 문서에서 도구명·입출력·전송 방식 확정 (현행 계약 Out of Scope와 일치) |
-| 5 | `retryable`·재시도 | 폴링 본문(`job_status`·`failure`) — HTTP 200 유지, `max_attempts=3`, 자동 재시도 없음 |
+| 1 | 공개 HTTP API 목록 | **`api-contract.md` 채택 (비동기)** — `POST /api/agent` + `GET /api/jobs/{job_id}` 고정 |
+| 2 | 소유권 미노출 404 | `404 JOB_NOT_FOUND`로 존재 여부 미노출 유지 (타인 접근 포함) |
+| 3 | MCP 도구 | **`get_active_term_card` 1개 확정** — `mcp-contract.md` 참고 |
+| 4 | MCP Spec 분리 | `mcp-contract.md`에서 도구·입출력·전송 방식·접근 제어 확정 |
+| 5 | 재시도 | 서버 내부 자동 재시도(최대 3회). 사용자 retry endpoint 없음. |
 
 ---
 
 ## 6. Next Task
 
-1. 확정 5건 → 엔드포인트 총괄 표 1장을 현행 계약(`frontend-api-contract.md`)에 반영 (PR #15 병합 시점 이후)
-2. MCP Spec 신규 작성: 자체 TERM_CARD DB 조회·검색 provider 도구 + 접근 제어 정책 (SDD §2 기준)
-3. `mcp_server/server.py`의 `example_tool` → MCP Spec 확정 후 실제 도구 교체
-4. 평가셋: HTTP API 오류코드(401/404/409/422)·폴링 상태 전이 케이스 포함 (9/23 마일스톤)
+1. `api-contract.md`를 단일 기준으로 백엔드 라우터·worker·검증 구현 (T13~T18)
+2. `mcp-contract.md` 구현: `get_active_term_card` 도구 + 접근 제어 (T20~T21)
+3. `mcp_server/server.py`의 `example_tool` → `get_active_term_card` 교체
+4. 평가셋: HTTP API 오류코드(401/404/422)·폴링 상태 전이·자동 재시도 케이스 포함 (9/23 마일스톤)
