@@ -12,7 +12,7 @@
 
 ## What
 
-`sessions`는 `session_id` UUID PK, 고유 `session_token_hash`, `created_at`, `last_activity_at`을 가진다. `jobs`는 `job_id` UUID PK, `session_id` FK `ON DELETE CASCADE`, `request_text`, `request_text_hash`, `idempotency_key_hash`, `idempotency_expires_at`, `status`, `attempt`, `max_attempts=3`, `lease_expires_at`, `succeeded`, `final_payload_json`, `created_at`, `updated_at`, `completed_at`을 가진다.
+`sessions`는 `session_id` UUID PK, 고유 `session_token_hash`, `created_at`, `last_activity_at`을 가진다. `jobs`는 `job_id` UUID PK, `session_id` FK `ON DELETE CASCADE`, `request_text`, `request_text_hash`, `idempotency_key_hash`, `idempotency_expires_at`, `status`, `attempt=0`, `max_attempts=3`, `lease_expires_at`, `succeeded`, `final_payload_json`, `created_at`, `updated_at`, `completed_at`을 가진다.
 
 수락한 `request_text`는 job에 영구 보관한다. `succeeded`와 `final_payload_json`은 진행 중에는 모두 `null`, 성공이면 각각 `true`와 `thumbnail_url`을 제거한 `AgentResult`, 실패면 `false`와 `failure` 객체다. 성공 payload는 `pin_id`·`pin_url`·`status`를 유지한다.
 

@@ -12,7 +12,7 @@
 
 ## What
 
-worker는 1초마다 처리 가능한 queued job 또는 lease가 만료된 running job을 찾는다. claim 성공 시 status를 `running`으로 바꾸고 30초 lease를 설정한다. 실행 중 10초마다 heartbeat로 lease를 30초 뒤로 연장한다.
+worker는 1초마다 처리 가능한 queued job 또는 lease가 만료된 running job을 찾는다. 새 job은 `attempt=0`으로 생성되며, claim transaction이 `attempt`를 1 증가시키고 status를 `running`으로 바꾸며 30초 lease를 설정한다. 실행 중 10초마다 heartbeat로 lease를 30초 뒤로 연장한다.
 
 같은 session의 queued job은 더 이른 미종결 job이 있으면 claim하지 않는다. lease 만료 job은 중간 실행을 이어가지 않고 처음부터 재실행하며 `attempt`를 1 증가한다. `attempt=3` 뒤 회복 가능한 실패는 `failed`와 `JOB_INSTANCE_INTERRUPTED` 또는 실제 최종 failure code로 종결한다.
 
@@ -21,7 +21,7 @@ worker는 1초마다 처리 가능한 queued job 또는 lease가 만료된 runni
 - claim은 `FOR UPDATE SKIP LOCKED` transaction으로 수행해 worker 둘이 같은 job을 얻지 못하게 한다.
 - `WORKER_CONCURRENCY` 기본값은 5이며 worker가 동시에 보유한 lease 수를 제한한다.
 - worker는 상태를 `queued → running → validating → searching → rendering → completed|failed`로만 전이한다.
-- LLM·crawler·widget의 회복 가능한 오류는 해당 job attempt를 소진하고 다음 attempt로 재실행한다. 구성·DB migration·코드 오류는 즉시 `failed`다.
+- LLM·crawler·widget의 회복 가능한 오류에서 `attempt<3`이면 lease를 제거하고 `queued`로 되돌린다. 다음 claim이 attempt를 증가시켜 처음부터 재실행한다. `attempt=3`이면 실제 failure code로 `failed` 처리한다. 구성·DB migration·코드 오류는 즉시 `failed`다.
 - 완료·실패 저장에 성공한 뒤 lease를 제거한다.
 
 ## AC
