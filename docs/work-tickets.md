@@ -19,11 +19,11 @@
 | `POST /api/agent`·job route와 worker | FastAPI routes/worker | `api-contract.md` |
 | 자동 재시도·failure code 관측 | worker/trace | `api-contract.md`, 관측 Spec |
 | Next.js UI | frontend | `api-contract.md` |
-| 검색 provider | provider adapter | 승인된 provider 계약 확정 후 |
+| PinterestCrawlerProvider | 서버 Playwright 공개 검색·Pin ID widget 조회 | `pinterest-widget-crawler.md`, `api-contract.md` |
 
 ## 운영 원칙
 
 - TERM_CARD는 JSON 카탈로그만 사용하며 DB 적재·외부 어휘 조회를 하지 않는다.
 - Agent worker는 활성 카드 조회에 `get_active_term_card(term_id)`만 사용하고, 브라우저는 `/mcp`를 직접 호출하지 않는다.
 - 사용자 retry endpoint와 버튼은 없다. 일시 오류는 서버가 자동 재시도하고, 모호성은 다음 사용자 메시지로 보완한다.
-- Pinterest 크롤링은 이 티켓과 현재 제품 계약의 범위 밖이다.
+- `PinterestCrawlerProvider`는 서버에서 활성 카드의 `query_fragments`만 사용해 공개 검색을 수행하고, 모든 수집 Pin ID를 widget endpoint로 조회한다. 브라우저 직접 호출·Pinterest API v5·외부 본문 LLM 입력은 금지한다.

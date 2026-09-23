@@ -11,13 +11,14 @@
 
 ## What
 
-신뢰 원본은 시작 검증을 통과해 메모리에 로드된 TERM_CARD JSON 카탈로그와 서버 결정론 코드다. LLM 출력은 후보일 뿐이며 resolver가 역할·활성·조건을 다시 검증한다. 검색 provider의 Pin URL·썸네일 URL은 표시용 untrusted data이며 카드·검색어·프롬프트를 바꾸지 않는다.
+신뢰 원본은 시작 검증을 통과해 메모리에 로드된 TERM_CARD JSON 카탈로그와 서버 결정론 코드다. LLM 출력은 후보일 뿐이며 resolver가 역할·활성·조건을 다시 검증한다. 서버 `PinterestCrawlerProvider`는 검증된 `query_fragments`만 공개 검색에 사용한다. 검색 결과의 Pin ID·`pin_url`·widget `thumbnail_url`은 표시용 untrusted data이며 카드·검색어·프롬프트를 바꾸지 않는다.
 
 ## How
 
 - 브라우저는 자연어 `request_text`만 전송한다.
 - 사전 안전 검사는 프롬프트/비밀값 추출과 유해·불법 요청을 `unsafe_input`으로 끝내고 LLM·검색을 호출하지 않는다.
-- 외부 원문·이미지·Pin 본문을 LLM 프롬프트나 RAG에 주입하지 않는다. `pin_url`과 `status`는 세션·job 이력에 포함된 결과로만 유지할 수 있으며, 썸네일 URL과 이미지 바이트는 저장하지 않는다.
+- crawler와 widget 요청은 서버에서만 수행하며 브라우저는 Pinterest·widget endpoint를 직접 호출하지 않는다. Pinterest API v5는 사용하지 않는다.
+- 외부 원문·이미지·Pin 본문·widget 부가 필드를 LLM 프롬프트나 RAG에 주입하지 않는다. `pin_url`과 `status`는 세션·job 이력에 포함된 결과로만 유지할 수 있으며, 썸네일 URL과 이미지 바이트는 저장·trace·로그에 사용하지 않는다.
 - 비밀값, 세션 토큰, 사용자 원문, 이미지 바이트는 UI와 trace에 노출하지 않는다.
 - 세션 저장소는 쿠키 토큰 원문이 아닌 SHA-256 해시만 보관한다.
 
@@ -33,4 +34,4 @@
 
 - GIVEN: 검색 provider 결과가 있다.
 - WHEN: 응답을 조립한다.
-- THEN: Pin URL과 상태는 세션·job 이력에 포함된 결과로만 유지할 수 있고, 응답 전용 썸네일은 표시할 수 있지만 LLM 입력·카탈로그·별도 Pin 저장소에는 사용하지 않는다.
+- THEN: Pin URL과 상태는 세션·job 이력에 포함된 결과로만 유지할 수 있고, widget의 응답 전용 썸네일은 표시할 수 있지만 LLM 입력·카탈로그·별도 Pin 저장소·trace·로그에는 사용하지 않는다.

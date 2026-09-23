@@ -38,7 +38,7 @@
 - FastMCP 시작 시 `term-card-catalog.md`의 검증을 실행하고, 성공한 활성 카드 사전을 읽기 전용 메모리로 보관한다.
 - `get_active_term_card`의 description에는 “Pydantic 검증 뒤의 활성 term ID에 대한 팀 검수 설명·검색 조각이 필요할 때 사용한다”를 명시한다.
 - `/mcp`는 서비스 토큰 또는 허용된 서비스 클라이언트만 연결할 수 있게 설정한다. Next.js UI와 일반 브라우저의 직접 호출은 허용하지 않는다.
-- Agent worker는 MCP 응답의 `term_id`, `role`, 활성 조건을 다시 검증하고, 유효한 `query_fragments`만 PinterestSearchProvider에 전달한다.
+- Agent worker는 MCP 응답의 `term_id`, `role`, 활성 조건을 다시 검증하고, 유효한 `query_fragments`만 서버 `PinterestCrawlerProvider`에 전달한다. provider는 공개 검색으로 Pin ID·`pin_url`을 수집한 뒤 widget endpoint로 현재 응답용 `thumbnail_url`을 조회하며, MCP는 그 외부 호출에 관여하지 않는다.
 - 구현 완료 시 README에 `/mcp` 연결 방법, tool 목록, 인증 방식, `found`·`not_found` 실제 호출 결과를 추가한다.
 
 ## AC
