@@ -43,7 +43,7 @@
 - 사유 코드는 `ABSTRACT_INTENT_ONLY`, `INSUFFICIENT_VISUAL_EVIDENCE`,
   `CONFLICTING_CONSTRAINTS`, `DIRECT_SEARCH_DISABLED`, `PIN_RESULTS_EMPTY`,
   `PIN_SEARCH_UNAVAILABLE`, `OUT_OF_SCOPE_REQUEST`, `UNSAFE_INPUT`만 사용한다.
-- `pins`는 역할별 최대 8개이며 `available`, `thumbnail_unavailable`, `deleted`만 상태로
+- `pins`는 역할별 최대 8개이며 `available`, `deleted`만 상태로
   사용한다. 원본 `pin_url` 링크와 응답 전용 `thumbnail_url`을 검증하되 `pinit.js`·Pin 데이터
   저장·재게시를 기대하지 않는다.
 - `team_card` 카드와 현재 활성 `term_id`만 기대값에 사용한다. 외부 어휘 조회·Getty URI·외부 provider 폴백 관련 필드는 포함하지 않는다.

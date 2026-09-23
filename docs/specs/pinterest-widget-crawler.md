@@ -17,7 +17,7 @@ Pinterest API v5, `GET /v5/pins/{pin_id}`, 브라우저의 직접 크롤링, 이
 1. resolver가 활성 TERM_CARD의 `query_fragments`만 검색 provider에 전달한다.
 2. Playwright는 공개 Pinterest 검색 결과에서 역할별 최대 8개의 고유 Pin ID와 원본 `pin_url`을 수집한다.
 3. 수집한 각 Pin ID에 widget endpoint를 요청한다. 응답의 `images` 항목 중 가장 큰 면적의 URL을 `thumbnail_url`로 사용한다.
-4. widget 응답에 이미지 URL이 없으면 해당 결과는 `pin_url`, `status="thumbnail_unavailable"`, `thumbnail_url=null`이다.
+4. widget 응답에 이미지 URL이 없거나 widget·원본 Pin에 접근할 수 없으면 해당 결과는 `status="deleted"`, `thumbnail_url=null`이다.
 5. widget 응답의 이미지 URL은 현재 API 응답에만 넣는다. 세션·job 이력, 로그, trace, 카탈로그에는 저장하지 않는다.
 6. 검색 페이지 또는 widget endpoint의 일시 실패는 기존 검색 provider 자동 재시도 대상이다. 재시도 소진 뒤 유효 카드가 있으면 `completed + partial_result`와 `PIN_SEARCH_UNAVAILABLE`을 반환한다.
 
@@ -28,7 +28,7 @@ Pinterest API v5, `GET /v5/pins/{pin_id}`, 브라우저의 직접 크롤링, 이
 - 검색 URL은 선택된 `query_fragments`만 URL 인코딩해 만든다. LLM·사용자 입력·카드 밖 문자열을 추가하지 않는다.
 - Pin ID와 `pin_url`이 모두 확인된 공개 결과만 후보로 사용한다. 중복 Pin ID는 역할 안에서 하나만 유지한다.
 - 결과가 없으면 `pins=[]`, `reason_codes=["PIN_RESULTS_EMPTY"]`를 반환한다.
-- widget 요청 실패, 차단, timeout, 형식 오류는 `PIN_SEARCH_UNAVAILABLE`로 분류한다. 이미지 URL 부재는 provider 오류가 아닌 `thumbnail_unavailable`이다.
+- 수집한 Pin의 widget 요청 실패, 차단, timeout, 형식 오류 또는 이미지 URL 부재는 `status="deleted"`로 제공한다. 검색 자체가 실패해 Pin을 수집하지 못한 경우만 `PIN_SEARCH_UNAVAILABLE`로 분류한다.
 - `pin_id`, `pin_url`, `status`는 세션·job 이력의 결과 필드로만 유지한다. `GET /api/jobs/{job_id}`는 저장된 `pin_id`로 widget을 다시 조회해 응답 전용 `thumbnail_url`을 조립한다. 별도 Pin 테이블·캐시·이미지 프록시를 만들지 않는다.
 - `thumbnail_url`은 응답을 조립한 뒤 저장 전에 제거한다. 이미지 바이트·Pin 본문·작성자·보드·설명 등 widget의 나머지 응답 필드는 반환·저장·LLM 입력에 사용하지 않는다.
 
@@ -45,7 +45,7 @@ Pinterest API v5, `GET /v5/pins/{pin_id}`, 브라우저의 직접 크롤링, 이
 
 - GIVEN: crawler가 Pin ID와 `pin_url`을 수집했다.
 - WHEN: widget 응답에 이미지 URL이 없다.
-- THEN: `thumbnail_url=null`, `status="thumbnail_unavailable"`과 원본 `pin_url`을 반환한다.
+- THEN: `thumbnail_url=null`, `status="deleted"`을 반환하고 UI는 접근할 수 없는 Pin으로 표시한다.
 
 **AC-03 · 검색 장애**
 

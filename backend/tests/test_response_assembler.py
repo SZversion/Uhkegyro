@@ -32,7 +32,7 @@ def _sel(role, term_id, confidence=0.9):
 
 
 def _pin(url="https://pin.it/1", status="available"):
-    return PinResult(pin_url=url, thumbnail_url=url if status == "available" else None, status=status)
+    return PinResult(pin_id=url.rsplit("/", 1)[-1], pin_url=url, thumbnail_url=url if status == "available" else None, status=status)
 
 
 def _resolve(selections, snapshot):

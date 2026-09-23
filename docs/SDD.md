@@ -35,7 +35,7 @@ FastMCP startup -> JSON catalog validation -> immutable active-card memory
 
 LLM·PinterestCrawlerProvider·worker의 회복과 최종 실패 경계는 [api-contract.md](./specs/api-contract.md)를 따른다. worker의 polling·lease·동시성·세션별 순차 실행은 [postgres-job-worker.md](./specs/postgres-job-worker.md), LLM provider·model·timeout은 [openrouter-llm-adapter.md](./specs/openrouter-llm-adapter.md)가 단일 기준이다.
 
-유효 카드가 있으면 PinterestCrawlerProvider의 검색 또는 widget 실패가 소진돼도 `completed + partial_result`로 조립한다. 실패 역할은 빈 pins와 `PIN_SEARCH_UNAVAILABLE` reason code를 가진다. widget이 이미지 URL을 주지 않은 경우는 실패가 아니라 `thumbnail_unavailable` 상태와 원본 `pin_url`을 유지한다. 0건은 `PIN_RESULTS_EMPTY`이며 재시도하지 않는다. 단서 부족은 `completed + needs_clarification`이며 후속 메시지가 새 job을 만든다.
+유효 카드가 있으면 PinterestCrawlerProvider의 검색 실패가 소진돼도 `completed + partial_result`로 조립한다. 실패 역할은 빈 pins와 `PIN_SEARCH_UNAVAILABLE` reason code를 가진다. 수집한 Pin의 widget·원본 접근 실패 또는 이미지 URL 부재는 `deleted` 상태와 접근 불가 안내로 제공한다. 0건은 `PIN_RESULTS_EMPTY`이며 재시도하지 않는다. 단서 부족은 `completed + needs_clarification`이며 후속 메시지가 새 job을 만든다.
 
 ## 4. API·프론트 경계
 

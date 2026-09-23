@@ -74,10 +74,9 @@ class FailureCode(StrEnum):
 
 
 class PinStatus(StrEnum):
-    """Pin 상태 3종."""
+    """Pin 상태 2종."""
 
     AVAILABLE = "available"
-    THUMBNAIL_UNAVAILABLE = "thumbnail_unavailable"
     DELETED = "deleted"
 
 
