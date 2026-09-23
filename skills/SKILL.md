@@ -1,6 +1,6 @@
 # 캐주얼 캐릭터 일러스트 레퍼런스 해석 Skill
 
-> 이 문서는 모든 Agent 요청에 전문을 고정 프롬프트로 주입하는 도메인 지식·판단 기준이다.
+> 이 문서는 UH케그려의 고정 도메인 지식·판단 기준이다. LLM이 실제로 받는 영어 System message의 검토 원본은 `prompts/uhkegryo-interpreter-v0.md`이며, 이 Skill의 **LLM 선택 규칙**을 같은 의미로 옮긴다. 런타임은 이 한국어 Skill 전문을 별도 system message로 덧붙이지 않고 v0 System message 하나만 사용한다. 최종 상태·검색·피드백 조립처럼 LLM 선택 밖의 규칙은 resolver가 이 문서와 API 계약을 따라 결정한다. 둘 중 하나를 바꾸면 같은 PR에서 함께 검토한다.
 > 카드·문서 조각을 검색해 넣지 않으므로 RAG가 아니다. 정확한 카드 값의 런타임 단일 원천은 팀이 관리하는 TERM_CARD JSON 카탈로그다. `docs/domains/illustration-reference/term-cards/`의 `index.json`과 역할별 JSON을 시작 시 검증해 메모리에 로드하며, 이 문서는 그 값을 대신하거나 새 카드를 만들지 않는다.
 
 ## 이 도메인은 무엇을 다루나
@@ -21,15 +21,16 @@ LLM은 입력의 의미를 해석하고 허용된 `term_id` 후보와 근거를 
 | `perspective` | 공간 또는 신체의 원근 표현 | 인물의 방향·포즈를 뜻하지 않는다. |
 | `layout` | 화면 안에서 요소를 배치하는 방식 | 신체 자세나 시점의 대체 용어가 아니다. |
 | `confidence_gate` | 카드를 선택하기 위해 입력에서 확인되어야 하는 최소 단서 | 단서가 부족하면 용어와 링크를 추측하지 않는다. |
-| `requires_all_of` / `requires_any_of` | 카드 선택에 필요한 선행 조건 | 전자는 모두, 후자는 하나 이상 충족해야 한다. |
+| `requires_all_of` / `requires_any_of` | 세부 카드가 전제하는 부모 `term_id`의 카탈로그 의존 관계 | 각 배열은 부모 ID 연결을 선언한다. LLM은 부모를 같은 역할의 추가 selection으로 반환하지 않으며, resolver가 그래프의 존재·활성 상태·순환을 확인한다. |
 | `query_fragments` | 코드가 Pinterest 검색 입력을 만들 때 조합하는 표준 전문용어 조각 | 쉬운 설명이나 일상어를 검색어에 임의로 덧붙이지 않는다. |
+| 후속 사용자 메시지 | 질문 뒤에도 활성 카드로 안전하게 해석할 수 없는 경우의 다음 입력 | 현재 공개 API와 LLM 출력에는 `pending_human_review`를 쓰지 않는다. 새 메시지는 새 job이며, 계속 단서가 부족하면 `needs_clarification`을 유지한다. |
 
 ## 판단 기준
 
 1. 입력에서 사용자가 실제로 말한 단서만 찾는다. 입력에 없는 체형, 신체 방향, 지지점, 카메라 위치를 사실처럼 보완하지 않는다.
 2. 단서를 `body` → `pose` → `view` → `perspective` → `layout` 순서로 분리한다. 확인되지 않은 역할은 빈 값으로 채우거나 검색하지 않는다.
 3. `view`는 인물을 보는 방향·높이이고, `perspective`는 공간·신체의 원근이다. 정면 인물과 3점 투시 배경처럼 둘은 함께 가능하지만 하나로 축소하지 않는다.
-4. 한 카드의 `term_id`는 역할이 맞고, `confidence_gate`, `requires_all_of`, `requires_any_of`를 모두 만족할 때만 선택한다. 현재 검수 완료된 74개 카드 밖의 term ID와 `detail`, `intent`, `style` 역할은 선택·표시하지 않는다.
+4. 한 카드의 `term_id`는 역할이 맞고, `confidence_gate`, `requires_all_of`, `requires_any_of`를 모두 만족할 때만 선택한다. 현재 카탈로그의 활성 카드 밖 term ID와 `detail`, `intent`, `style` 역할은 선택·표시하지 않는다.
 5. 단서가 부족하거나 서로 충돌하면 전문 용어·Pinterest 링크를 만들지 말고, `needs_clarification`과 사용자가 답할 수 있는 쉬운 추가 질문 하나를 반환한다. 다음 사용자 응답은 새 job이며, 여전히 단서가 부족하면 같은 상태로 질문을 반복한다.
 6. 응답에는 선택한 용어의 쉬운 뜻, 입력에서 확인한 근거, 관찰할 지점, 혼동하기 쉬운 점을 카드 데이터에 따라 제공한다. 대안 용어는 설명·추가 질문용이며 자동 검색 역할이 아니다.
 7. Pinterest 검색 입력은 선택된 활성 카드의 `query_fragments`만 사용한다. 서버 `PinterestCrawlerProvider`가 공개 검색에서 Pin ID·`pin_url`을 수집하고 모든 ID를 widget endpoint로 조회해 현재 응답용 `thumbnail_url`을 얻는다. 검색 결과의 존재·품질·저작권·사용 적합성은 보장하지 않으며, 사용자가 외부 원본에서 직접 확인해야 한다.

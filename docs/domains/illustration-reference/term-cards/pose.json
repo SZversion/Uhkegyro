@@ -1808,6 +1808,210 @@
       "source_answer_draft": "콘트라포스토의 지지 구조와 S자 몸통 흐름이 함께 나타난 자세입니다.",
       "review_status": "reviewed",
       "runtime_eligible": true
+    },
+    {
+      "term_id": "pose_hands_on_hips",
+      "role": "pose",
+      "component": "hand_gesture",
+      "label_ko": "허리에 손",
+      "label_en": "hands on hips",
+      "source_type": "team_card",
+      "query_fragments": [
+        "hands on hips pose"
+      ],
+      "look_for": [
+        "양손 또는 한 손이 골반·허리 옆에 놓임",
+        "팔꿈치가 몸통 바깥으로 꺾여 보임"
+      ],
+      "confidence_gate": {
+        "require_any": [
+          "손을 허리에 댄다는 묘사",
+          "팔꿈치를 벌리고 선다는 묘사"
+        ],
+        "do_not_infer_from": [
+          "손을 주머니에 넣은 상태",
+          "팔을 몸 옆으로 내린 상태"
+        ]
+      },
+      "requires_all_of": [],
+      "requires_any_of": [],
+      "mvp_status": "active_in_current_contract",
+      "reviewed_by": "오세창",
+      "reviewed_at": "2026-09-23",
+      "source_category_id": "booru_crosscheck_candidates_reviewed",
+      "source_answer_draft": "팀 작성 초안: '허리에 손' 레퍼런스를 찾을 때 '손이 골반·허리 옆에 놓임', '팔꿈치가 몸통 바깥으로 꺾여 보임' 단서를 우선 확인한다.",
+      "review_status": "reviewed",
+      "runtime_eligible": true
+    },
+    {
+      "term_id": "pose_arms_crossed",
+      "role": "pose",
+      "component": "upper_body_gesture",
+      "label_ko": "팔짱",
+      "label_en": "arms crossed",
+      "source_type": "team_card",
+      "query_fragments": [
+        "arms crossed pose"
+      ],
+      "look_for": [
+        "두 팔이 몸통 앞에서 서로 교차함",
+        "손 또는 팔꿈치가 반대쪽 팔에 닿음"
+      ],
+      "confidence_gate": {
+        "require_any": [
+          "팔짱을 낀다는 묘사",
+          "두 팔을 가슴 앞에서 교차한다는 묘사"
+        ],
+        "do_not_infer_from": [
+          "팔 하나만 몸통 앞에 둔 상태",
+          "물건을 두 팔로 안고 있는 상태"
+        ]
+      },
+      "requires_all_of": [],
+      "requires_any_of": [],
+      "mvp_status": "active_in_current_contract",
+      "reviewed_by": "오세창",
+      "reviewed_at": "2026-09-23",
+      "source_category_id": "booru_crosscheck_candidates_reviewed",
+      "source_answer_draft": "팀 작성 초안: '팔짱' 레퍼런스를 찾을 때 '두 팔이 몸통 앞에서 서로 교차함', '손 또는 팔꿈치가 반대쪽 팔에 닿음' 단서를 우선 확인한다.",
+      "review_status": "reviewed",
+      "runtime_eligible": true
+    },
+    {
+      "term_id": "pose_hands_behind_back",
+      "role": "pose",
+      "component": "hand_gesture",
+      "label_ko": "등 뒤로 깍지 낀 손",
+      "label_en": "hands behind back",
+      "source_type": "team_card",
+      "query_fragments": [
+        "hands behind back pose"
+      ],
+      "look_for": [
+        "양손 또는 팔이 골반 뒤쪽으로 향함",
+        "손이 몸통 뒤에서 맞잡히거나 가려짐"
+      ],
+      "confidence_gate": {
+        "require_any": [
+          "두 손을 등 뒤로 보낸다는 묘사",
+          "등 뒤에서 손을 잡는다는 묘사"
+        ],
+        "do_not_infer_from": [
+          "인물을 뒤에서 본 시점만 있는 경우",
+          "한 팔이 몸통 뒤로 잠시 가려진 경우"
+        ]
+      },
+      "requires_all_of": [],
+      "requires_any_of": [],
+      "mvp_status": "active_in_current_contract",
+      "reviewed_by": "오세창",
+      "reviewed_at": "2026-09-23",
+      "source_category_id": "booru_crosscheck_candidates_reviewed",
+      "source_answer_draft": "팀 작성 초안: '등 뒤로 깍지 낀 손' 레퍼런스를 찾을 때 '양손 또는 팔이 골반 뒤쪽으로 향함', '손이 몸통 뒤에서 맞잡히거나 가려짐' 단서를 우선 확인한다.",
+      "review_status": "reviewed",
+      "runtime_eligible": true
+    },
+    {
+      "term_id": "pose_hand_on_chin",
+      "role": "pose",
+      "component": "hand_gesture",
+      "label_ko": "턱에 손",
+      "label_en": "hand on chin",
+      "source_type": "team_card",
+      "query_fragments": [
+        "hand on chin pose"
+      ],
+      "look_for": [
+        "손가락 또는 손바닥이 턱·턱선에 닿음",
+        "팔이 얼굴 아래쪽을 향함"
+      ],
+      "confidence_gate": {
+        "require_any": [
+          "턱을 손으로 받친다는 묘사",
+          "손을 턱에 댄다는 묘사"
+        ],
+        "do_not_infer_from": [
+          "볼이나 이마에 손을 댄 상태",
+          "고개만 아래로 숙인 상태"
+        ]
+      },
+      "requires_all_of": [],
+      "requires_any_of": [],
+      "mvp_status": "active_in_current_contract",
+      "reviewed_by": "오세창",
+      "reviewed_at": "2026-09-23",
+      "source_category_id": "booru_crosscheck_candidates_reviewed",
+      "source_answer_draft": "팀 작성 초안: '턱에 손' 레퍼런스를 찾을 때 '손가락 또는 손바닥이 턱·턱선에 닿음', '팔이 얼굴 아래쪽을 향함' 단서를 우선 확인한다.",
+      "review_status": "reviewed",
+      "runtime_eligible": true
+    },
+    {
+      "term_id": "pose_hand_on_chest",
+      "role": "pose",
+      "component": "hand_gesture",
+      "label_ko": "가슴에 손",
+      "label_en": "hand on chest",
+      "source_type": "team_card",
+      "query_fragments": [
+        "hand on chest pose"
+      ],
+      "look_for": [
+        "한 손 또는 양손이 윗가슴·흉골 부근에 닿음",
+        "손가락이 몸통 쪽으로 향함"
+      ],
+      "confidence_gate": {
+        "require_any": [
+          "손을 가슴에 얹는다는 묘사",
+          "흉골 부근을 손으로 짚는다는 묘사"
+        ],
+        "do_not_infer_from": [
+          "가슴 높이에서 물건을 든 상태",
+          "팔짱을 낀 상태"
+        ]
+      },
+      "requires_all_of": [],
+      "requires_any_of": [],
+      "mvp_status": "active_in_current_contract",
+      "reviewed_by": "오세창",
+      "reviewed_at": "2026-09-23",
+      "source_category_id": "booru_crosscheck_candidates_reviewed",
+      "source_answer_draft": "팀 작성 초안: '가슴에 손' 레퍼런스를 찾을 때 '한 손 또는 양손이 윗가슴·흉골 부근에 닿음', '손가락이 몸통 쪽으로 향함' 단서를 우선 확인한다.",
+      "review_status": "reviewed",
+      "runtime_eligible": true
+    },
+    {
+      "term_id": "pose_salute",
+      "role": "pose",
+      "component": "hand_gesture",
+      "label_ko": "경례",
+      "label_en": "salute",
+      "source_type": "team_card",
+      "query_fragments": [
+        "salute"
+      ],
+      "look_for": [
+        "손가락을 편 손이 관자놀이나 이마 가까이에 놓임",
+        "팔꿈치가 옆이나 바깥으로 향함"
+      ],
+      "confidence_gate": {
+        "require_any": [
+          "경례한다는 묘사",
+          "손을 이마 가까이 들어 올린다는 묘사"
+        ],
+        "do_not_infer_from": [
+          "손으로 눈부심을 가리는 상태",
+          "손을 흔드는 상태"
+        ]
+      },
+      "requires_all_of": [],
+      "requires_any_of": [],
+      "mvp_status": "active_in_current_contract",
+      "reviewed_by": "오세창",
+      "reviewed_at": "2026-09-23",
+      "source_category_id": "booru_crosscheck_candidates_reviewed",
+      "source_answer_draft": "팀 작성 초안: '경례' 레퍼런스를 찾을 때 '편 손이 관자놀이나 이마 가까이에 놓임', '팔꿈치가 옆이나 바깥으로 향함' 단서를 우선 확인한다.",
+      "review_status": "reviewed",
+      "runtime_eligible": true
     }
   ]
 }

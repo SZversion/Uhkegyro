@@ -1,12 +1,12 @@
 {
   "dataset_name": "illustration_reference_master_term_cards",
-  "dataset_version": "0.7-json-runtime-catalog-reviewed",
+  "dataset_version": "0.8-json-runtime-catalog-reviewed",
   "status": "fully_reviewed_runtime_approved",
   "purpose": "캐주얼 캐릭터 일러스트 레퍼런스 해석 Agent의 런타임 TERM_CARD 카탈로그입니다. index와 categories에 적힌 5개 JSON 파일을 함께 검증하고 메모리에 로드해 런타임 용어 선택에 사용합니다.",
   "source_documents": [
     "docs/domains/illustration-reference/term-cards/SOURCE_PROVENANCE.md"
   ],
-  "card_count": 74.0,
+  "card_count": 82.0,
   "data_governance": {
     "source_of_truth": "versioned_json_runtime_catalog",
     "json_role": "runtime_source_and_review_input",
@@ -23,8 +23,8 @@
       "perspective",
       "layout"
     ],
-    "promotion_rule": "현재 5개 역할 파일의 74개 카드는 오세창 검수를 거쳐 모두 runtime_eligible=true로 승인되었습니다. 이후 새 카드는 오세창 검수와 query_fragments, look_for, confidence_gate, requires 조건의 확정, API 계약·Skill·평가셋 검토 뒤에만 추가합니다.",
-    "query_rule": "코드는 선택된 카드의 query_fragments만 결합합니다. 일상어 설명을 검색어에 그대로 덧붙이지 않고, 카드에 있는 표준 전문용어 조각만 사용합니다. requires_all_of는 모두, requires_any_of는 하나 이상 충족해야 합니다."
+    "promotion_rule": "현재 5개 역할 파일의 82개 카드는 오세창 검수를 거쳐 모두 runtime_eligible=true로 승인되었습니다. 이후 새 카드는 오세창 검수와 query_fragments, look_for, confidence_gate, requires 조건의 확정, API 계약·Skill·평가셋 검토 뒤에만 추가합니다.",
+    "query_rule": "코드는 선택된 카드의 query_fragments만 결합한 뒤 고정 접미사 drawing을 한 번 붙입니다. 일상어 설명을 검색어에 그대로 덧붙이지 않고, 카드에 있는 표준 전문용어 조각만 사용합니다. requires_all_of는 모두, requires_any_of는 하나 이상 충족해야 합니다."
   },
   "pinterest_search_contract": {
     "principle": "Pinterest 검색은 짧고 검증 가능한 표준 전문용어를 사용하고, 초보자용 풀이는 검색어가 아닌 화면 피드백으로 분리합니다.",
@@ -62,14 +62,14 @@
     ],
     "term_selection_rule": "LLM은 입력의 실제 단서가 confidence_gate를 통과할 때만 term_id를 고릅니다. 단서가 부족하면 terminology와 Pinterest 링크를 만들지 않고 InterpretationOutput의 clarifying_question을 반환합니다.",
     "body_term_notice": "체형 카드는 사람을 평가하거나 진단하는 분류가 아닙니다. 캐릭터의 실루엣과 비례를 찾기 위한 레퍼런스 용어입니다.",
-    "candidate_policy": "현재 5개 역할 파일의 74개 카드는 모두 초보자 화면과 검색 결과의 선택 후보입니다. 새 카드 또는 파일 밖 용어는 별도 검수·계약 확정 전까지 선택 후보가 아닙니다.",
+    "candidate_policy": "현재 5개 역할 파일의 82개 카드는 모두 초보자 화면과 검색 결과의 선택 후보입니다. 새 카드 또는 파일 밖 용어는 별도 검수·계약 확정 전까지 선택 후보가 아닙니다.",
     "feedback_fallback_rule": "현재 승인 카드는 active_term_feedback의 초보자용 설명·선택 이유·확인 지점을 표시합니다. 이후 새 카드에 화면 설명이 없으면 label_ko, source_answer_draft, look_for만 표시하고, 없는 문구를 LLM이 지어내지 않습니다. pinterest_search_notice_ko, common_confusion_ko, clarifying_question_ko는 검수용 비공개 메타데이터이며 API와 UI에 노출하지 않습니다."
   },
   "beginner_feedback_review": {
     "status": "reviewed",
     "reviewed_by": "오세창",
-    "reviewed_at": "2026-09-22",
-    "scope": "5개 역할 파일의 74개 term_id 전체에 대한 런타임 승인 상태와 active_term_feedback의 초보자용 용어 설명·선택 이유·검색 안내·확인 지점·혼동 안내·추가 질문.",
+    "reviewed_at": "2026-09-23",
+    "scope": "5개 역할 파일의 82개 term_id 전체에 대한 런타임 승인 상태와 active_term_feedback의 초보자용 용어 설명·선택 이유·검색 안내·확인 지점·혼동 안내·추가 질문.",
     "excluded": "외부 검색 결과, 실제 외부 어휘 조회 결과, 평가 실행 결과, 역할별 JSON에 없는 새 term_id"
   },
   "active_term_feedback": {
@@ -1122,6 +1122,126 @@
       ],
       "clarifying_question_ko": "구도에 해당하는지 확인하려고 합니다. 입력에서 '구도 또는 화면 배치라는 명시'가 보이는 것이 맞나요?",
       "review_status": "reviewed"
+    },
+    "pose_hands_on_hips": {
+      "plain_meaning_ko": "손을 골반이나 허리 옆에 두어 팔꿈치가 바깥으로 벌어지는 자세입니다.",
+      "selection_reason_template_ko": "입력에 손을 허리에 대거나 팔꿈치를 벌린다는 단서가 있을 때 '허리에 손'으로 해석합니다.",
+      "pinterest_search_notice_ko": "Pinterest에서는 'hands on hips pose drawing' 검색어로 찾습니다.",
+      "reference_checkpoints_ko": [
+        "손이 골반·허리 옆에 놓이는지",
+        "팔꿈치가 몸통 바깥으로 꺾여 보이는지"
+      ],
+      "common_confusion_ko": [
+        "손을 주머니에 넣은 모습은 '허리에 손'과 다릅니다.",
+        "팔을 몸 옆으로 내린 모습만으로는 이 자세를 확정하지 않습니다."
+      ],
+      "clarifying_question_ko": "손이 실제로 허리나 골반 옆에 놓여 있고, 팔꿈치가 바깥으로 향한 자세인가요?",
+      "review_status": "reviewed"
+    },
+    "pose_arms_crossed": {
+      "plain_meaning_ko": "두 팔을 몸통 앞에서 교차해 반대쪽 팔을 받치거나 감싸는 자세입니다.",
+      "selection_reason_template_ko": "입력에 팔짱을 끼거나 두 팔을 가슴 앞에서 교차한다는 단서가 있을 때 '팔짱'으로 해석합니다.",
+      "pinterest_search_notice_ko": "Pinterest에서는 'arms crossed pose drawing' 검색어로 찾습니다.",
+      "reference_checkpoints_ko": [
+        "두 팔이 몸통 앞에서 서로 교차하는지",
+        "손이나 팔꿈치가 반대쪽 팔에 닿는지"
+      ],
+      "common_confusion_ko": [
+        "한 팔만 몸통 앞에 둔 모습은 팔짱과 다릅니다.",
+        "물건을 두 팔로 안고 있는 모습만으로는 이 자세를 확정하지 않습니다."
+      ],
+      "clarifying_question_ko": "두 팔이 몸통 앞에서 서로 교차해 반대쪽 팔을 잡고 있나요?",
+      "review_status": "reviewed"
+    },
+    "pose_hands_behind_back": {
+      "plain_meaning_ko": "두 손이나 팔을 몸 뒤로 보내 등 뒤에서 맞잡거나 가린 자세입니다.",
+      "selection_reason_template_ko": "입력에 두 손을 등 뒤로 보내거나 등 뒤에서 손을 잡는다는 단서가 있을 때 '등 뒤로 깍지 낀 손'으로 해석합니다.",
+      "pinterest_search_notice_ko": "Pinterest에서는 'hands behind back pose drawing' 검색어로 찾습니다.",
+      "reference_checkpoints_ko": [
+        "양손 또는 팔이 골반 뒤쪽으로 향하는지",
+        "손이 몸통 뒤에서 맞잡히거나 가려지는지"
+      ],
+      "common_confusion_ko": [
+        "인물을 뒤에서 본 시점만으로는 이 자세를 확정하지 않습니다.",
+        "한 팔이 몸통 뒤로 잠시 가려진 모습은 두 손을 등 뒤로 둔 자세와 다릅니다."
+      ],
+      "clarifying_question_ko": "두 손을 등 뒤로 보내 맞잡은 자세가 필요한가요, 아니면 단순히 뒷모습이 필요한가요?",
+      "review_status": "reviewed"
+    },
+    "pose_hand_on_chin": {
+      "plain_meaning_ko": "손가락이나 손바닥을 턱 또는 턱선에 대는 자세입니다.",
+      "selection_reason_template_ko": "입력에 턱을 손으로 받치거나 손을 턱에 댄다는 단서가 있을 때 '턱에 손'으로 해석합니다.",
+      "pinterest_search_notice_ko": "Pinterest에서는 'hand on chin pose drawing' 검색어로 찾습니다.",
+      "reference_checkpoints_ko": [
+        "손가락 또는 손바닥이 턱·턱선에 닿는지",
+        "팔이 얼굴 아래쪽을 향하는지"
+      ],
+      "common_confusion_ko": [
+        "볼이나 이마에 손을 댄 모습은 '턱에 손'과 다릅니다.",
+        "고개만 아래로 숙인 모습은 이 자세를 뜻하지 않습니다."
+      ],
+      "clarifying_question_ko": "손이 볼이나 이마가 아니라 턱 또는 턱선에 닿아 있나요?",
+      "review_status": "reviewed"
+    },
+    "pose_hand_on_chest": {
+      "plain_meaning_ko": "한 손이나 양손을 윗가슴 또는 흉골 부근에 얹는 자세입니다.",
+      "selection_reason_template_ko": "입력에 손을 가슴에 얹거나 흉골 부근을 짚는다는 단서가 있을 때 '가슴에 손'으로 해석합니다.",
+      "pinterest_search_notice_ko": "Pinterest에서는 'hand on chest pose drawing' 검색어로 찾습니다.",
+      "reference_checkpoints_ko": [
+        "한 손 또는 양손이 윗가슴·흉골 부근에 닿는지",
+        "손가락이 몸통 쪽으로 향하는지"
+      ],
+      "common_confusion_ko": [
+        "가슴 높이에서 물건을 든 모습은 '가슴에 손'과 다릅니다.",
+        "팔짱을 낀 모습만으로는 이 자세를 확정하지 않습니다."
+      ],
+      "clarifying_question_ko": "손이 물건이 아니라 자신의 윗가슴이나 흉골 부근에 닿아 있나요?",
+      "review_status": "reviewed"
+    },
+    "pose_salute": {
+      "plain_meaning_ko": "편 손을 관자놀이나 이마 가까이 들어 올리고 팔꿈치를 옆으로 향하게 하는 경례 자세입니다.",
+      "selection_reason_template_ko": "입력에 경례하거나 손을 이마 가까이 들어 올린다는 단서가 있을 때 '경례'로 해석합니다.",
+      "pinterest_search_notice_ko": "Pinterest에서는 'salute drawing' 검색어로 찾습니다.",
+      "reference_checkpoints_ko": [
+        "편 손이 관자놀이나 이마 가까이에 놓이는지",
+        "팔꿈치가 옆이나 바깥으로 향하는지"
+      ],
+      "common_confusion_ko": [
+        "손으로 눈부심을 가리는 모습은 경례와 다를 수 있습니다.",
+        "손을 흔드는 모습만으로는 경례를 확정하지 않습니다."
+      ],
+      "clarifying_question_ko": "손을 이마 가까이 올린 이유가 경례인가요, 아니면 햇빛을 가리거나 인사하는 동작인가요?",
+      "review_status": "reviewed"
+    },
+    "view_over_the_shoulder": {
+      "plain_meaning_ko": "앞쪽 인물의 어깨나 머리 일부를 전경에 두고, 그 너머의 대상이나 장면을 바라보는 시점입니다.",
+      "selection_reason_template_ko": "입력에 어깨 너머로 보거나 전경의 어깨를 지나 대상을 본다는 단서가 있을 때 '오버더숄더 뷰'로 해석합니다.",
+      "pinterest_search_notice_ko": "Pinterest에서는 'over the shoulder drawing' 검색어로 찾습니다.",
+      "reference_checkpoints_ko": [
+        "앞쪽 인물의 어깨나 머리 일부가 전경에 놓이는지",
+        "전경 너머의 대상이나 장면으로 시선이 이어지는지"
+      ],
+      "common_confusion_ko": [
+        "인물을 단순히 뒤에서 본 모습은 오버더숄더 뷰와 다릅니다.",
+        "인물이 고개만 뒤로 돌린 모습은 이 시점을 뜻하지 않습니다."
+      ],
+      "clarifying_question_ko": "앞쪽 인물의 어깨를 전경에 두고 그 너머의 대상을 보는 화면이 필요한가요?",
+      "review_status": "reviewed"
+    },
+    "view_full_body": {
+      "plain_meaning_ko": "머리부터 발까지가 한 화면 안에 들어와 전신 비례와 자세를 함께 볼 수 있는 시점입니다.",
+      "selection_reason_template_ko": "입력에 전신이 보이거나 머리부터 발까지 나온다는 단서가 있을 때 '전신 뷰'로 해석합니다.",
+      "pinterest_search_notice_ko": "Pinterest에서는 'full body reference drawing' 검색어로 찾습니다.",
+      "reference_checkpoints_ko": [
+        "머리부터 발까지 한 화면 안에 보이는지",
+        "손발 끝이 화면 바깥으로 잘리지 않는지"
+      ],
+      "common_confusion_ko": [
+        "상반신이나 반신만 보이는 구도는 전신 뷰와 다릅니다.",
+        "발이나 머리가 화면 밖으로 잘린 구도는 전신 뷰로 확정하지 않습니다."
+      ],
+      "clarifying_question_ko": "손발까지 포함한 전신 비례가 필요한가요, 아니면 상반신 중심 구도가 필요한가요?",
+      "review_status": "reviewed"
     }
   },
   "status_definitions": {
@@ -1155,12 +1275,12 @@
     {
       "role": "pose",
       "file": "pose.json",
-      "card_count": 52
+      "card_count": 58
     },
     {
       "role": "view",
       "file": "view.json",
-      "card_count": 9
+      "card_count": 11
     },
     {
       "role": "perspective",

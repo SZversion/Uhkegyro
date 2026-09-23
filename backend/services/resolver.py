@@ -1,0 +1,128 @@
+"""결정론 해석 resolver (trust-boundary AC-01, term-card-catalog AC-03·AC-04).
+
+LLM `InterpretationOutput`은 후보일 뿐이며, resolver가 활성 JSON 카탈로그·안전 규칙과
+대조한 뒤 최종 응답을 조립하는 데 필요한 근거를 만든다 (api-contract §How).
+
+결정론 검증:
+- 활성 메모리 카탈로그에 존재하는지
+- 카드 role과 선택 role이 일치하는지
+- 활성 카드 query_fragments가 비어 있지 않은지
+- 직접 검색 금지(direct_search_disabled) 카드는 URL·provider 호출 금지
+- 역할당 최대 1개 후보로 충족(collapse: confidence 최대, 동률은 선발 우선)
+
+`interpretation_state`는 스키마가 `select_terms`/`needs_clarification`으로 강제하며,
+needs_clarification일 때는 `clarification_type`을 `ReasonCode`로 직접 매핑해
+최종 `agent_status`·사유 코드를 만든다 (LLM은 reason_codes를 만들지 않는다).
+SKILL.md 판단 기준의 `confidence_gate`·`requires_all_of`·`requires_any_of` 의미 충족은
+LLM 판단 몫이며 이 모듈은 재판정하지 않는다. 참조 ID의 구조 무결성은 시작 검증에서 방어한다.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+from backend.schemas.enums import ClarificationType, InterpretationState, ReasonCode, Role
+from backend.schemas.models import InterpretationOutput, InterpretationSelection
+from backend.services.catalog_repository import CatalogSnapshot
+
+STATUS_PROCEED = "proceed"
+STATUS_CLARIFY = "clarify"
+STATUS_ALL_INVALID = "all_invalid"
+
+_CLARIFICATION_TO_REASON: dict[ClarificationType, ReasonCode] = {
+    ClarificationType.ABSTRACT_INTENT: ReasonCode.ABSTRACT_INTENT_ONLY,
+    ClarificationType.INSUFFICIENT_VISUAL_EVIDENCE: ReasonCode.INSUFFICIENT_VISUAL_EVIDENCE,
+    ClarificationType.CONFLICTING_CONSTRAINTS: ReasonCode.CONFLICTING_CONSTRAINTS,
+}
+
+_DEFAULT_DSD_QUESTION = (
+    "검색하기 어려운 표현이에요. 체형·자세·시점 중 하나를 구체적으로 알려주세요."
+)
+
+
+@dataclass
+class ValidatedTerm:
+    """구조 검증을 통과한 역할 후보 한 건."""
+
+    selection: InterpretationSelection
+    card: dict
+    direct_search_disabled: bool = False
+
+
+@dataclass
+class ResolutionResult:
+    """resolver 판정 결과. 조정 계층(T14/T17c)이 상태·재시도·조립 여부를 정한다."""
+
+    status: str
+    terms: list[ValidatedTerm] = field(default_factory=list)
+    unresolved_roles: list[Role] = field(default_factory=list)
+    invalid_candidates: list[InterpretationSelection] = field(default_factory=list)
+    reason_codes: list[ReasonCode] = field(default_factory=list)
+    clarifying_question: str | None = None
+
+
+def resolve(
+    interpretation: InterpretationOutput, snapshot: CatalogSnapshot
+) -> ResolutionResult:
+    """LLM 해석 후보를 카탈로그와 대조해 결정론 검증하고 조정 계층에 넘길 결과를 만든다."""
+    if interpretation.interpretation_state is InterpretationState.NEEDS_CLARIFICATION:
+        code = _CLARIFICATION_TO_REASON.get(interpretation.clarification_type)
+        return ResolutionResult(
+            status=STATUS_CLARIFY,
+            reason_codes=[code or ReasonCode.INSUFFICIENT_VISUAL_EVIDENCE],
+            clarifying_question=interpretation.clarifying_question,
+        )
+
+    valid: list[ValidatedTerm] = []
+    direct_disabled: list[ValidatedTerm] = []
+    invalid: list[InterpretationSelection] = []
+
+    for selection in interpretation.selections:
+        card = snapshot.get_active(selection.term_id)
+        if card is None or str(card.get("role")) != str(selection.role):
+            invalid.append(selection)
+            continue
+        if not card.get("query_fragments"):
+            invalid.append(selection)
+            continue
+        if snapshot.is_direct_search_disabled(selection.term_id):
+            direct_disabled.append(
+                ValidatedTerm(selection=selection, card=card, direct_search_disabled=True)
+            )
+            continue
+        valid.append(ValidatedTerm(selection=selection, card=card))
+
+    by_role = collapse_by_role(valid)
+    roles_order = snapshot.roles_order or tuple(Role)
+    terms = [by_role[role] for role in roles_order if role in by_role]
+    unresolved = [role for role in roles_order if role not in by_role]
+
+    if not terms:
+        if direct_disabled:
+            # term-card-catalog AC-04: URL·provider 호출 없이 질문 하나
+            return ResolutionResult(
+                status=STATUS_CLARIFY,
+                invalid_candidates=invalid,
+                reason_codes=[ReasonCode.DIRECT_SEARCH_DISABLED],
+                clarifying_question=interpretation.clarifying_question or _DEFAULT_DSD_QUESTION,
+            )
+        # 후보가 전부 비활성·역할 불일치 → 조정 계층은 LLM 재시도를 검토
+        return ResolutionResult(status=STATUS_ALL_INVALID, invalid_candidates=invalid)
+
+    return ResolutionResult(
+        status=STATUS_PROCEED,
+        terms=terms,
+        unresolved_roles=unresolved,
+        invalid_candidates=invalid,
+    )
+
+
+def collapse_by_role(valid: list[ValidatedTerm]) -> dict[Role, ValidatedTerm]:
+    """역할당 최대 1개 — confidence 최대, 동률이면 선발(입력 순서) 우선."""
+    by_role: dict[Role, ValidatedTerm] = {}
+    for term in valid:
+        role = term.selection.role
+        current = by_role.get(role)
+        if current is None or term.selection.confidence > current.selection.confidence:
+            by_role[role] = term
+    return by_role
