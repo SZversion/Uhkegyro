@@ -47,7 +47,7 @@
 - LLM adapter는 `InterpretationOutput={interpretation_state, selections, unresolved_constraints, clarifying_question}`만 반환한다. 각 `selections` 항목은 `{role, term_id, evidence, confidence}`다. LLM은 최종 `agent_status`, `reason_codes`, 검색 URL을 만들지 않으며, resolver가 활성 JSON 카탈로그·안전 규칙과 대조한 뒤 최종 응답을 조립한다. 구조화 출력이 이 계약을 만족하지 않으면 `LLM_INVALID_STRUCTURED_OUTPUT`으로 처리한다.
 - 검색 provider 재시도가 소진돼도 하나 이상의 카드가 유효하면 `completed + partial_result`다. 실패 역할은 `pins=[]`, `PIN_SEARCH_UNAVAILABLE`을 반환하고 UI는 검색 결과 미수신 안내와 용어·검색 URL을 표시한다. 정상 0건은 `PIN_RESULTS_EMPTY`이며 재시도하지 않는다.
 - 잘못된 Secret·provider 인증 설정은 `CONFIGURATION_ERROR`, job/session 저장소 연결 불가는 `DATABASE_UNAVAILABLE`, 시작 JSON 카탈로그 검증 실패는 `CATALOG_INVALID_AT_STARTUP`, 코드 버그는 `INTERNAL_CODE_ERROR`로 즉시 실패한다. `CATALOG_INVALID_AT_STARTUP`이면 서비스는 ready가 아니며 job을 수신하지 않는다. 이 네 경우는 자동 재시도하지 않는다.
-- provider 결과의 원격 썸네일은 `available`일 때만 표시하고 항상 원본 `pin_url`로 이동한다. `thumbnail_unavailable`은 링크만, `deleted`는 링크·썸네일 미표시다. 이미지 바이트·썸네일 URL·Pin 메타데이터는 저장하거나 재게시하지 않는다.
+- provider 결과의 원격 썸네일은 `available`일 때만 표시하고 항상 원본 `pin_url`로 이동한다. `thumbnail_unavailable`은 링크만, `deleted`는 링크·썸네일 미표시다. `pin_url`과 `status`는 세션·job 이력에 포함된 결과로만 유지하고 별도 Pin 저장소를 만들지 않는다. 이미지 바이트와 썸네일 URL은 저장하거나 재게시하지 않는다.
 
 ## AC
 
