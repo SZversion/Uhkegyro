@@ -7,10 +7,12 @@ from backend.schemas import (
     AgentRequest,
     AgentResult,
     AgentStatus,
+    ClarificationType,
     Failure,
     FailureCode,
     InterpretationOutput,
     InterpretationSelection,
+    InterpretationState,
     JobEnvelope,
     JobStatus,
     PinResult,
@@ -63,6 +65,11 @@ from backend.schemas.models import MAX_PINS_PER_ROLE, PROGRESS_POLL_AFTER_MS
                 "CATALOG_INVALID_AT_STARTUP",
                 "INTERNAL_CODE_ERROR",
             ],
+        ),
+        (InterpretationState, ["select_terms", "needs_clarification"]),
+        (
+            ClarificationType,
+            ["abstract_intent", "insufficient_visual_evidence", "conflicting_constraints"],
         ),
     ],
 )
@@ -364,22 +371,143 @@ def test_job_envelope_attempt_bounds():
 # ---------- InterpretationOutput (§How: LLM 어댑터 전용) ----------
 
 
-def test_interpretation_output_valid():
-    out = InterpretationOutput(
-        interpretation_state="proposed",
-        selections=[
-            InterpretationSelection(role="body", term_id="body_slim", evidence="마른 체형", confidence=0.9)
+def _interpretation_output(**overrides):
+    base = {
+        "interpretation_state": "select_terms",
+        "selections": [
+            InterpretationSelection(role="body", term_id="body_slim", evidence=["마른 체형"], confidence=0.9)
         ],
-        unresolved_constraints=["구도 미언급"],
-        clarifying_question=None,
+        "unresolved_constraints": [],
+        "clarifying_question": None,
+        "clarification_type": None,
+    }
+    base.update(overrides)
+    return InterpretationOutput(**base)
+
+
+def test_interpretation_output_select_terms_valid():
+    out = _interpretation_output(
+        selections=[
+            InterpretationSelection(role="body", term_id="body_slim", evidence=["마른 체형"], confidence=0.9),
+            InterpretationSelection(role="pose", term_id="pose_contrapposto", evidence=["한쪽 다리에 힘"], confidence=0.8),
+        ]
     )
-    assert out.selections[0].role == Role.BODY
+    assert out.interpretation_state == InterpretationState.SELECT_TERMS
+    assert [s.role for s in out.selections] == [Role.BODY, Role.POSE]
+
+
+def test_interpretation_output_needs_clarification_valid():
+    out = _interpretation_output(
+        interpretation_state="needs_clarification",
+        selections=[],
+        unresolved_constraints=["체형 비율을 확정할 실제 신체 단서가 없음"],
+        clarifying_question="의상을 제외한 실제 체형 비율을 찾으시나요?",
+        clarification_type="insufficient_visual_evidence",
+    )
+    assert out.interpretation_state == InterpretationState.NEEDS_CLARIFICATION
+    assert out.clarification_type == ClarificationType.INSUFFICIENT_VISUAL_EVIDENCE
 
 
 def test_interpretation_output_rejects_final_state_fields():
     with pytest.raises(ValidationError):
-        InterpretationOutput(
-            interpretation_state="proposed",
+        _interpretation_output(
             agent_status="success",
             reference_plan={},
         )
+
+
+def test_interpretation_output_rejects_invalid_state_value():
+    with pytest.raises(ValidationError):
+        InterpretationOutput(
+            interpretation_state="proposed",
+            selections=[],
+            unresolved_constraints=[],
+            clarifying_question=None,
+        )
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"selections": []},
+        {
+            "selections": [
+                InterpretationSelection(role="pose", term_id="pose_contrapposto", evidence=["a"], confidence=0.8),
+                InterpretationSelection(role="pose", term_id="pose_s_curve", evidence=["b"], confidence=0.7),
+            ]
+        },
+        {
+            "selections": [
+                InterpretationSelection(role="pose", term_id="pose_contrapposto", evidence=["a"], confidence=0.8),
+                InterpretationSelection(role="body", term_id="body_slim", evidence=["b"], confidence=0.9),
+            ]
+        },
+        {"unresolved_constraints": ["구도 미언급"]},
+        {"clarifying_question": "어떤 체형인가요?"},
+        {"clarification_type": "conflicting_constraints"},
+    ],
+)
+def test_interpretation_output_select_terms_invalid(overrides):
+    with pytest.raises(ValidationError):
+        _interpretation_output(**overrides)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {
+            "interpretation_state": "needs_clarification",
+            "selections": [
+                InterpretationSelection(role="body", term_id="body_slim", evidence=["마른 체형"], confidence=0.9)
+            ],
+            "unresolved_constraints": ["단서 부족"],
+            "clarifying_question": "질문?",
+            "clarification_type": "insufficient_visual_evidence",
+        },
+        {
+            "interpretation_state": "needs_clarification",
+            "selections": [],
+            "unresolved_constraints": [],
+            "clarifying_question": "질문?",
+            "clarification_type": "insufficient_visual_evidence",
+        },
+        {
+            "interpretation_state": "needs_clarification",
+            "selections": [],
+            "unresolved_constraints": ["단서 부족"],
+            "clarifying_question": None,
+            "clarification_type": "insufficient_visual_evidence",
+        },
+        {
+            "interpretation_state": "needs_clarification",
+            "selections": [],
+            "unresolved_constraints": ["단서 부족"],
+            "clarifying_question": "   ",
+            "clarification_type": "insufficient_visual_evidence",
+        },
+        {
+            "interpretation_state": "needs_clarification",
+            "selections": [],
+            "unresolved_constraints": ["단서 부족"],
+            "clarifying_question": "질문?",
+            "clarification_type": None,
+        },
+    ],
+)
+def test_interpretation_output_needs_clarification_invalid(overrides):
+    with pytest.raises(ValidationError):
+        _interpretation_output(**overrides)
+
+
+@pytest.mark.parametrize(
+    "evidence",
+    [
+        [],
+        [""],
+        ["  "],
+        ["유효한 단서", ""],
+    ],
+)
+def test_interpretation_selection_rejects_empty_evidence(evidence):
+    with pytest.raises(ValidationError):
+        InterpretationSelection(role="body", term_id="body_slim", evidence=evidence, confidence=0.9)

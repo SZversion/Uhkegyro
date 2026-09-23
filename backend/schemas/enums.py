@@ -79,3 +79,22 @@ class PinStatus(StrEnum):
     AVAILABLE = "available"
     THUMBNAIL_UNAVAILABLE = "thumbnail_unavailable"
     DELETED = "deleted"
+
+
+class InterpretationState(StrEnum):
+    """InterpretationOutput의 LLM 해석 상태 2종 (docs/specs/prompt-interpreter-v0.md 기준)."""
+
+    SELECT_TERMS = "select_terms"
+    NEEDS_CLARIFICATION = "needs_clarification"
+
+
+class ClarificationType(StrEnum):
+    """needs_clarification 상태에서 LLM이 후보로 제시하는 모호성 유형.
+
+    최종 agent_status·reason_codes는 resolver가 검증 후 조립한다. DIRECT_SEARCH_DISABLED는
+    LLM 후보가 아닌 resolver 전용이다.
+    """
+
+    ABSTRACT_INTENT = "abstract_intent"
+    INSUFFICIENT_VISUAL_EVIDENCE = "insufficient_visual_evidence"
+    CONFLICTING_CONSTRAINTS = "conflicting_constraints"

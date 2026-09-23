@@ -9,7 +9,9 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from backend.schemas.enums import (
     AgentStatus,
+    ClarificationType,
     FailureCode,
+    InterpretationState,
     JobStatus,
     PinStatus,
     ReasonCode,
@@ -243,19 +245,67 @@ class InterpretationSelection(BaseModel):
 
     role: Role
     term_id: str
-    evidence: str
+    evidence: Annotated[list[str], Field(min_length=1)]
     confidence: float
+
+    @model_validator(mode="after")
+    def _validate_evidence(self) -> "InterpretationSelection":
+        for phrase in self.evidence:
+            if not phrase or not phrase.strip():
+                raise ValueError("evidence 항목은 비어 있거나 공백만으로 이루어질 수 없다")
+        return self
 
 
 class InterpretationOutput(BaseModel):
-    """LLM adapter의 유일한 반환 구조 (api-contract.md §How).
+    """LLM adapter의 유일한 반환 구조 (api-contract.md §How, prompt-interpreter-v0.md).
 
     LLM은 agent_status, reason_codes, 검색 URL을 만들지 않는다.
+
+    상태별 불변 규칙:
+    - select_terms: selections 1개 이상·역할 중복 없음·순서 준수, unresolved_constraints=[],
+      clarifying_question=null, clarification_type=null
+    - needs_clarification: selections=[], unresolved_constraints 1개 이상,
+      비어 있지 않은 clarifying_question 필수, clarification_type 필수
     """
 
     model_config = ConfigDict(extra="forbid")
 
-    interpretation_state: str
+    interpretation_state: InterpretationState
     selections: list[InterpretationSelection] = Field(default_factory=list)
     unresolved_constraints: list[str] = Field(default_factory=list)
     clarifying_question: str | None = None
+    clarification_type: ClarificationType | None = None
+
+    @model_validator(mode="after")
+    def _validate_state_rules(self) -> "InterpretationOutput":
+        if self.interpretation_state is InterpretationState.SELECT_TERMS:
+            if not self.selections:
+                raise ValueError("select_terms는 selections가 최소 하나 있어야 한다")
+            seen: set[Role] = set()
+            prev_index = -1
+            for selection in self.selections:
+                if selection.role in seen:
+                    raise ValueError(f"역할당 최대 하나의 selection만 가진다: role={selection.role}")
+                seen.add(selection.role)
+                role_index = list(Role).index(selection.role)
+                if role_index < prev_index:
+                    raise ValueError(
+                        "selections는 역할 순서(body→pose→view→perspective→layout)를 지켜야 한다"
+                    )
+                prev_index = role_index
+            if self.unresolved_constraints:
+                raise ValueError("select_terms는 unresolved_constraints=[]이어야 한다")
+            if self.clarifying_question is not None:
+                raise ValueError("select_terms는 clarifying_question=null이어야 한다")
+            if self.clarification_type is not None:
+                raise ValueError("select_terms는 clarification_type=null이어야 한다")
+        elif self.interpretation_state is InterpretationState.NEEDS_CLARIFICATION:
+            if self.selections:
+                raise ValueError("needs_clarification는 selections=[]이어야 한다")
+            if not self.unresolved_constraints:
+                raise ValueError("needs_clarification는 unresolved_constraints가 최소 하나 있어야 한다")
+            if not self.clarifying_question or not self.clarifying_question.strip():
+                raise ValueError("needs_clarification는 비어 있지 않은 clarifying_question이 필수다")
+            if self.clarification_type is None:
+                raise ValueError("needs_clarification는 clarification_type이 필수다")
+        return self
