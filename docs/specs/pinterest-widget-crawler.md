@@ -24,6 +24,7 @@ Pinterest API v5, `GET /v5/pins/{pin_id}`, 브라우저의 직접 크롤링, 이
 ## How
 
 - crawler는 서버에서만 실행하며 Next.js UI·일반 브라우저는 Pinterest 또는 widget endpoint를 직접 호출하지 않는다.
+- 공개 검색 요청 timeout은 15초, widget 요청 timeout은 10초다.
 - 검색 URL은 선택된 `query_fragments`만 URL 인코딩해 만든다. LLM·사용자 입력·카드 밖 문자열을 추가하지 않는다.
 - Pin ID와 `pin_url`이 모두 확인된 공개 결과만 후보로 사용한다. 중복 Pin ID는 역할 안에서 하나만 유지한다.
 - 결과가 없으면 `pins=[]`, `reason_codes=["PIN_RESULTS_EMPTY"]`를 반환한다.
