@@ -1,4 +1,5 @@
 """공통 인증: JWT 검증·세션 쿠키 파싱."""
+import os
 from fastapi import Cookie, Depends, HTTPException, Request
 from jose import jwt, JWTError
 from backend.shared.config import get_settings

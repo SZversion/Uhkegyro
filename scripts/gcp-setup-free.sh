@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
-# GCP 완전 무료 설정 스크립트 (Option C: Cloud Run + SQLite)
+# GCP 완전 무료 설정 스크립트 (Neon PostgreSQL + Cloud Run)
 # 실행 전: gcloud auth login, gcloud config set project <PROJECT_ID>, billing 활성화 필수
-# 주의: SQLite 파일은 컨테이너 인스턴스 내에 저장되며, 새 리비전 배포 시 초기화됩니다.
-# 영속성이 필요하면 Option A(Neon) 또는 Option B(db-f1-micro) 사용 권장.
+# Neon: https://neon.tech 에서 프로젝트 생성 후 연결 문자열 준비
 
 set -euo pipefail
 
@@ -35,12 +34,10 @@ create_secret() {
     || echo -n "${value}" | gcloud secrets versions add "${name}" --data-file=- --project="${PROJECT_ID}"
 }
 
-# SQLite용 DATABASE_URL (컨테이너 내부 경로)
-DATABASE_URL="sqlite+aiosqlite:///data/app.db"
+# DATABASE_URL은 Neon 연결 문자열로 별도 입력 필요 (아래 안내 참조)
+# create_secret "DATABASE_URL" "postgresql+asyncpg://user:pass@ep-xxx.ap-northeast-1.aws.neon.tech/db?sslmode=require"
 
-create_secret "DATABASE_URL" "${DATABASE_URL}"
-
-echo ">>> 다음 시크릿 값들을 직접 입력하세요 (Secret Manager 콘솔 또는 아래 명령어):"
+echo ">>> 다음 시크릿 값들을 직접 입력하세요 (Secret Manager 콘솔 또는 아래 gcloud 명령어):"
 echo "1. OPENROUTER_API_KEY:"
 echo "   gcloud secrets create OPENROUTER_API_KEY --data-file=- --project=${PROJECT_ID} <<< 'your-openrouter-key'"
 echo ""
@@ -51,13 +48,14 @@ echo "3. LANGFUSE_SECRET_KEY:"
 echo "   gcloud secrets create LANGFUSE_SECRET_KEY --data-file=- --project=${PROJECT_ID} <<< 'your-langfuse-secret-key'"
 echo ""
 echo "4. SESSION_SECRET (임의 32자):"
-echo "   gcloud secrets create SESSION_SECRET --data-file=- --project=${PROJECT_ID} <<< '$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-32)'"
+echo "   gcloud secrets create SESSION_SECRET --data-file=- --project=${PROJECT_ID} <<< '\$(openssl rand -base64 32 | tr -d \"=+/\" | cut -c1-32)'"
 echo ""
-echo "5. DATABASE_URL (SQLite, 자동 설정됨):"
-echo "   이미 저장됨: ${DATABASE_URL}"
-echo "   컨테이너 내부 /data/app.db에 저장 (인스턴스 재시작 시 유지, 새 배포 시 초기화)"
+echo "5. DATABASE_URL (Neon PostgreSQL, 필수):"
+echo "   Neon 콘솔(https://console.neon.tech) > 프로젝트 선택 > Connection Details > psql 탭"
+echo "   형식: postgresql+asyncpg://user:password@ep-xxx.ap-northeast-1.aws.neon.tech/dbname?sslmode=require"
+echo "   gcloud secrets create DATABASE_URL --data-file=- --project=${PROJECT_ID} <<< 'postgresql+asyncpg://...'"
+echo ""
 
-echo ""
 echo "=== 4. Cloud Run 서비스 최초 배포 (수동) ==="
 echo "첫 배포는 Cloud Build 트리거가 수행합니다."
 echo "수동 배포 시:"
@@ -83,27 +81,25 @@ echo "  - 포함된 파일 필터: backend/**"
 echo "  - 빌드 구성: cloudbuild.yaml (레포 루트)"
 
 echo ""
-echo "=== 무료 티어 아키텍처 (Option C: SQLite) ==="
+echo "=== 무료 티어 아키텍처 (Neon PostgreSQL + Cloud Run) ==="
 echo "┌─────────────┐     HTTPS      ┌──────────────────┐"
 echo "│   Vercel    │ ─────────────► │  Cloud Run (api) │  --min-instances=0 (유휴 시 \$0)"
 echo "│  (Frontend) │   REST + MCP   │  FastAPI + MCP   │  --max-instances=3"
 echo "└─────────────┘                └────────┬─────────┘"
-echo "                                        │"
+echo "                                        │ Public Internet + SSL"
 echo "                                        ▼"
 echo "                               ┌──────────────────┐"
-echo "                               │  SQLite (/data)  │  -- 컨테이너 로컬 파일"
-echo "                               │  (임시 저장소)   │  -- 새 배포 시 데이터 초기화"
+echo "                               │  Neon PostgreSQL │  -- Free Tier: 0.5GB storage"
+echo "                               │  (Free Tier)     │  -- Auto-suspend 5min 유휴"
 echo "                               └──────────────────┘"
 echo ""
-echo "⚠️  주의: SQLite 데이터는 컨테이너 인스턴스 수명 주기에 종속됩니다."
-echo "   - 인스턴스 재시작(자동 스케일링) 시 유지"
-echo "   - 새 리비전 배포(gcloud run deploy) 시 초기화"
-echo "   - 영속성 필요 시 Option A(Neon) 또는 Option B(db-f1-micro) 사용"
+echo "✅ Neon 무료 티어: 0.5GB 스토리지, 5분 유휴 시 자동 일시정지(비용 0), 브랜칭 기능 포함"
+echo "✅ 로컬 개발도 Neon dev branch 사용 권장 (운영과 동일 환경)"
 echo ""
-echo "예상 월 비용: \$0 (Cloud Run 무료 할당량 내)"
+echo "예상 월 비용: \$0 (Cloud Run/Neon 무료 할당량 내, 초과 시 과금 가능)"
 echo ""
 echo "다음 단계:"
-echo "1. 위 4개 시크릿 값 입력 (DATABASE_URL은 자동 설정됨)"
+echo "1. 위 5개 시크릿 값 모두 입력 (DATABASE_URL 필수)"
 echo "2. GitHub 저장소를 Cloud Build에 연결하고 트리거 생성"
 echo "3. main 브랜치에 push하면 자동 빌드·배포 시작"
-echo "4. 앱 코드에서 DATABASE_URL을 sqlite+aiosqlite:///data/app.db로 사용하도록 설정 필요"
+echo "4. 앱 코드는 DATABASE_URL을 postgresql+asyncpg://...로 사용 (SQLite 사용 안 함)"

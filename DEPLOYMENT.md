@@ -20,7 +20,7 @@
 - **DB**: **Neon 무료 PostgreSQL** (Cloud SQL 대신 — 월 $0)
 - **시크릿**: Secret Manager
 - **CI/CD**: Cloud Build (GitHub push → 빌드 → 배포)
-- **예상 월 비용**: **$0** (무료 할당량 내)
+- **예상 월 비용**: **$0** (무료 할당량 내, 초과 시 과금 가능)
 
 ---
 
@@ -103,9 +103,9 @@ gcloud secrets create DATABASE_URL --data-file=- --project=proj2-509406 <<< 'pos
 # .env 파일 생성 (예시)
 cp .env.example .env
 # .env 편집: OPENROUTER_API_KEY, LANGFUSE_* 등 입력
-# DATABASE_URL에는 로컬용 SQLite 또는 Neon dev 브랜치 사용
+# DATABASE_URL에는 Neon dev 브랜치 연결 문자열 사용 (운영과 동일 환경)
 
-# 전체 스택 실행 (DB는 로컬 postgres 또는 Neon)
+# 전체 스택 실행 (Neon dev 브랜치 사용)
 docker compose up --build
 
 # API 확인
@@ -114,8 +114,8 @@ curl http://localhost:8000/mcp/health
 ```
 
 - FastAPI: `http://localhost:8000`
-- MCP 엔드포인트: `http://localhost:8000/mcp` (Streamable HTTP)
-- 로컬 DB: `docker compose`의 `db` 서비스 사용 (postgres/app/app) 또는 Neon dev 브랜치
+- MCP 엔드포인트: `http://localhost:8000/mcp` (Streamable HTTP, `MCP_ENABLED=true` 시에만)
+- 로컬 DB: **Neon dev 브랜치** 사용 (운영과 동일 환경, 브랜칭 기능 활용)
 
 ---
 
@@ -128,11 +128,13 @@ cd proj2-frontend
 npx create-next-app@latest . --typescript --tailwind --eslint --app --src-dir --import-alias "@/*"
 ```
 
-### Vercel 연결
+### Vercel 연결 (가이드)
 1. Vercel 대시보드 → **Add New Project** → GitHub `proj2-frontend` 선택
 2. 환경변수 추가:
    - `NEXT_PUBLIC_API_URL` = `https://api-xxx-asia-northeast3.run.app` (Cloud Run URL)
 3. 배포 완료 → `https://proj2-frontend.vercel.app` 생성됨 (Hobby 플랜 무료)
+
+> **참고**: 이 문서는 연동 가이드입니다. 실제 프론트엔드 레포(`proj2-frontend`) 생성 및 배포는 별도 진행 필요.
 
 ### CORS 허용 (Cloud Run 측)
 ```bash
@@ -178,7 +180,7 @@ echo -n "new-value" | gcloud secrets versions add SECRET_NAME --data-file=- --pr
 | 배포 후 500 에러 | 시크릿 누락 | Secret Manager에 5개 시크릿 모두 버전 확인 |
 | DB 연결 실패 | Neon 일시정지 | Neon 콘솔에서 프로젝트 'Resume' 클릭 또는 연결 문자열 재확인 |
 | CORS 에러 | ALLOWED_ORIGINS 불일치 | Vercel 도메인 정확히 추가 (프로토콜 `https://` 포함) |
-| MCP 엔드포인트 404 | 마운트 경로 틀림 | `/mcp` 경로 확인, `mcp_enabled=true` 환경변수 |
+| MCP 엔드포인트 404 | 마운트 경로 틀림 또는 비활성화 | `/mcp` 경로 확인, `MCP_ENABLED=true` 환경변수 설정 필요 (기본값 false) |
 | 빌드 실패 | requirements.txt 의존성 | 로컬에서 `docker compose build`로 선검증 |
 | Neon SSL 에러 | `sslmode=require` 누락 | 연결 문자열에 `?sslmode=require` 필수 |
 
