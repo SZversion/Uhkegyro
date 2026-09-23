@@ -5,7 +5,7 @@
 | 만들지 않는 것 | 이유 | 대신 제공하는 것 |
 | --- | --- | --- |
 | Getty를 포함한 박물관·외부 어휘 API·원시 데이터와 이미지 API | 이 MVP는 외부 카탈로그·용어 데이터를 서비스 데이터로 보관하거나 실시간 호출하지 않는다. Getty는 용어 조사 시 참고 자료일 뿐 런타임 출처가 아니다. | 팀이 작성·검수한 TERM_CARD JSON 카탈로그와 외부 탐색 링크. 외부 어휘 HTTP 호출은 하지 않는다. |
-| Pinterest 이미지 파일·썸네일·메타데이터 저장·재게시 | 이미지 저작권·약관·원본 적합성 보장 문제를 피한다. | 서버 `PinterestCrawlerProvider`가 공개 검색으로 Pin ID·`pin_url`을 수집하고 widget endpoint의 원격 `thumbnail_url`을 현재 응답에서만 원본 링크로 표시한다. 이미지 바이트·썸네일 URL·Pin 메타데이터는 저장하지 않으며, 검색 결과는 다섯 역할 섹션별 최대 8개를 표시한다. |
+| Pinterest 이미지 파일·썸네일·부가 메타데이터 저장·재게시 | 이미지 저작권·약관·원본 적합성 보장 문제를 피한다. | 서버 `PinterestCrawlerProvider`가 공개 검색으로 Pin ID·`pin_url`을 수집하고 widget endpoint의 원격 `thumbnail_url`을 현재 응답에서만 원본 링크로 표시한다. 세션·job 이력에는 Pin ID·URL·상태만 유지하고, 이미지 바이트·썸네일 URL·Pin 본문 등 부가 메타데이터는 저장하지 않으며, 검색 결과는 다섯 역할 섹션별 최대 8개를 표시한다. |
 | Pinterest API v5와 브라우저 직접 크롤링 | API 승인·토큰에 의존하거나 브라우저가 외부 검색을 직접 수행하면 서비스 경계와 비밀값 관리가 흐려진다. | 사전 허가된 서버 측 `PinterestCrawlerProvider`가 활성 TERM_CARD의 `query_fragments`만 사용하고, Pin ID는 공개 widget endpoint로 조회한다. |
 | 자동 term 카드 생성·수정 | 팀 카드 변경은 평가 회귀를 유발할 수 있고, 자동 생성 후보가 도메인 규칙에 맞는지 보장할 수 없다. | `needs_clarification` 질문과 한계 안내. 카드 초안은 저장하지 않음 |
 | 카드 밖 텍스트의 LLM 프롬프트 자동 주입·RAG | 검수되지 않은 텍스트를 답변 근거로 주입하면 행동·평가 경계를 흐린다. | 사람이 검토하는 TERM_CARD JSON 카탈로그의 활성 카드 |

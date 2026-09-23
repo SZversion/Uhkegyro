@@ -22,7 +22,7 @@
 - 최종 `failed`에는 API와 같은 안정된 failure code를 기록한다. 운영 로그에는 안전한 오류 요약을 추가할 수 있으나 UI에 노출하지 않는다.
 - 검색 재시도 소진 뒤 유효 카드가 있으면 `completed + partial_result`, `PIN_SEARCH_UNAVAILABLE`을 기록한다.
 - `needs_clarification`은 실패가 아니며 새 사용자 메시지의 새 job과 연결한다.
-- API 키, 세션 토큰, `anonymous_user_id` 원문, 요청 원문, 이미지 바이트, 썸네일 URL, Pin 메타데이터는 기록하지 않는다.
+- API 키, 세션 토큰, `anonymous_user_id` 원문, 이미지 바이트, 썸네일 URL, Pin 본문 등 부가 메타데이터는 기록하지 않는다. 사용자 요청 원문은 Langfuse trace에만 기록한다.
 
 ## AC
 
