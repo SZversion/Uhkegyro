@@ -14,6 +14,14 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     anthropic_api_key: str = ""
 
+    # 기본 해석 LLM (T14, services/llm.py)
+    openrouter_base_url: str = "https://openrouter.ai/api/v1"
+    openrouter_model: str = "openai/gpt-4o-mini"
+    llm_timeout_seconds: float = 30.0
+    llm_max_tokens: int = 800
+    interpreter_prompt_version: str = "uhkegryo-interpreter-v0"
+    interpreter_prompt_path: str = ""
+
     # Langfuse
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
