@@ -8,10 +8,10 @@
 
 - 자연어 설명을 `body`, `pose`, `view`, `perspective`, `layout`의 검수된 TERM_CARD로 해석한다.
 - 카드의 용어, 쉬운 설명, 선택 근거, 확인 지점, 추가 질문을 제공한다.
-- 역할별 Pinterest 결과와 원본 링크를 표시하되 이미지·썸네일 URL·Pin 메타데이터를 저장하거나 재게시하지 않는다.
+- 역할별 Pinterest 결과와 원본 링크를 표시한다. 수집·미리보기·보관 경계는 `pinterest-widget-crawler.md`를 따른다.
 - 모호한 입력에는 질문을, 일부 검색 실패에는 사용 가능한 부분 결과를, 최종 처리 실패에는 일반 장애 안내를 제공한다.
 
-이미지 생성·편집·업로드 이미지 분석, 특정 작가 화풍 복제, Pinterest 크롤링, 이미지 파일·Pin 메타데이터 저장·재게시, 외부 어휘 조회·RAG 주입은 범위 밖이다.
+이미지 생성·편집·업로드 이미지 분석, 특정 작가 화풍 복제, Pinterest API v5·브라우저 직접 크롤링, Pin ID·URL·상태 외 이미지 파일·부가 Pin 메타데이터 저장·재게시, 외부 어휘 조회·RAG 주입은 범위 밖이다.
 
 ## What
 
@@ -19,8 +19,8 @@
 2. 서버는 비동기 job을 만들고 프론트는 종결 상태까지 polling한다.
 3. LLM은 활성 TERM_CARD ID 후보와 근거만 구조화 출력한다.
 4. 서버는 JSON 카탈로그에서 로드한 활성 카드·역할·조건을 검증한다.
-5. 유효 카드의 `query_fragments`만 결정론 검색어 조립기에 전달하고, 조립기는 고정 접미사 `drawing`을 한 번 붙여 역할별 결과를 조립한다.
-6. 검색이 일부 실패해도 유효 카드가 있으면 용어·설명·검색 URL과 실패 안내를 반환한다.
+5. 서버 `PinterestCrawlerProvider`가 유효 카드 기반으로 역할별 결과를 조립한다.
+6. 검색 또는 widget 조회가 일부 실패해도 유효 카드가 있으면 용어·설명·검색 URL과 실패 안내를 반환한다.
 
 ## How
 
@@ -36,6 +36,7 @@
 - 사용자 의미 상태는 `success`, `needs_clarification`, `out_of_scope`, `unsafe_input`, `partial_result`다.
 - LLM·검색 provider·worker의 회복 가능한 오류는 같은 job에서 최초 실행 포함 최대 3회 자동 재시도한다.
 - 검색 재시도 소진 뒤 유효 카드가 있으면 `partial_result`로 용어·검색 URL과 검색 실패 안내를 제공한다.
+- Pin의 widget 미리보기와 세션·job 이력 보관 규칙은 `pinterest-widget-crawler.md`, 세션·job 저장 규칙은 `session-job-persistence.md`가 단일 기준이다.
 - 최종 실패는 API failure code를 포함할 수 있지만 UI는 “현재 요청을 처리하지 못했습니다. 잠시 후 새 메시지로 다시 시도해 주세요.”만 표시한다.
 
 ## AC

@@ -40,7 +40,6 @@ class AgentRequest(BaseModel):
 class SubmissionResponse(BaseModel):
     """POST /api/agent 202 응답 본문 (HttpOnly cookie는 별도로 설정)."""
 
-    message_id: str
     job_id: str
     job_status: Literal[JobStatus.QUEUED] = JobStatus.QUEUED
     poll_after_ms: int = PROGRESS_POLL_AFTER_MS
@@ -51,9 +50,16 @@ class PinResult(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    pin_id: str
     pin_url: str
     thumbnail_url: str | None = None
     status: PinStatus
+
+    @model_validator(mode="after")
+    def _deleted_pin_has_no_thumbnail(self) -> "PinResult":
+        if self.status is PinStatus.DELETED and self.thumbnail_url is not None:
+            raise ValueError("deleted Pin은 thumbnail_url=null이어야 한다")
+        return self
 
 
 class TermResult(BaseModel):
@@ -203,7 +209,6 @@ class JobEnvelope(BaseModel):
 
     job_id: str
     session_id: str
-    request_id: str
     job_status: JobStatus
     attempt: Annotated[int, Field(ge=1)]
     max_attempts: Annotated[int, Field(ge=1, le=RETRY_COUNT_MAX)]

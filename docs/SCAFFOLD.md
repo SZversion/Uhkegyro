@@ -41,7 +41,7 @@ def health() -> dict:
 
 채점자와 배포 환경이 서비스가 살아 있는지 확인하는 곳이라 **지우지 마세요.** 도메인 엔드포인트는 여기에 추가하면 됩니다.
 
-요청·응답은 Pydantic 모델로 정의하세요(필수 3). 그리고 로그에 **요청 ID·사용 모델·토큰 수·지연 시간**을 남기면 축 ③에서 봅니다.
+요청·응답은 Pydantic 모델로 정의하세요(필수 3). 그리고 로그에 **job ID·사용 모델·토큰 수·지연 시간**을 남기면 축 ③에서 봅니다.
 
 ### `backend/services/llm.py` ← 가장 중요합니다
 
@@ -50,14 +50,14 @@ def health() -> dict:
 ```
 ✗ 흩어진 구조                    ✓ 모인 구조
 routers/summary.py               services/llm.py   ← 여기만
-  → openai.chat.completions        routers/*.py    ← 이 함수만 부른다
+  → OpenRouter adapter             routers/*.py    ← 이 함수만 부른다
 routers/extract.py
-  → openai.chat.completions
+  → 직접 provider SDK 호출
 ```
 
 이유가 있습니다. **3차 프로젝트에서 이 자리에 RAG 그래프가 들어옵니다.** 호출부를 한곳에 모아두면 그때 이 파일 내부만 갈아끼우면 되고, 흩뿌려두면 전부 뜯어야 합니다. 지금 5분 들이면 그때 며칠을 법니다.
 
-이 파일이 책임지는 것: 출력 계약 검증(Pydantic) · 실패 시 재시도와 폴백 · Langfuse 트레이스.
+이 파일이 책임지는 것: OpenRouter 호출·출력 계약 검증(Pydantic)·Langfuse 트레이스. job 재시도·lease·폴백은 worker가 책임진다.
 
 ### `skills/SKILL.md`
 

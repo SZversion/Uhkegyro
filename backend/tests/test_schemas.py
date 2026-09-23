@@ -34,7 +34,7 @@ from backend.schemas.models import MAX_PINS_PER_ROLE, PROGRESS_POLL_AFTER_MS
     [
         (JobStatus, ["queued", "running", "validating", "searching", "rendering", "completed", "failed"]),
         (AgentStatus, ["success", "needs_clarification", "out_of_scope", "unsafe_input", "partial_result"]),
-        (PinStatus, ["available", "thumbnail_unavailable", "deleted"]),
+        (PinStatus, ["available", "deleted"]),
         (
             ReasonCode,
             [
@@ -110,14 +110,14 @@ def test_agent_request_rejects_extra_fields():
 
 
 def test_submission_response_defaults():
-    resp = SubmissionResponse(message_id="m1", job_id="j1")
+    resp = SubmissionResponse(job_id="j1")
     assert resp.job_status == "queued"
     assert resp.poll_after_ms == PROGRESS_POLL_AFTER_MS
 
 
 def test_submission_response_rejects_non_queued():
     with pytest.raises(ValidationError):
-        SubmissionResponse(message_id="m1", job_id="j1", job_status="completed")
+        SubmissionResponse(job_id="j1", job_status="completed")
 
 
 # ---------- PinResult / TermResult (AC-07, §What) ----------
@@ -133,7 +133,7 @@ def _term_result(**overrides):
         "reference_checkpoints": ["한쪽 다리에 체중", "어깨-골반 반대 기울기"],
         "search_url": "https://pinterest.com/search/pins/?q=contrapposto+pose",
         "pins": [
-            {"pin_url": "https://pin.it/1", "thumbnail_url": "https://pin.it/t1", "status": "available"}
+            {"pin_id": "1", "pin_url": "https://pin.it/1", "thumbnail_url": "https://pin.it/t1", "status": "available"}
         ],
         "reason_codes": [],
     }
@@ -144,6 +144,22 @@ def _term_result(**overrides):
 def test_term_result_valid():
     term = _term_result()
     assert term.pins[0].status == PinStatus.AVAILABLE
+
+
+def test_deleted_pin_has_no_thumbnail_url():
+    term = _term_result(pins=[{"pin_id": "1", "pin_url": "https://pin.it/1", "status": "deleted"}])
+    assert term.pins[0].thumbnail_url is None
+    with pytest.raises(ValidationError):
+        _term_result(
+            pins=[
+                {
+                    "pin_id": "1",
+                    "pin_url": "https://pin.it/1",
+                    "thumbnail_url": "https://pin.it/t1",
+                    "status": "deleted",
+                }
+            ]
+        )
 
 
 def test_term_result_rejects_pin_reason_codes():
@@ -315,7 +331,6 @@ def _job_envelope(**overrides):
     base = {
         "job_id": "j1",
         "session_id": "s1",
-        "request_id": "r1",
         "job_status": "queued",
         "attempt": 1,
         "max_attempts": 3,
@@ -511,8 +526,6 @@ def test_interpretation_output_needs_clarification_invalid(overrides):
 def test_interpretation_selection_rejects_empty_evidence(evidence):
     with pytest.raises(ValidationError):
         InterpretationSelection(role="body", term_id="body_slim", evidence=evidence, confidence=0.9)
-
-
 @pytest.mark.parametrize("confidence", [-0.1, 1.1])
 def test_interpretation_selection_rejects_confidence_out_of_range(confidence):
     with pytest.raises(ValidationError):

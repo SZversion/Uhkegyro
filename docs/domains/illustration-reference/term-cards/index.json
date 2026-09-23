@@ -50,7 +50,7 @@
       "style_art_nouveau_pose",
       "style_pop_art_pose"
     ],
-    "result_limit": "검색 provider는 역할별 최대 8개의 pin_url, thumbnail_url, status를 원래 순서로 반환합니다. UI는 응답 전용 원격 thumbnail_url을 원본 pin_url 링크로 표시합니다. Pin 이미지 바이트·썸네일 URL·메타데이터는 저장하지 않으며, 결과의 존재·적합성은 서버가 보장하지 않습니다."
+    "result_limit": "검색 provider는 역할별 최대 8개의 pin_id, pin_url, thumbnail_url, status를 원래 순서로 반환합니다. UI는 응답 전용 원격 thumbnail_url을 원본 pin_url 링크로 표시합니다. Pin ID·URL·상태는 세션·job 이력에 유지하며, 이미지 바이트·썸네일 URL·Pin 본문 등 부가 메타데이터는 저장하지 않습니다. 결과의 존재·적합성은 서버가 보장하지 않습니다."
   },
   "beginner_feedback_contract": {
     "purpose": "초보자가 표준 전문용어를 배워 다음 검색과 러프 작업에 다시 사용할 수 있도록 돕습니다. 쉬운 설명은 전문용어를 대체하지 않습니다.",
