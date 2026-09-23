@@ -20,7 +20,7 @@ worker는 1초마다 `attempt < max_attempts`인 queued job 또는 lease가 만�
 
 - claim은 `FOR UPDATE SKIP LOCKED` transaction으로 수행해 worker 둘이 같은 job을 얻지 못하게 한다.
 - `WORKER_CONCURRENCY` 기본값은 5이며 worker가 동시에 보유한 lease 수를 제한한다.
-- worker는 상태를 `queued → running → validating → searching → rendering → completed|failed`로만 전이한다.
+- worker는 첫 실행에서 `queued → running → validating → searching → rendering → completed|failed`로 전이하고, 회복 가능한 오류에서는 실행 중 상태에서 `queued`로 되돌린다.
 - LLM·crawler·widget의 회복 가능한 오류에서 `attempt<3`이면 lease를 제거하고 `queued`로 되돌린다. 다음 claim이 attempt를 증가시켜 처음부터 재실행한다. `attempt=3`이면 실제 failure code로 `failed` 처리한다. 구성·DB migration·코드 오류는 즉시 `failed`다.
 - 완료·실패 저장에 성공한 뒤 lease를 제거한다.
 
