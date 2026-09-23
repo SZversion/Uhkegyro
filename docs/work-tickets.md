@@ -36,7 +36,7 @@
 | T03 | 실패 상태 정의 정합 | job 상태 7종·`agent_status` 5종·failure code 13종·사유 코드 8종 — `api-contract.md`에서 통합 정리 | `docs/specs/api-contract.md` | T01, T02 | 회의 직후 | YTH | ✅ |
 | T04 | **통합 계약 정합화** | PR #19 통합 후 티켓·README·SDD가 `api-contract.md`·`mcp-contract.md`·`term-card-catalog.md` 기준과 일치하는지 확인 | `docs/specs/api-contract.md` | T01~T03, PR #19 | 즉시 착수 가능 | YTH | ✅ (본 문서 갱신 반영) |
 | T05 | 신뢰 경계 | 신뢰 출처 4종 등급·게이트, `<untrusted_data>`(외부 원문 프롬프트 주입 금지), 인젝션 방어 평가 케이스 | `docs/specs/trust-boundary.md` | T01 | 회의 직후 | YTH | ✅ |
-| T06 | **Pinterest API 전환 스펙 정합화** | 링크 전용→API/자체 DB 전환 여부 결정 + 반영 (`PIN_SEARCH_UNAVAILABLE` 해제 여부, Pin URL·원격 썸네일 정책) | `PRD.md`·`SDD.md`·`README.md` | 팀/강사님 결정 필요 | 결정 후 즉시 | YTH | 🔒/⬜ |
+| T06 | **Pinterest API 전환 스펙 정합화** | 링크 전용→API/자체 DB 전환 여부 결정 + 반영 (`PIN_SEARCH_UNAVAILABLE` 해제 여부, Pin URL·원격 썸네일 정책) | `PRD.md`·`SDD.md`·`NOT_BUILD.md`·`README.md` | 팀/강사님 결정 필요 | 결정 후 즉시 | YTH | 🔒/⬜ |
 | T07 | MCP Spec | `get_active_term_card(term_id)`·Streamable HTTP·접근 제어·fail-closed | `docs/specs/mcp-contract.md` | T02 | PR #19로 반영 | KHS | ✅ |
 | T08 | README 갱신 | API 상태표·검색 방식 확정분·팀/역할·출처 검증 상태·MCP 연결 방법·로컬 실행 반영 | `README.md` | T01~T07 | 상시 | 공동 | ⬜ |
 
