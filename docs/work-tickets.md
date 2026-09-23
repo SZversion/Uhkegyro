@@ -23,6 +23,21 @@
 | Next.js UI | frontend | `api-contract.md` |
 | PinterestCrawlerProvider | 서버 Playwright 공개 검색·Pin ID widget 조회 | `pinterest-widget-crawler.md`, `api-contract.md` |
 
+## 출시·협업 추적
+
+> 아래 항목은 이전 전체 티켓에서 누락되지 않도록 유지하는 추적 항목이다. 현재 기능 Spec과 충돌하는 과거 Pinterest API·별도 Pin 저장소·원문 비보관 정책은 복원하지 않는다.
+
+| 티켓 | 작업 | 산출물 | 현행 기준·의존 | 상태 |
+| --- | --- | --- | --- | --- |
+| T12 | LICENSE 종류와 코드·TERM_CARD JSON·문서 적용 범위를 팀이 결정 | 루트 `LICENSE` 또는 의도적 미추가 결정 기록 | 팀 결정 | ⬜ 미착수 |
+| T32 | 평가 실행 스크립트로 원문 30건과 계약 변형 70건을 실행하고 계약 준수 결과를 산출 | `evals/run_evals.py` | `contract-evaluation-variants.md`, backend 구현 | ⬜ 미착수 |
+| T33 | Langfuse Prompt 등록, trace 필수 필드와 Dataset 연결을 실제 환경에서 검증 | Langfuse 설정 증거 | `observability-and-prompt-versioning.md`, `prompt-interpreter-v0.md`, T32 | ⬜ 미착수 |
+| T34 | p50/p95 지연, 요청당 비용, 모델 비교를 측정 | 측정 기록 | `observability-and-prompt-versioning.md`, T32, T33 | ⬜ 미착수 |
+| T36 | 평가·관측·비용·실패 사례·출시 판정을 한 보고서에 기록 | `EVAL_REPORT.md` | `docs/SCAFFOLD.md`, T32~T35 | ⬜ 미착수 |
+| T37 | 계약 테스트, 측정 결과, 비용과 운영 기준으로 출시 가능 여부를 판정 | 출시 게이트 결과 | `docs/SCAFFOLD.md`, T34, T36 | ⬜ 미착수 |
+| T39 | 제안된 역할을 팀 회의로 확정하고 README와 일치시킴 | 역할 결정 기록과 README 갱신 | 팀 회의 | ⬜ 미착수 |
+| 10/8 마일스톤 | 최종 제출 전 T32~T37·T39 상태를 점검 | 마일스톤 점검 기록 | 2026-10-08, 위 티켓 | ⬜ 예정 |
+
 ## 운영 원칙
 
 - TERM_CARD는 JSON 카탈로그만 사용하며 DB 적재·외부 어휘 조회를 하지 않는다.
