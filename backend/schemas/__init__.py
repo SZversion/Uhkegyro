@@ -2,7 +2,9 @@
 
 from backend.schemas.enums import (
     AgentStatus,
+    ClarificationType,
     FailureCode,
+    InterpretationState,
     JobStatus,
     PinStatus,
     ReasonCode,
@@ -26,10 +28,12 @@ __all__ = [
     "AgentRequest",
     "AgentResult",
     "AgentStatus",
+    "ClarificationType",
     "Failure",
     "FailureCode",
     "InterpretationOutput",
     "InterpretationSelection",
+    "InterpretationState",
     "JobEnvelope",
     "JobStatus",
     "MAX_PINS_PER_ROLE",
