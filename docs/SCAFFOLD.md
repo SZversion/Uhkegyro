@@ -52,7 +52,7 @@ def health() -> dict:
 routers/summary.py               services/llm.py   ← 여기만
   → OpenRouter adapter             routers/*.py    ← 이 함수만 부른다
 routers/extract.py
-  → openai.chat.completions
+  → 직접 provider SDK 호출
 ```
 
 이유가 있습니다. **3차 프로젝트에서 이 자리에 RAG 그래프가 들어옵니다.** 호출부를 한곳에 모아두면 그때 이 파일 내부만 갈아끼우면 되고, 흩뿌려두면 전부 뜯어야 합니다. 지금 5분 들이면 그때 며칠을 법니다.
