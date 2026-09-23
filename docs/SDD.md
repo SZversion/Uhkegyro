@@ -26,7 +26,7 @@ FastMCP startup -> JSON catalog validation -> immutable active-card memory
 | LLM adapter | 카드 후보·근거·모호성 신호 생성 | 자유 term ID·검색 URL·최종 상태 결정 |
 | FastMCP TERM_CARD tool | 시작 검증을 통과한 JSON 메모리에서 활성 카드 한 건을 구조화 조회 | 외부 어휘 병합·새 카드 생성·검색 실행 |
 | Card resolver | MCP가 반환한 카드의 역할·활성·조건을 재검증 | 외부 어휘 병합 |
-| PinterestCrawlerProvider | 활성 카드의 검증된 검색 조각으로 공개 Pinterest 검색을 크롤링하고, 수집한 Pin ID를 widget endpoint로 조회해 Pin 결과 반환 | API v5 사용, 브라우저 직접 호출, 이미지·썸네일 URL 저장 |
+| PinterestCrawlerProvider | 서버 Playwright로 활성 카드의 검증된 검색 조각을 공개 Pinterest 검색에 사용하고, 수집한 Pin ID를 widget endpoint로 조회해 Pin 결과 반환 | API v5 사용, 브라우저 직접 호출, 이미지·썸네일 URL 저장 |
 | Response assembler | 상태·카드 피드백·Pin 결과 조립 | 오류 원문·비밀값 노출 |
 
 ## 3. 비동기 job과 실패

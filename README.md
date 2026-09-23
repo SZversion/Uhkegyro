@@ -34,7 +34,7 @@
 1. 사용자가 만들고 싶은 캐릭터를 일상어로 입력합니다.
 2. Agent가 체형/소체, 포즈, 시점, 원근, 배치를 구분해 해석합니다.
 3. 각 조건을 쉬운 말과 드로잉 용어로 설명하고, 확신하지 못한 조건은 질문 또는 한계로 표시합니다.
-4. 서버가 선택한 역할별 `query_fragments`로 공개 Pinterest 검색을 수행해 상위 8개의 원본 Pin 링크를 찾고, 각 Pin ID를 widget endpoint로 조회해 원격 썸네일 URL을 현재 응답에만 넣습니다.
+4. 서버 Playwright가 선택한 역할별 `query_fragments`로 공개 Pinterest 검색을 수행해 상위 8개의 원본 Pin 링크를 찾고, 각 Pin ID를 widget endpoint로 조회해 원격 썸네일 URL을 현재 응답에만 넣습니다.
 5. UI는 서버가 반환한 원격 썸네일을 원본 Pin 링크로 표시합니다. 서비스는 이미지 파일·썸네일 URL·Pin 메타데이터를 저장하지 않습니다.
 6. 사용자는 하나의 ‘정답 이미지’가 아니라 역할별 레퍼런스를 조합해 러프를 시작합니다.
 
@@ -77,7 +77,7 @@ Job executor / recovery (미구현)
   -> LLM: 일상어를 허용된 term_id와 역할로 구조화
   -> 결정론 코드: Pydantic 검증, 역할 순서, 허용 ID, URL 인코딩
   -> FastMCP: TERM_CARD JSON 카탈로그의 활성 카드 정보를 구조화 조회
-  -> PinterestCrawlerProvider: 공개 검색 크롤링 -> Pin ID widget 조회 -> 역할별 최대 8개 {pin_url, thumbnail_url, status} 반환
+  -> PinterestCrawlerProvider: 서버 Playwright 공개 검색 크롤링 -> Pin ID widget 조회 -> 역할별 최대 8개 {pin_url, thumbnail_url, status} 반환
   -> UI: 원격 썸네일을 원본 Pin 링크로 표시
 ```
 
@@ -97,7 +97,7 @@ LLM은 링크를 임의로 만들거나 데이터 출처를 지어내지 않습�
 | TERM_CARD JSON 카탈로그 | `index.json`과 다섯 역할 JSON으로 이루어진 팀 검수 런타임 단일 원본 | term ID, 설명, query fragment, 검수 상태 |
 | Pinterest | 사용자가 원본을 직접 확인할 외부 탐색 대상 | 원본 Pin 링크와 응답 전용 원격 썸네일 미리보기 |
 
-PinterestCrawlerProvider는 서버에서 활성 TERM_CARD의 `query_fragments`만 사용해 공개 검색을 크롤링하고, 수집한 모든 Pin ID를 widget endpoint로 조회해 현재 응답용 `thumbnail_url`을 조립합니다. Pinterest API v5는 사용하지 않습니다. Pinterest 이미지 바이트와 `thumbnail_url`은 저장·재게시하지 않습니다. Pin URL과 상태는 별도 수집·저장하지 않고 세션·job 이력에 포함된 결과로만 유지합니다. UI는 현재 응답의 원격 썸네일을 원본 Pin 링크로 표시하며, 썸네일 URL이 없으면 링크만 제공합니다. Pin 삭제·썸네일 부재·검색 오류는 provider가 반환한 상태로 구분합니다. 용어 선택·설명·검색 조각은 구현 후 팀이 작성·검수한 TERM_CARD JSON 카탈로그만 사용합니다. 카탈로그는 시작 시 검증해 메모리에 로드하며 요청 중 파일을 다시 읽거나 DB에 적재하지 않습니다. Getty는 용어 조사 시 참고한 자료일 뿐, 서비스 데이터·사용자 화면·LLM 입력·런타임 조회에 포함하지 않습니다. 자체 카드와 권리 검토 기준은 팀 승인을 거쳐야 하며, 승인되지 않은 데이터를 완료된 카탈로그로 주장하지 않습니다.
+PinterestCrawlerProvider는 서버 Playwright에서 활성 TERM_CARD의 `query_fragments`만 사용해 공개 검색을 크롤링하고, 수집한 모든 Pin ID를 widget endpoint로 조회해 현재 응답용 `thumbnail_url`을 조립합니다. Pinterest API v5는 사용하지 않습니다. Pinterest 이미지 바이트와 `thumbnail_url`은 저장·재게시하지 않습니다. Pin URL과 상태는 별도 수집·저장하지 않고 세션·job 이력에 포함된 결과로만 유지합니다. UI는 현재 응답의 원격 썸네일을 원본 Pin 링크로 표시하며, 썸네일 URL이 없으면 링크만 제공합니다. 썸네일 부재와 검색 오류는 provider가 반환한 상태로 구분합니다. 용어 선택·설명·검색 조각은 구현 후 팀이 작성·검수한 TERM_CARD JSON 카탈로그만 사용합니다. 카탈로그는 시작 시 검증해 메모리에 로드하며 요청 중 파일을 다시 읽거나 DB에 적재하지 않습니다. Getty는 용어 조사 시 참고한 자료일 뿐, 서비스 데이터·사용자 화면·LLM 입력·런타임 조회에 포함하지 않습니다. 자체 카드와 권리 검토 기준은 팀 승인을 거쳐야 하며, 승인되지 않은 데이터를 완료된 카탈로그로 주장하지 않습니다.
 
 ## API와 MCP 상태
 
