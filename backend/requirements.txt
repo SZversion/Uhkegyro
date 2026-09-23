@@ -7,4 +7,5 @@ openai>=1.60
 langfuse>=2.50
 mcp<2,>=1.29
 python-jose[cryptography]>=3.3
+pytest>=8.0
 # asyncpg>=0.30
