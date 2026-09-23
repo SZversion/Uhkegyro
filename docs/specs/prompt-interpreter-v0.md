@@ -45,6 +45,16 @@
 - Prompt source에는 평가셋 30건의 입력·정답·예시를 넣지 않는다. 평가는 Prompt와 분리된 `evals/dataset.jsonl`로 수행한다.
 - v0의 기준선 평가는 현행 비동기 API 계약에 맞춘 30건 평가셋이 이 브랜치에 반영된 뒤에만 기록한다. 그 전에는 평가 통과나 점수를 주장하지 않는다.
 
+### Skill·Prompt·resolver 결합
+
+| 단계 | 단일 책임 | 입력 원본 |
+| --- | --- | --- |
+| Langfuse System message | 자연어 의미 해석과 허용 후보 선택 | `prompts/uhkegryo-interpreter-v0.md`의 영어 System message. `skills/SKILL.md`의 LLM 선택 규칙을 같은 의미로 반영한다. |
+| Langfuse User message | 요청과 허용 카드 후보 전달 | `request_text`, 시작 검증을 통과한 `active_cards_json` |
+| Pydantic + resolver | 구조·활성 상태·역할·조건·안전·최종 상태 검증 | TERM_CARD index, 역할별 JSON, API 계약 |
+
+한국어 `skills/SKILL.md` 전문을 두 번째 system message로 덧붙이지 않는다. Skill의 검색·최종 상태·피드백 조립 규칙은 resolver가 적용한다. `direct_search_disabled_term_ids`도 LLM이 판단하지 않고 resolver가 후보 검증 뒤 처리한다.
+
 ### 입력 변수
 
 | 변수 | 제공자 | 허용 내용 |
@@ -73,6 +83,7 @@ Selection
 - `select_terms`: selections는 한 개 이상, 역할 중복 없음, `unresolved_constraints=[]`, `clarifying_question=null`. `evidence`는 실제 한국어 요청에 있는 짧은 표현만 쓴다.
 - `needs_clarification`: `selections=[]`, `unresolved_constraints`는 한 개 이상, `clarifying_question`은 한국어 질문 하나다. `evidence`, `unresolved_constraints`, `clarifying_question` 등 사람이 읽는 문자열은 한국어로만 반환한다.
 - Prompt는 최종 `agent_status`, `reason_codes`, Pinterest 검색어·URL·MCP 호출·카드 설명을 만들지 않는다. Pydantic 검증과 resolver가 이를 각각 조립·검증한다.
+- 해결되지 않은 모호성은 새 사용자 메시지의 새 job에서 다시 `needs_clarification`으로 처리한다. `pending_human_review`는 현재 공개 API와 `InterpretationOutput`의 enum이 아니다.
 - 구조적으로 유효해도 활성 카드·역할·조건 검증은 반드시 코드가 다시 수행한다.
 
 ## AC
@@ -101,3 +112,9 @@ Selection
 - GIVEN: LLM 출력이 JSON 또는 Pydantic 계약을 위반한다.
 - WHEN: LLM adapter가 검증한다.
 - THEN: 해당 출력은 resolver·검색 provider에 전달되지 않고 API 계약의 재시도·실패 정책을 따른다.
+
+**AC-06 · 한 개의 System message와 후속 질문**
+
+- GIVEN: v0 해석 요청과 해결되지 않은 모호성이 있다.
+- WHEN: adapter와 resolver가 처리한다.
+- THEN: 영어 v0 System message 하나만 LLM에 전달하고, resolver는 새 term ID·`pending_human_review` 없이 새 job의 `needs_clarification`으로 처리한다.

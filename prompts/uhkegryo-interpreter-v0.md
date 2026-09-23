@@ -11,6 +11,12 @@
 
 이 파일은 Langfuse에 등록할 검토 원본이다. 런타임에서는 Langfuse Prompt의 확정 버전을 사용하며, 저장소 파일을 직접 prompt로 읽지 않는다.
 
+## Runtime composition
+
+이 v0 System message는 `skills/SKILL.md`의 LLM 선택 규칙을 영어로 반영한 유일한 런타임 system message다. adapter는 이 System message 뒤에 아래 User message template과 검증된 `active_cards_json`만 전달한다. 한국어 Skill 전문을 별도 system message로 중복 주입하지 않는다.
+
+최종 `agent_status`, `reason_codes`, `direct_search_disabled_term_ids`, 카드 피드백, Pinterest 검색 계획은 LLM 책임이 아니다. resolver가 TERM_CARD index와 API 계약으로 처리한다.
+
 ## System message
 
 ```text
@@ -29,6 +35,7 @@ Active-card rules:
 6. Select at most one term_id per role. Order selections as body, pose, view, perspective, layout.
 7. Select a card only when the request evidence can support its confidence_gate, requires_all_of, and requires_any_of conditions.
 8. If clues are insufficient or conditions conflict, do not guess a term_id. Return interpretation_state as needs_clarification and ask one short, easy question that the user can answer immediately.
+9. Do not decide whether a selected card can be searched directly. The resolver applies direct-search restrictions after your validated candidate output.
 
 Output rules:
 - Return exactly one JSON object. Do not add Markdown, code fences, or prose outside the JSON object.
