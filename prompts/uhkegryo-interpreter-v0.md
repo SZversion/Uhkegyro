@@ -34,15 +34,16 @@ Active-card rules:
 5. view represents the direction from which the character is seen or camera height. perspective represents spatial or bodily perspective. Never use one role in place of the other.
 6. Select at most one term_id per role. Order selections as body, pose, view, perspective, layout.
 7. Select a card only when the request evidence can support its confidence_gate, requires_all_of, and requires_any_of conditions.
-8. If clues are insufficient or conditions conflict, do not guess a term_id. Return interpretation_state as needs_clarification and ask one short, easy question that the user can answer immediately.
+8. If clues are insufficient or conditions conflict, do not guess a term_id. Return interpretation_state as needs_clarification, select one clarification_type, and ask one short, easy question that the user can answer immediately.
 9. Do not decide whether a selected card can be searched directly. The resolver applies direct-search restrictions after your validated candidate output.
 
 Output rules:
 - Return exactly one JSON object. Do not add Markdown, code fences, or prose outside the JSON object.
 - interpretation_state must be either select_terms or needs_clarification.
-- For select_terms, selections must contain at least one item, unresolved_constraints must be an empty array, and clarifying_question must be null.
-- For needs_clarification, selections must be an empty array, unresolved_constraints must contain at least one item, and clarifying_question must be one question.
-- All human-readable string values in evidence, unresolved_constraints, and clarifying_question must be written in Korean. Do not translate enum values, role values, or term_id values.
+- clarification_type must be null, abstract_intent, insufficient_visual_evidence, or conflicting_constraints. It is an intermediate machine enum, not a final API reason code.
+- For select_terms, selections must contain at least one item, unresolved_constraints must be an empty array, clarifying_question must be null, and clarification_type must be null.
+- For needs_clarification, selections must be an empty array, unresolved_constraints must contain at least one item, clarifying_question must be one question, and clarification_type must not be null.
+- All human-readable string values in evidence, unresolved_constraints, and clarifying_question must be written in Korean. Do not translate enum values, role values, term_id values, or clarification_type values.
 - evidence must contain only short phrases actually found in the Korean request. confidence must be a number from 0 to 1.
 - Do not add fields that are not defined in the output contract.
 ```
@@ -68,6 +69,7 @@ Output rules:
 | 필드 | 타입 | 규칙 |
 | --- | --- | --- |
 | `interpretation_state` | `"select_terms" \| "needs_clarification"` | 최종 API 상태가 아닌 LLM 해석 상태 |
+| `clarification_type` | `null \| "abstract_intent" \| "insufficient_visual_evidence" \| "conflicting_constraints"` | 질문 상태의 구조화된 사유 후보. 최종 `reason_code`가 아님 |
 | `selections` | 배열 | 선택 시 역할당 한 항목. 질문 상태에서는 빈 배열 |
 | `selections[].role` | `"body" \| "pose" \| "view" \| "perspective" \| "layout"` | `term_id`의 카드 역할과 일치 |
 | `selections[].term_id` | 문자열 | `active_cards_json`에 존재하는 ID만 허용 |
@@ -81,6 +83,7 @@ Output rules:
 ```json
 {
   "interpretation_state": "select_terms",
+  "clarification_type": null,
   "selections": [
     {
       "role": "pose",
@@ -99,6 +102,7 @@ Output rules:
 ```json
 {
   "interpretation_state": "needs_clarification",
+  "clarification_type": "insufficient_visual_evidence",
   "selections": [],
   "unresolved_constraints": ["체형 비율을 확정할 실제 신체 단서가 없음"],
   "clarifying_question": "의상을 제외한 실제 체형 비율을 찾으시나요, 옷을 포함한 겉실루엣을 찾으시나요?"

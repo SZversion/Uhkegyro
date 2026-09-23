@@ -14,7 +14,7 @@
 
 기본 해석 프롬프트 이름은 `uhkegryo-interpreter-v{n}`이고 production label을 사용한다. 모델 또는 프롬프트 변경 시 버전을 증가시킨다. `prompts/uhkegryo-interpreter-v0.md`는 v0의 저장소 검토 원본이며, 원격 Langfuse Prompt 등록 전후에 내용과 버전을 대조한다.
 
-각 trace에는 `request_id`, `job_id`, session ID 해시, 모델 provider·name, `prompt_version`, `attempt`, `max_attempts`, 단계별 지연, 최종 `agent_status`, `failure_code`, 검색 결과 상태를 기록한다. 입력은 `request_text` 원문 대신 해시·글자 수로, LLM 출력은 원문 설명 대신 `interpretation_state`·선택된 역할·term ID·Pydantic 검증 결과로 기록한다. 호출별 input/output/total token 수와 비용을 기록하고, 평가 실행은 같은 모델·Prompt 버전별 p50/p95 지연과 요청당 비용을 집계한다.
+각 trace에는 `request_id`, `job_id`, session ID 해시, 모델 provider·name, `prompt_version`, `attempt`, `max_attempts`, 단계별 지연, 최종 `agent_status`, `failure_code`, 검색 결과 상태를 기록한다. 입력은 `request_text` 원문 대신 해시·글자 수로, LLM 출력은 원문 설명 대신 `interpretation_state`·`clarification_type`·선택된 역할·term ID·Pydantic 검증 결과로 기록한다. 호출별 input/output/total token 수와 비용을 기록하고, 평가 실행은 같은 모델·Prompt 버전별 p50/p95 지연과 요청당 비용을 집계한다.
 
 ## How
 
