@@ -31,7 +31,7 @@ FastMCP startup -> JSON catalog validation -> immutable active-card memory
 
 ## 3. 비동기 job과 실패
 
-메시지 제출은 `202`와 queued job을 반환한다. job은 `queued → running → validating → searching → rendering → completed` 또는 `failed`로 전이하며 종결 뒤 바뀌지 않는다.
+메시지 제출은 `202`와 queued job을 반환한다. 첫 실행은 `queued → running → validating → searching → rendering → completed|failed`로 전이한다. 회복 가능한 오류는 실행 중 상태에서 `queued`로 되돌아가 다음 attempt를 시작하며, `completed`·`failed`는 종결 뒤 바뀌지 않는다.
 
 LLM·PinterestCrawlerProvider·worker의 회복과 최종 실패 경계는 [api-contract.md](./specs/api-contract.md)를 따른다. worker의 polling·lease·동시성·세션별 순차 실행은 [postgres-job-worker.md](./specs/postgres-job-worker.md), LLM provider·model·timeout은 [openrouter-llm-adapter.md](./specs/openrouter-llm-adapter.md)가 단일 기준이다.
 

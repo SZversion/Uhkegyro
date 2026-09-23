@@ -12,7 +12,7 @@
 
 ## What
 
-worker는 1초마다 처리 가능한 queued job 또는 lease가 만료된 running job을 찾는다. 새 job은 `attempt=0`으로 생성되며, claim transaction이 `attempt`를 1 증가시키고 status를 `running`으로 바꾸며 30초 lease를 설정한다. 실행 중 10초마다 heartbeat로 lease를 30초 뒤로 연장한다.
+worker는 1초마다 `attempt < max_attempts`인 queued job 또는 lease가 만료된 running job을 찾는다. 새 job은 `attempt=0`으로 생성되며, claim transaction이 `attempt`를 1 증가시키고 status를 `running`으로 바꾸며 30초 lease를 설정한다. lease가 만료된 `attempt=max_attempts` job은 claim하지 않고 `JOB_INSTANCE_INTERRUPTED`로 `failed` 처리한다. 실행 중 10초마다 heartbeat로 lease를 30초 뒤로 연장한다.
 
 같은 session의 queued job은 더 이른 미종결 job이 있으면 claim하지 않는다. lease 만료 job은 중간 실행을 이어가지 않고 처음부터 재실행하며 `attempt`를 1 증가한다. `attempt=3` 뒤 회복 가능한 실패는 `failed`와 `JOB_INSTANCE_INTERRUPTED` 또는 실제 최종 failure code로 종결한다.
 
