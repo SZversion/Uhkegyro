@@ -11,7 +11,7 @@
 
 ## What
 
-기본 해석 프롬프트 이름은 `uhkegryo-interpreter-v{n}`이고 production label을 사용한다. 모델 또는 프롬프트 변경 시 버전을 증가시킨다.
+기본 해석 프롬프트 이름은 `uhkegryo-interpreter-v{n}`이고 production label을 사용한다. 모델 또는 프롬프트 변경 시 버전을 증가시킨다. `prompts/uhkegryo-interpreter-v0.md`는 v0의 저장소 검토 원본이며, 원격 Langfuse Prompt 등록 전후에 내용과 버전을 대조한다.
 
 각 trace에는 `request_id`, `job_id`, session ID 해시, 모델, `prompt_version`, `attempt`, `max_attempts`, 단계, 지연, 최종 `agent_status`, `failure_code`, 검색 결과 상태를 기록한다. 요청 원문은 해시·길이·선택된 term ID로 대체한다.
 
