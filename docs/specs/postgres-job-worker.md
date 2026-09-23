@@ -12,7 +12,7 @@
 
 ## What
 
-worker는 1초마다 `attempt < max_attempts`인 queued job 또는 lease가 만료된 비종결 진행 job(`running | validating | searching | rendering`)을 찾는다. 새 job은 `attempt=0`으로 생성되며, claim transaction이 `attempt`를 1 증가시키고 status를 `running`으로 바꾸며 30초 lease를 설정한다. lease가 만료된 `attempt=max_attempts` 진행 job은 claim하지 않고 `JOB_INSTANCE_INTERRUPTED`로 `failed` 처리한다. `completed`·`failed`와 결정적 오류로 `failed` 처리된 job은 복구하지 않는다. 실행 중 10초마다 heartbeat로 lease를 30초 뒤로 연장한다.
+worker는 1초마다 `attempt < max_attempts`이고 `next_retry_at IS NULL OR next_retry_at <= now()`인 queued job 또는 lease가 만료된 비종결 진행 job(`running | validating | searching | rendering`)을 찾는다. 새 job은 `attempt=0`, `next_retry_at=null`로 생성되며, claim transaction이 `attempt`를 1 증가시키고 status를 `running`으로 바꾸며 30초 lease를 설정한다. lease가 만료된 `attempt=max_attempts` 진행 job은 claim하지 않고 `JOB_INSTANCE_INTERRUPTED`로 `failed` 처리한다. `completed`·`failed`와 결정적 오류로 `failed` 처리된 job은 복구하지 않는다. 실행 중 10초마다 heartbeat로 lease를 30초 뒤로 연장한다.
 
 같은 session의 queued job은 더 이른 미종결 job이 있으면 claim하지 않는다. lease 만료 job은 중간 실행을 이어가지 않고 처음부터 재실행하며 `attempt`를 1 증가한다. `attempt=3` 뒤 회복 가능한 실패는 `failed`와 `JOB_INSTANCE_INTERRUPTED` 또는 실제 최종 failure code로 종결한다.
 
@@ -21,7 +21,7 @@ worker는 1초마다 `attempt < max_attempts`인 queued job 또는 lease가 만�
 - claim은 `FOR UPDATE SKIP LOCKED` transaction으로 수행해 worker 둘이 같은 job을 얻지 못하게 한다.
 - `WORKER_CONCURRENCY` 기본값은 5이며 worker가 동시에 보유한 lease 수를 제한한다.
 - worker는 첫 실행에서 `queued → running → validating → searching → rendering → completed|failed`로 전이하고, 회복 가능한 오류에서는 실행 중 상태에서 `queued`로 되돌린다.
-- LLM·crawler·widget의 회복 가능한 오류에서 `attempt<3`이면 lease를 제거하고 `queued`로 되돌린다. 다음 claim이 attempt를 증가시켜 처음부터 재실행한다. `attempt=3`이면 실제 failure code로 `failed` 처리한다. 구성·DB migration·코드 오류는 즉시 `failed`다.
+- LLM·crawler·widget의 회복 가능한 오류에서 `attempt<3`이면 lease를 제거하고 `next_retry_at`을 오류별 backoff 뒤 시각으로 설정한 뒤 `queued`로 되돌린다. worker polling은 그 시각 전에는 claim하지 않으며, 다음 claim이 attempt를 증가시켜 처음부터 재실행한다. LLM 오류의 분류·backoff·구조화 출력 재요청은 [openrouter-llm-adapter.md](./openrouter-llm-adapter.md)가 단일 기준이다. `attempt=3`이면 실제 failure code로 `failed` 처리한다. 구성·DB migration·코드 오류는 즉시 `failed`다.
 - 완료·실패 저장에 성공한 뒤 lease를 제거한다.
 
 ## AC
@@ -31,3 +31,4 @@ worker는 1초마다 `attempt < max_attempts`인 queued job 또는 lease가 만�
 - GIVEN: running job의 heartbeat가 10초마다 성공, WHEN: 30초가 경과, THEN: lease는 만료되지 않는다.
 - GIVEN: worker가 heartbeat 없이 중단, WHEN: 30초 lease가 만료, THEN: 다른 worker는 attempt를 1 증가해 job을 처음부터 재실행한다.
 - GIVEN: 세 번째 attempt가 회복 가능한 오류로 끝남, WHEN: worker가 종결, THEN: job은 failed이며 더 이상 claim되지 않는다.
+- GIVEN: 첫 LLM timeout이 12:00:00에 발생, WHEN: worker가 job을 queued로 되돌린다, THEN: `next_retry_at=12:00:01`이고 12:00:01 전 polling은 해당 job을 claim하지 않는다.

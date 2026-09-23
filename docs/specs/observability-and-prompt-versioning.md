@@ -14,12 +14,12 @@
 
 기본 해석 프롬프트 이름은 `uhkegryo-interpreter-v{n}`이고 production label을 사용한다. 모델 또는 프롬프트 변경 시 버전을 증가시킨다. `prompts/uhkegryo-interpreter-v0.md`는 v0의 저장소 검토 원본이며, 원격 Langfuse Prompt 등록 전후에 내용과 버전을 대조한다.
 
-각 Langfuse trace에는 사용자 요청 원문, `job_id`, session ID 해시, 모델, `prompt_version`, `attempt`, `max_attempts`, 단계, 지연, 최종 `agent_status`, `failure_code`, 검색 결과 상태를 기록한다. 일반 애플리케이션 로그에는 요청 원문 대신 해시·길이·선택된 term ID만 기록하며, LLM 원본 응답은 저장하지 않는다.
+각 Langfuse trace에는 사용자 요청 원문, `job_id`, session ID 해시, 모델, `prompt_version`, `attempt`, `max_attempts`, 단계, `error_type`, 실제 적용한 `backoff_ms`, 최종 `agent_status`, `failure_code`, 검색 결과 상태를 기록한다. 일반 애플리케이션 로그에는 요청 원문 대신 해시·길이·선택된 term ID만 기록하며, LLM 원본 응답은 저장하지 않는다.
 
 ## How
 
 - 자동 실행 재시도는 같은 job의 `attempt=1..3`으로 기록한다. 사용자에게 재시도 진행을 표시하지 않는다.
-- `LLM_*`, `SEARCH_*`, `JOB_INSTANCE_INTERRUPTED`은 각 시도의 안전한 오류 분류와 지연을 기록한다.
+- `LLM_*`, `SEARCH_*`, `JOB_INSTANCE_INTERRUPTED`은 각 시도의 안전한 오류 분류와 지연을 기록한다. LLM `error_type`은 `pydantic_validation_error`, `timeout`, `upstream_5xx`, `rate_limited`, `incomplete_or_unclassified_upstream` 중 하나이며, 오류별 backoff와 최종 포기 경로는 [openrouter-llm-adapter.md](./openrouter-llm-adapter.md)를 따른다.
 - 최종 `failed`에는 API와 같은 안정된 failure code를 기록한다. 운영 로그에는 안전한 오류 요약을 추가할 수 있으나 UI에 노출하지 않는다.
 - 검색 재시도 소진 뒤 유효 카드가 있으면 `completed + partial_result`, `PIN_SEARCH_UNAVAILABLE`을 기록한다.
 - `needs_clarification`은 실패가 아니며 새 사용자 메시지의 새 job과 연결한다.
@@ -33,6 +33,7 @@
 - GIVEN: LLM timeout이 두 번 발생하고 세 번째 시도가 성공한다.
 - WHEN: job을 종료한다.
 - THEN: 같은 job ID의 attempt 1, 2, 3과 최종 성공 상태를 기록한다.
+- AND THEN: attempt 1·2에는 `error_type=timeout`, 각각 `backoff_ms=1000`, `2000`을 기록한다.
 
 **AC-02 · 최종 실패 관측**
 
@@ -40,7 +41,20 @@
 - WHEN: job을 종료한다.
 - THEN: failure code와 안전한 운영 요약을 기록하고 사용자 UI에는 내부 정보를 전달하지 않는다.
 
-**AC-03 · Prompt 버전·비용·지연 연결**
+**AC-03 · 오류별 backoff·최종 포기**
+
+- GIVEN: Pydantic 검증 오류, timeout, 5xx, 429 또는 미완료·분류 불가 upstream 예외가 세 번 연속 발생한다.
+- WHEN: 세 번째 attempt를 종료한다.
+- THEN: 각 trace는 해당 `error_type`, 실제 `backoff_ms`, 각각 `LLM_INVALID_STRUCTURED_OUTPUT`, `LLM_TIMEOUT`, `LLM_UPSTREAM_UNAVAILABLE`, `LLM_RATE_LIMITED`, `LLM_UPSTREAM_UNAVAILABLE` 최종 failure code를 기록한다.
+- AND THEN: API는 failure code를 반환하고 UI는 일반 실패 문구만 표시한다.
+
+**AC-04 · 429 상한**
+
+- GIVEN: OpenRouter가 `Retry-After: 60`과 429를 반환한다.
+- WHEN: 다음 attempt를 예약한다.
+- THEN: trace의 `error_type=rate_limited`, `backoff_ms=30000`이며 worker는 `next_retry_at` 전에는 job을 claim하지 않는다.
+
+**AC-05 · Prompt 버전·비용·지연 연결**
 
 - GIVEN: 동일한 30건 평가셋으로 baseline 또는 변경 후 실행을 한다.
 - WHEN: 각 LLM 호출과 평가 실행을 기록한다.
