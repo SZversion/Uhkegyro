@@ -20,6 +20,7 @@
 
 ## How
 
+- 배포 환경의 `DATABASE_URL`은 Secret Manager에서 주입한 Neon `postgresql+asyncpg://...?...sslmode=require` 연결 문자열이다. 로컬 개발은 같은 형식의 `.env` 값만 사용한다.
 - 원문 쿠키 토큰은 DB에 저장하지 않고 SHA-256 해시로 `sessions.session_token_hash`를 조회한다.
 - 유효 세션의 API 활동마다 `last_activity_at`과 쿠키 `Max-Age=90일`을 갱신한다.
 - session 행을 명시적으로 삭제하면 FK cascade로 job도 삭제한다. users, messages, search_results, Pin 전용 테이블은 만들지 않는다.
