@@ -8,8 +8,8 @@ steps:
     id: "build-image"
     args:
       - "build"
-      - "--tag=${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_SERVICE_NAME}:${SHORT_SHA}"
-      - "--tag=${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_SERVICE_NAME}:latest"
+      - "--tag=${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/${_SERVICE_NAME}:${SHORT_SHA}"
+      - "--tag=${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/${_SERVICE_NAME}:latest"
       - "."
 
   # 2. Artifact Registry에 푸시
@@ -18,7 +18,7 @@ steps:
     args:
       - "push"
       - "--all-tags"
-      - "${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_SERVICE_NAME}"
+      - "${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/${_SERVICE_NAME}"
 
   # 3. Cloud Run 서비스 배포 (무료 티어 설정)
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
@@ -28,7 +28,7 @@ steps:
       - "run"
       - "deploy"
       - "${_SERVICE_NAME}"
-      - "--image=${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_SERVICE_NAME}:${SHORT_SHA}"
+      - "--image=${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/${_SERVICE_NAME}:${SHORT_SHA}"
       - "--region=${_REGION}"
       - "--platform=managed"
       - "--allow-unauthenticated"
@@ -49,6 +49,7 @@ steps:
 substitutions:
   _REGION: "asia-northeast3"
   _ARTIFACT_REGISTRY: "asia-northeast3-docker.pkg.dev"
+  _ARTIFACT_REPO: "docker-repo"
   _SERVICE_NAME: "api"
 
 options:
@@ -57,5 +58,5 @@ options:
 
 # 트리거 조건 (GitHub 웹훅에서 설정):
 # - 브랜치: ^main$
-# - 포함된 파일 경로: backend/**
+# - 포함된 파일 경로: backend/**, Dockerfile, cloudbuild.yaml, .env.example
 # - 저장소: aihuman-7th/proj2-4

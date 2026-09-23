@@ -7,12 +7,12 @@
 │   Vercel    │ ─────────────► │  Cloud Run (api) │  --min-instances=0 (유휴 시 $0)
 │  (Frontend) │   REST + MCP   │  FastAPI + MCP   │  --max-instances=3
 └─────────────┘                └────────┬─────────┘
-                                        │ Public Internet + SSL
-                                        ▼
-                               ┌──────────────────┐
-                               │  Neon PostgreSQL │  -- Free Tier: 0.5GB storage
-                               │  (Free Tier)     │  -- Auto-suspend 5min 유휴
-                               └──────────────────┘
+                                         │ Public Internet + SSL
+                                         ▼
+                                ┌──────────────────┐
+                                │  Neon PostgreSQL │  -- Free Tier: 0.5GB storage
+                                │  (Free Tier)     │  -- Auto-suspend 5min 유휴
+                                └──────────────────┘
 ```
 
 - **백엔드**: 단일 Cloud Run 서비스 `api` (FastAPI + MCP 마운트)
@@ -20,6 +20,7 @@
 - **DB**: **Neon 무료 PostgreSQL** (Cloud SQL 대신 — 월 $0)
 - **시크릿**: Secret Manager
 - **CI/CD**: Cloud Build (GitHub push → 빌드 → 배포)
+- **MCP 인증**: Cloud Run IAM (서비스 간 호출만 허용, 브라우저 직접 접근 차단)
 - **예상 월 비용**: **$0** (무료 할당량 내, 초과 시 과금 가능)
 
 ---
@@ -93,7 +94,59 @@ gcloud secrets create DATABASE_URL --data-file=- --project=proj2-509406 <<< 'pos
    - **빌드 구성**: `cloudbuild.yaml` (레포 루트)
 4. **만들기** 클릭
 
-이제 `main` 브랜치에 `backend/` 변경사항을 푸시하면 자동 빌드·배포 실행.
+이제 `main` 브랜치에 `backend/`, `Dockerfile`, `cloudbuild.yaml`, `.env.example` 변경사항을 푸시하면 자동 빌드·배포 실행.
+
+---
+
+## 4-1. Cloud Build 트리거 상세 설정
+
+`cloudbuild.yaml`의 substitutions와 트리거 포함 경로:
+
+| 설정 항목 | 값 |
+|---|---|
+| **브랜치** | `^main$` |
+| **포함된 파일 필터** | `backend/**`, `Dockerfile`, `cloudbuild.yaml`, `.env.example` |
+| **빌드 구성** | `cloudbuild.yaml` (레포 루트) |
+| **Substitutions** | `_REGION=asia-northeast3`, `_ARTIFACT_REGISTRY=asia-northeast3-docker.pkg.dev`, `_ARTIFACT_REPO=docker-repo`, `_SERVICE_NAME=api` |
+
+> **참고**: 실제 트리거는 Cloud Build 콘솔에서 생성·관리됩니다. 위 설정은 `cloudbuild.yaml` 주석과 이 문서에 기록해 둡니다.
+
+---
+
+## 4-2. MCP 인증 (Cloud Run IAM)
+
+MCP 엔드포인트(`/mcp`)는 **Cloud Run IAM**으로 보호됩니다.
+
+### 인증 방식
+- **허용**: Cloud Run 서비스 간 호출 (메인 API 서비스 → MCP 서비스, 동일 프로젝트 내)
+- **차단**: 일반 브라우저의 `/mcp` 직접 호출, 인증되지 않은 외부 요청
+
+### 설정 방법
+1. Cloud Run 서비스 `api` 배포 시 `--allow-unauthenticated`는 **메인 API 엔드포인트(`/health`, `/api/*`)에만 적용**
+2. MCP 도구는 내부 호출만 허용하므로 별도 IAM 권한 필요:
+   ```bash
+   # MCP 호출용 서비스 계정 생성 (필요 시)
+   gcloud iam service-accounts create mcp-caller --project=proj2-509406
+   
+   # Cloud Run 호출 권한 부여
+   gcloud run services add-iam-policy-binding api \
+     --region=asia-northeast3 \
+     --member="serviceAccount:mcp-caller@proj2-509406.iam.gserviceaccount.com" \
+     --role="roles/run.invoker" \
+     --project=proj2-509406
+   ```
+3. 메인 API(`backend/main.py`)에서 MCP 호출 시 `Authorization: Bearer <OIDC 토큰>` 헤더 포함
+
+### 로컬 개발·테스트 시 주의사항
+- **로컬에서는 IAM 검증 불가** → `MCP_ENABLED=false`(기본값)로 MCP 비활성화 상태에서 개발
+- 로컬에서 MCP 테스트 필요 시:
+  - `MCP_ENABLED=true` 설정 후 `docker compose up`
+  - 로컬에서는 인증 없이 접근 가능 (개발 편의)
+  - 배포 시에는 반드시 IAM 정책 적용 확인
+
+### 기존 JWT 인증 제거
+- `backend/shared/auth.py`에서 MCP용 JWT(`verify_token`, `create_token`) 제거 완료
+- 메인 API 세션 인증은 쿠키 기반(`get_session_id`, `get_current_user`)만 유지
 
 ---
 
@@ -103,7 +156,7 @@ gcloud secrets create DATABASE_URL --data-file=- --project=proj2-509406 <<< 'pos
 # .env 파일 생성 (예시)
 cp .env.example .env
 # .env 편집: OPENROUTER_API_KEY, LANGFUSE_* 등 입력
-# DATABASE_URL에는 Neon dev 브랜치 연결 문자열 사용 (운영과 동일 환경)
+# DATABASE_URL에는 Neon dev 브랜치 연결 문자열 필수 입력
 
 # 전체 스택 실행 (Neon dev 브랜치 사용)
 docker compose up --build
@@ -116,6 +169,7 @@ curl http://localhost:8000/mcp/health
 - FastAPI: `http://localhost:8000`
 - MCP 엔드포인트: `http://localhost:8000/mcp` (Streamable HTTP, `MCP_ENABLED=true` 시에만)
 - 로컬 DB: **Neon dev 브랜치** 사용 (운영과 동일 환경, 브랜칭 기능 활용)
+- `.env` 파일이 없거나 `DATABASE_URL`이 설정되지 않으면 컨테이너 시작 실패
 
 ---
 
@@ -183,6 +237,91 @@ echo -n "new-value" | gcloud secrets versions add SECRET_NAME --data-file=- --pr
 | MCP 엔드포인트 404 | 마운트 경로 틀림 또는 비활성화 | `/mcp` 경로 확인, `MCP_ENABLED=true` 환경변수 설정 필요 (기본값 false) |
 | 빌드 실패 | requirements.txt 의존성 | 로컬에서 `docker compose build`로 선검증 |
 | Neon SSL 에러 | `sslmode=require` 누락 | 연결 문자열에 `?sslmode=require` 필수 |
+
+---
+
+## 11. 운영 환경 DB 초기화
+
+운영 환경(Neon production branch) 배포 시 DB 스키마/테이블 초기화가 필요합니다. 별도 migration 프레임워크 도입 없이 현재 저장소 방식을 재사용합니다.
+
+### 초기화 절차
+
+```bash
+# 1. Neon 콘솔에서 production branch 선택
+# 2. SQL Editor에서 아래 스크립트 실행 (최초 1회)
+
+# 세션 테이블
+CREATE TABLE IF NOT EXISTS sessions (
+    session_id UUID PRIMARY KEY,
+    session_token_hash TEXT NOT NULL,
+    anonymous_user_id_hash TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    last_activity_at TIMESTAMPTZ DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    last_summary TEXT
+);
+
+# 메시지 테이블
+CREATE TABLE IF NOT EXISTS messages (
+    message_id UUID PRIMARY KEY,
+    session_id UUID REFERENCES sessions(session_id),
+    user_text TEXT NOT NULL,
+    structured_json JSONB,
+    validation_result JSONB,
+    model_name TEXT,
+    prompt_version TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+# Job 테이블
+CREATE TABLE IF NOT EXISTS jobs (
+    job_id UUID PRIMARY KEY,
+    session_id UUID REFERENCES sessions(session_id),
+    request_id TEXT NOT NULL,
+    status TEXT NOT NULL,
+    attempt INT DEFAULT 1,
+    max_attempts INT DEFAULT 3,
+    lease_expires_at TIMESTAMPTZ,
+    failure_code TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    completed_at TIMESTAMPTZ
+);
+
+# 검색 결과 테이블
+CREATE TABLE IF NOT EXISTS search_results (
+    id BIGSERIAL PRIMARY KEY,
+    message_id UUID REFERENCES messages(message_id),
+    role TEXT NOT NULL,
+    term_id TEXT NOT NULL,
+    pin_url TEXT NOT NULL,
+    status TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+# 인덱스
+CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
+CREATE INDEX IF NOT EXISTS idx_messages_session_id ON messages(session_id);
+CREATE INDEX IF NOT EXISTS idx_jobs_session_id ON jobs(session_id);
+CREATE INDEX IF NOT EXISTS idx_search_results_message_id ON search_results(message_id);
+```
+
+> **참고**: 테이블 스키마는 `backend/services/storage.py` (구현 시)의 모델 정의와 동기화해야 합니다. 현재 저장소에 별도 migration 도구(Alembic 등)는 없으므로, 스키마 변경 시 위 SQL을 수정해 Neon 콘솔에서 직접 실행합니다.
+
+### 자동 초기화 (향후 구현 시)
+
+`backend/services/storage.py`의 `init_db()` 함수에서 위 테이블 생성을 수행하도록 구현하면, 앱 시작 시 자동으로 테이블이 생성됩니다.
+
+```python
+# backend/services/storage.py (구현 예정)
+async def init_db() -> None:
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS sessions (...);
+            -- 위 SQL과 동일
+        """)
+```
+
+앱 시작 시 `await init_db()`를 호출하면 배포마다 수동 실행 불필요.
 
 ---
 

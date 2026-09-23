@@ -1,5 +1,6 @@
 # 필수 조건 2 — `docker compose up` 한 줄로 전체 서비스가 떠야 합니다.
 # 로컬 개발도 Neon dev 브랜치 사용 (별도 DB 컨테이너 불필요)
+# 실행 전: .env 파일에 Neon dev branch DATABASE_URL 필수 설정
 services:
   api:
     build: .
