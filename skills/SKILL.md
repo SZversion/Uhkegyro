@@ -30,10 +30,10 @@ LLM은 입력의 의미를 해석하고 허용된 `term_id` 후보와 근거를 
 1. 입력에서 사용자가 실제로 말한 단서만 찾는다. 입력에 없는 체형, 신체 방향, 지지점, 카메라 위치를 사실처럼 보완하지 않는다.
 2. 단서를 `body` → `pose` → `view` → `perspective` → `layout` 순서로 분리한다. 확인되지 않은 역할은 빈 값으로 채우거나 검색하지 않는다.
 3. `view`는 인물을 보는 방향·높이이고, `perspective`는 공간·신체의 원근이다. 정면 인물과 3점 투시 배경처럼 둘은 함께 가능하지만 하나로 축소하지 않는다.
-4. LLM은 역할이 맞고 `confidence_gate`를 뒷받침할 입력 단서가 있을 때만 한 카드의 `term_id`를 후보로 선택한다. `requires_all_of`·`requires_any_of`는 같은 역할의 부모 카드를 추가 선택하라는 지시가 아니라 resolver가 확인할 카탈로그 의존 관계다. 현재 검수 완료된 74개 카드 밖의 term ID와 `detail`, `intent`, `style` 역할은 선택·표시하지 않는다.
-5. 단서가 부족하거나 서로 충돌하면 전문 용어·Pinterest 링크를 만들지 말고, 사용자가 답할 수 있는 쉬운 추가 질문 하나를 한다. LLM은 `abstract_intent`·`insufficient_visual_evidence`·`conflicting_constraints` 중 `clarification_type` 후보 하나만 구조화해 반환하고, resolver가 요청 단서·`confidence_gate`·카탈로그 의존 그래프를 다시 확인한 뒤 최종 reason code로 바꾼다. 부모 ID가 LLM selection에 없다는 사실은 `needs_clarification` 사유가 아니다. 다음 사용자 메시지는 새 job이며, 여전히 해결되지 않으면 `needs_clarification`과 질문 하나를 유지한다. `pending_human_review`는 현재 공개 API·LLM 출력의 상태가 아니며, 새 카드 필요 여부는 서비스 응답이 아니라 팀의 오프라인 검토 대상으로 남긴다.
+4. 한 카드의 `term_id`는 역할이 맞고, `confidence_gate`, `requires_all_of`, `requires_any_of`를 모두 만족할 때만 선택한다. 현재 검수 완료된 82개 카드 밖의 term ID와 `detail`, `intent`, `style` 역할은 선택·표시하지 않는다.
+5. 단서가 부족하거나 서로 충돌하면 전문 용어·Pinterest 링크를 만들지 말고, 사용자가 답할 수 있는 쉬운 추가 질문 하나를 한다. 질문 뒤에도 해결되지 않으면 `pending_human_review`와 한계를 표시한다.
 6. 응답에는 선택한 용어의 쉬운 뜻, 입력에서 확인한 근거, 관찰할 지점, 혼동하기 쉬운 점을 카드 데이터에 따라 제공한다. 대안 용어는 설명·추가 질문용이며 자동 검색 역할이 아니다.
-7. Pinterest 검색 입력은 선택된 활성 카드의 `query_fragments`만 사용한다. 검색 결과의 존재·품질·저작권·사용 적합성은 보장하지 않으며, 사용자가 외부 원본에서 직접 확인해야 한다.
+7. Pinterest 검색 입력은 선택된 활성 카드의 `query_fragments`만 사용하고, 결정론 코드가 고정 접미사 `drawing`을 한 번 붙여 만든다. 검색 결과의 존재·품질·저작권·사용 적합성은 보장하지 않으며, 사용자가 외부 원본에서 직접 확인해야 한다.
 8. 외부 어휘 조회·Getty 데이터·외부 후보는 사용하지 않는다. 팀이 검수한 TERM_CARD JSON 카탈로그의 활성 카드 외에는 새 `term_id`가 되거나 LLM 입력에 자동 주입되어서는 안 된다.
 
 ## 예외와 함정
