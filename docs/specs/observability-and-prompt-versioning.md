@@ -20,6 +20,7 @@
 
 - 자동 실행 재시도는 같은 job의 `attempt=1..3`으로 기록한다. 사용자에게 재시도 진행을 표시하지 않는다.
 - `LLM_*`, `SEARCH_*`, `JOB_INSTANCE_INTERRUPTED`은 각 시도의 안전한 오류 분류와 지연을 기록한다. LLM `error_type`은 `pydantic_validation_error`, `timeout`, `upstream_5xx`, `rate_limited`, `incomplete_or_unclassified_upstream` 중 하나이며, 오류별 backoff와 최종 포기 경로는 [openrouter-llm-adapter.md](./openrouter-llm-adapter.md)를 따른다.
+- 재시도를 예약한 attempt 1·2는 `error_type`과 실제 양수 `backoff_ms`를 기록하고 `failure_code=null`이다. 종결 attempt는 `error_type`과 최종 `failure_code`를 기록하고 다음 재시도가 없으므로 `backoff_ms=null`이다. 성공 attempt는 `error_type=null`, `backoff_ms=null`, `failure_code=null`이다.
 - 최종 `failed`에는 API와 같은 안정된 failure code를 기록한다. 운영 로그에는 안전한 오류 요약을 추가할 수 있으나 UI에 노출하지 않는다.
 - 검색 재시도 소진 뒤 유효 카드가 있으면 `completed + partial_result`, `PIN_SEARCH_UNAVAILABLE`을 기록한다.
 - `needs_clarification`은 실패가 아니며 새 사용자 메시지의 새 job과 연결한다.
@@ -45,7 +46,8 @@
 
 - GIVEN: Pydantic 검증 오류, timeout, 5xx, 429 또는 미완료·분류 불가 upstream 예외가 세 번 연속 발생한다.
 - WHEN: 세 번째 attempt를 종료한다.
-- THEN: 각 trace는 해당 `error_type`, 실제 `backoff_ms`, 각각 `LLM_INVALID_STRUCTURED_OUTPUT`, `LLM_TIMEOUT`, `LLM_UPSTREAM_UNAVAILABLE`, `LLM_RATE_LIMITED`, `LLM_UPSTREAM_UNAVAILABLE` 최종 failure code를 기록한다.
+- THEN: attempt 1·2는 해당 `error_type`, 실제 양수 `backoff_ms`, `failure_code=null`을 기록한다.
+- AND THEN: 세 번째 trace는 각각 `LLM_INVALID_STRUCTURED_OUTPUT`, `LLM_TIMEOUT`, `LLM_UPSTREAM_UNAVAILABLE`, `LLM_RATE_LIMITED`, `LLM_UPSTREAM_UNAVAILABLE` 최종 failure code와 `backoff_ms=null`을 기록한다.
 - AND THEN: API는 failure code를 반환하고 UI는 일반 실패 문구만 표시한다.
 
 **AC-04 · 429 상한**

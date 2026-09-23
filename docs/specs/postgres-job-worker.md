@@ -21,7 +21,7 @@ worker는 1초마다 `attempt < max_attempts`이고 `next_retry_at IS NULL OR ne
 - claim은 `FOR UPDATE SKIP LOCKED` transaction으로 수행해 worker 둘이 같은 job을 얻지 못하게 한다.
 - `WORKER_CONCURRENCY` 기본값은 5이며 worker가 동시에 보유한 lease 수를 제한한다.
 - worker는 첫 실행에서 `queued → running → validating → searching → rendering → completed|failed`로 전이하고, 회복 가능한 오류에서는 실행 중 상태에서 `queued`로 되돌린다.
-- LLM·crawler·widget의 회복 가능한 오류에서 `attempt<3`이면 lease를 제거하고 `next_retry_at`을 오류별 backoff 뒤 시각으로 설정한 뒤 `queued`로 되돌린다. worker polling은 그 시각 전에는 claim하지 않으며, 다음 claim이 attempt를 증가시켜 처음부터 재실행한다. LLM 오류의 분류·backoff·구조화 출력 재요청은 [openrouter-llm-adapter.md](./openrouter-llm-adapter.md)가 단일 기준이다. `attempt=3`이면 실제 failure code로 `failed` 처리한다. 구성·DB migration·코드 오류는 즉시 `failed`다.
+- LLM 회복 가능 오류에서만 `attempt<3`이면 lease를 제거하고 `next_retry_at`을 LLM 오류별 backoff 뒤 시각으로 설정한 뒤 `queued`로 되돌린다. worker polling은 그 시각 전에는 claim하지 않으며, 다음 claim이 attempt를 증가시켜 처음부터 재실행한다. LLM 오류의 분류·backoff·구조화 출력 재요청은 [openrouter-llm-adapter.md](./openrouter-llm-adapter.md)가 단일 기준이다. crawler·widget은 worker의 `next_retry_at` 재큐잉 대상이 아니며, 결과 경로는 [pinterest-widget-crawler.md](./pinterest-widget-crawler.md)의 `partial_result`·`deleted` 규칙을 따른다. `attempt=3`이면 실제 failure code로 `failed` 처리한다. 구성·DB migration·코드 오류는 즉시 `failed`다.
 - 완료·실패 저장에 성공한 뒤 lease를 제거한다.
 
 ## AC

@@ -37,5 +37,5 @@ adapter 입력은 사용자 원문과 활성 TERM_CARD 후보 경계다. 출력�
 - GIVEN: `LLM_MODEL` 값 변경, WHEN: adapter를 재시작, THEN: 코드 변경 없이 새 model로 요청한다.
 - GIVEN: 180초 timeout, WHEN: worker가 처리, THEN: 첫 실패 뒤 `next_retry_at`은 1,000ms 후이며 해당 attempt는 `LLM_TIMEOUT`으로 회복 처리한다.
 - GIVEN: 계약 밖 term ID가 포함된 구조화 출력, WHEN: resolver가 검증, THEN: 검증 오류를 포함한 구조화 출력 재요청을 최대 두 번 더 하고 세 번째도 실패하면 `LLM_INVALID_STRUCTURED_OUTPUT`으로 처리한다.
-- GIVEN: OpenRouter가 `Retry-After: 60`과 429를 반환, WHEN: worker가 다음 시도를 예약, THEN: SDK 내부 재시도 없이 `backoff_ms=30,000`과 `LLM_RATE_LIMITED` 오류 분류를 기록한다.
+- GIVEN: OpenRouter가 `Retry-After: 60`과 429를 반환, WHEN: worker가 다음 시도를 예약, THEN: SDK 내부 재시도 없이 `error_type=rate_limited`, `backoff_ms=30,000`, `failure_code=null`을 기록한다.
 - GIVEN: 정상 구조화 출력, WHEN: resolver가 처리, THEN: adapter는 최종 상태나 검색 URL을 결정하지 않는다.
