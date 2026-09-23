@@ -97,7 +97,7 @@ LLM은 링크를 임의로 만들거나 데이터 출처를 지어내지 않습�
 | TERM_CARD JSON 카탈로그 | `index.json`과 다섯 역할 JSON으로 이루어진 팀 검수 런타임 단일 원본 | term ID, 설명, query fragment, 검수 상태 |
 | Pinterest | 사용자가 원본을 직접 확인할 외부 탐색 대상 | 원본 Pin 링크와 응답 전용 원격 썸네일 미리보기 |
 
-PinterestCrawlerProvider는 서버 Playwright에서 활성 TERM_CARD의 `query_fragments`만 사용해 공개 검색을 크롤링하고, 수집한 모든 Pin ID를 widget endpoint로 조회해 현재 응답용 `thumbnail_url`을 조립합니다. Pinterest API v5는 사용하지 않습니다. Pinterest 이미지 바이트와 `thumbnail_url`은 저장·재게시하지 않습니다. Pin ID·URL·상태는 별도 수집·저장하지 않고 세션·job 이력에 포함된 결과로만 유지합니다. job 조회 시에는 저장된 Pin ID로 widget을 다시 조회합니다. UI는 현재 응답의 원격 썸네일을 원본 Pin 링크로 표시하며, 썸네일 URL이 없으면 링크만 제공합니다. 썸네일 부재와 검색 오류는 provider가 반환한 상태로 구분합니다. 용어 선택·설명·검색 조각은 구현 후 팀이 작성·검수한 TERM_CARD JSON 카탈로그만 사용합니다. 카탈로그는 시작 시 검증해 메모리에 로드하며 요청 중 파일을 다시 읽거나 DB에 적재하지 않습니다. Getty는 용어 조사 시 참고한 자료일 뿐, 서비스 데이터·사용자 화면·LLM 입력·런타임 조회에 포함하지 않습니다. 자체 카드와 권리 검토 기준은 팀 승인을 거쳐야 하며, 승인되지 않은 데이터를 완료된 카탈로그로 주장하지 않습니다.
+PinterestCrawlerProvider와 widget 기반 Pin 미리보기·보관 경계는 [Pinterest 기능 Spec](docs/specs/pinterest-widget-crawler.md)을 단일 기준으로 사용합니다. 용어 선택·설명·검색 조각은 구현 후 팀이 작성·검수한 TERM_CARD JSON 카탈로그만 사용합니다. 카탈로그는 시작 시 검증해 메모리에 로드하며 요청 중 파일을 다시 읽거나 DB에 적재하지 않습니다. Getty는 용어 조사 시 참고한 자료일 뿐, 서비스 데이터·사용자 화면·LLM 입력·런타임 조회에 포함하지 않습니다. 자체 카드와 권리 검토 기준은 팀 승인을 거쳐야 하며, 승인되지 않은 데이터를 완료된 카탈로그로 주장하지 않습니다.
 
 ## API와 MCP 상태
 
