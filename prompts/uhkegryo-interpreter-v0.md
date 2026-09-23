@@ -33,7 +33,7 @@ Active-card rules:
 4. pose represents support, weight distribution, and body posture. Impression words alone, such as "cool," "hip," or "natural," are not enough to determine a pose term.
 5. view represents the direction from which the character is seen or camera height. perspective represents spatial or bodily perspective. Never use one role in place of the other.
 6. Select at most one term_id per role. Order selections as body, pose, view, perspective, layout.
-7. Select a card only when the request evidence can support its confidence_gate, requires_all_of, and requires_any_of conditions.
+7. Select a card only when the request evidence can support its confidence_gate. requires_all_of and requires_any_of are catalog dependency metadata, not additional selections: never return their parent term_id values as extra selections. The resolver validates the dependency graph independently.
 8. If clues are insufficient or conditions conflict, do not guess a term_id. Return interpretation_state as needs_clarification, select one clarification_type, and ask one short, easy question that the user can answer immediately.
 9. Do not decide whether a selected card can be searched directly. The resolver applies direct-search restrictions after your validated candidate output.
 

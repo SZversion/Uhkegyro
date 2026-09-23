@@ -46,13 +46,13 @@
 - 단서 부족·상충은 실패가 아니라 `completed + needs_clarification`이며 질문 하나를 반환한다. 다음 사용자 메시지는 새 job이고 기존 attempt를 승계하지 않는다.
 - LLM adapter는 `InterpretationOutput={interpretation_state, clarification_type, selections, unresolved_constraints, clarifying_question}`만 반환한다. `interpretation_state`는 `select_terms | needs_clarification` enum이고, 허용하지 않은 추가 필드는 거부한다. 각 `selections` 항목은 `{role, term_id, evidence, confidence}`이며, `evidence`는 요청에서 확인한 비어 있지 않은 한국어 표현의 배열(`list[str]`, 한 개 이상), `confidence`는 `0.0..1.0`이다. 역할은 중복되지 않고 `body → pose → view → perspective → layout` 순서를 따른다.
 - `select_terms`이면 selections는 한 개 이상, `unresolved_constraints=[]`, `clarifying_question=null`, `clarification_type=null`이다. `needs_clarification`이면 selections는 빈 배열, `unresolved_constraints`는 한 개 이상, `clarifying_question`은 비어 있지 않은 한국어 질문 하나이며, `clarification_type`은 `abstract_intent | insufficient_visual_evidence | conflicting_constraints` 중 하나다. `clarification_type`은 최종 `reason_code`가 아닌 resolver가 다시 검증할 후보다.
-- LLM은 최종 `agent_status`, `reason_codes`, 검색 URL을 만들지 않으며, resolver가 활성 JSON 카탈로그·안전 규칙과 대조한 뒤 최종 응답을 조립한다. 구조화 출력이 이 계약을 만족하지 않으면 `LLM_INVALID_STRUCTURED_OUTPUT`으로 처리한다.
+- LLM은 최종 `agent_status`, `reason_codes`, 검색 URL을 만들지 않으며, resolver가 활성 JSON 카탈로그·안전 규칙과 대조한 뒤 최종 응답을 조립한다. 구조화 출력이 이 계약을 만족하지 않으면 `LLM_INVALID_STRUCTURED_OUTPUT`으로 처리한다. `requires_all_of`·`requires_any_of`는 카탈로그의 부모 `term_id` 의존 관계이며 LLM selection 목록의 추가 항목이 아니다. resolver는 부모 ID가 selection에 없다는 이유로 후보를 거부하지 않고, 선택 카드의 의존 그래프가 존재·활성·비순환인지 확인한다.
 - resolver의 질문 사유 매핑은 아래와 같다. free-text `unresolved_constraints`만으로 최종 코드를 정하지 않으며, 요청 단서와 카드 조건을 함께 다시 검증한다.
 
 | resolver가 검증한 조건 | 허용된 `clarification_type` 후보 | 최종 `reason_code` |
 | --- | --- | --- |
 | 구체적인 체형·포즈·시점·원근·구도 단서 없이 인상·의도만 있음 | `abstract_intent` | `ABSTRACT_INTENT_ONLY` |
-| 역할 단서는 있으나 해당 카드의 `confidence_gate` 또는 선행 조건을 충족할 단서가 없음 | `insufficient_visual_evidence` | `INSUFFICIENT_VISUAL_EVIDENCE` |
+| 역할 단서는 있으나 해당 카드의 `confidence_gate`를 충족할 단서가 없음 | `insufficient_visual_evidence` | `INSUFFICIENT_VISUAL_EVIDENCE` |
 | 서로 양립할 수 없는 체형·시점·자세 조건이 동시에 명시됨 | `conflicting_constraints` | `CONFLICTING_CONSTRAINTS` |
 | 유효한 카드가 선택됐지만 `direct_search_disabled_term_ids`에 포함됨 | 해당 없음 — LLM이 판단하지 않음 | `DIRECT_SEARCH_DISABLED` |
 - 검색 provider 재시도가 소진돼도 하나 이상의 카드가 유효하면 `completed + partial_result`다. 실패 역할은 `pins=[]`, `PIN_SEARCH_UNAVAILABLE`을 반환하고 UI는 검색 결과 미수신 안내와 용어·검색 URL을 표시한다. 정상 0건은 `PIN_RESULTS_EMPTY`이며 재시도하지 않는다.

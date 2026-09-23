@@ -24,7 +24,7 @@
 1. LLM adapter는 서버가 검증해 메모리에 로드한 활성 카드의 축약 JSON과 `request_text`를 Langfuse Prompt에 전달한다.
 2. Prompt는 입력의 실제 단서를 `body`, `pose`, `view`, `perspective`, `layout` 역할로 나눈다.
 3. 각 역할당 최대 하나의 활성 `term_id`를 `evidence`, `confidence`와 함께 `select_terms` JSON으로 반환한다.
-4. Pydantic과 resolver는 출력 구조·카드 활성 상태·역할·조건을 다시 검증한다.
+4. Pydantic은 출력 구조를, resolver는 카드 활성 상태·역할·카탈로그 의존 그래프를 다시 검증한다. `requires_all_of`·`requires_any_of`의 부모 ID는 추가 LLM selection이 아니다.
 
 ### Edge Cases
 
@@ -53,7 +53,7 @@
 | --- | --- | --- |
 | Langfuse System message | 자연어 의미 해석과 허용 후보 선택 | `prompts/uhkegryo-interpreter-v0.md`의 영어 System message. `skills/SKILL.md`의 LLM 선택 규칙을 같은 의미로 반영한다. |
 | Langfuse User message | 요청과 허용 카드 후보 전달 | `request_text`, 시작 검증을 통과한 `active_cards_json` |
-| Pydantic + resolver | 구조·활성 상태·역할·조건·안전·최종 상태 검증 | TERM_CARD index, 역할별 JSON, API 계약 |
+| Pydantic + resolver | 구조·활성 상태·역할·카탈로그 의존 그래프·안전·최종 상태 검증 | TERM_CARD index, 역할별 JSON, API 계약 |
 
 한국어 `skills/SKILL.md` 전문을 두 번째 system message로 덧붙이지 않는다. Skill의 검색·최종 상태·피드백 조립 규칙은 resolver가 적용한다. `direct_search_disabled_term_ids`도 LLM이 판단하지 않고 resolver가 후보 검증 뒤 처리한다.
 
@@ -65,6 +65,8 @@
 | `active_cards_json` | 시작 검증 뒤 메모리 카탈로그 | 활성 카드의 `role`, `term_id`, `label_ko`, `confidence_gate`, `requires_all_of`, `requires_any_of`만 포함한 JSON |
 
 `active_cards_json`은 요청마다 외부에서 검색한 문서 조각이 아니며, 시작 시 검증한 정적 JSON 카탈로그의 축약본이다. 따라서 이 Prompt는 RAG를 사용하지 않는다.
+
+`requires_all_of`·`requires_any_of`의 값은 카탈로그 안의 부모 `term_id`를 가리키는 의존 메타데이터다. 예를 들어 `pose_legs_crossed_at_knee`가 `pose_sitting`을 요구해도 LLM은 세부 포즈 하나만 `pose` selection으로 반환한다. 부모 ID를 같은 역할의 두 번째 selection으로 반환하지 않으며, resolver는 선택 결과가 아닌 카탈로그 의존 그래프의 존재·활성 상태·순환 여부를 검증한다.
 
 ### Pydantic 출력 계약
 
@@ -86,9 +88,9 @@ Selection
 - `select_terms`: selections는 한 개 이상, 역할 중복 없음, `unresolved_constraints=[]`, `clarifying_question=null`, `clarification_type=null`. `evidence`는 실제 한국어 요청에 있는 비어 있지 않은 짧은 표현을 하나 이상 쓴다.
 - `needs_clarification`: `selections=[]`, `unresolved_constraints`는 한 개 이상, `clarifying_question`은 한국어 질문 하나, `clarification_type`은 비어 있지 않은 enum 하나다. `evidence`, `unresolved_constraints`, `clarifying_question` 등 사람이 읽는 문자열은 한국어로만 반환한다.
 - Prompt는 최종 `agent_status`, `reason_codes`, Pinterest 검색어·URL·MCP 호출·카드 설명을 만들지 않는다. Pydantic 검증과 resolver가 이를 각각 조립·검증한다.
-- `clarification_type`은 최종 `reason_code`가 아니다. resolver는 입력·카드 조건을 다시 검증한 뒤에만 `ABSTRACT_INTENT_ONLY`, `INSUFFICIENT_VISUAL_EVIDENCE`, `CONFLICTING_CONSTRAINTS` 중 최종 코드를 조립한다. 직접 검색 금지는 LLM 출력과 무관하게 `DIRECT_SEARCH_DISABLED`로 처리한다.
+- `clarification_type`은 최종 `reason_code`가 아니다. resolver는 입력 단서와 카드 `confidence_gate`, 카탈로그 의존 그래프를 다시 확인한 뒤에만 `ABSTRACT_INTENT_ONLY`, `INSUFFICIENT_VISUAL_EVIDENCE`, `CONFLICTING_CONSTRAINTS` 중 최종 코드를 조립한다. `requires_*`의 부모 ID가 selection에 없다는 사실만으로 후보를 실패시키지 않는다. 직접 검색 금지는 LLM 출력과 무관하게 `DIRECT_SEARCH_DISABLED`로 처리한다.
 - 해결되지 않은 모호성은 새 사용자 메시지의 새 job에서 다시 `needs_clarification`으로 처리한다. `pending_human_review`는 현재 공개 API와 `InterpretationOutput`의 enum이 아니다.
-- 구조적으로 유효해도 활성 카드·역할·조건 검증은 반드시 코드가 다시 수행한다.
+- 구조적으로 유효해도 활성 카드·역할·카탈로그 의존 그래프 검증은 반드시 코드가 다시 수행한다.
 
 ## AC
 
