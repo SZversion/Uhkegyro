@@ -13,7 +13,7 @@
 
 기본 해석 프롬프트 이름은 `uhkegryo-interpreter-v{n}`이고 production label을 사용한다. 모델 또는 프롬프트 변경 시 버전을 증가시킨다.
 
-각 Langfuse trace에는 사용자 요청 원문, `request_id`, `job_id`, session ID 해시, 모델, `prompt_version`, `attempt`, `max_attempts`, 단계, 지연, 최종 `agent_status`, `failure_code`, 검색 결과 상태를 기록한다. 일반 애플리케이션 로그에는 요청 원문 대신 해시·길이·선택된 term ID만 기록하며, LLM 원본 응답은 저장하지 않는다.
+각 Langfuse trace에는 사용자 요청 원문, `job_id`, session ID 해시, 모델, `prompt_version`, `attempt`, `max_attempts`, 단계, 지연, 최종 `agent_status`, `failure_code`, 검색 결과 상태를 기록한다. 일반 애플리케이션 로그에는 요청 원문 대신 해시·길이·선택된 term ID만 기록하며, LLM 원본 응답은 저장하지 않는다.
 
 ## How
 
