@@ -5,13 +5,25 @@ LLM 호출은 여기가 아니라 services/ 아래 한곳에 모으세요.
 
 MCP는 별도 서비스(backend/mcp/main.py)로 분리되어 배포됩니다.
 """
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from backend.shared.config import get_settings
+from backend.services.catalog_repository import CatalogLoadError, load_catalog
+from backend.shared.config import get_settings, resolve_term_cards_dir
 
 settings = get_settings()
 
-app = FastAPI(title="2차 프로젝트 API")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        app.state.catalog = load_catalog(resolve_term_cards_dir(settings))
+    except CatalogLoadError as error:
+        raise RuntimeError(f"CATALOG_INVALID_AT_STARTUP: {error}") from error
+    yield
+
+app = FastAPI(title="2차 프로젝트 API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
