@@ -1,5 +1,9 @@
 # Contract Evaluation Variants
 
+> **상태: 보관 초안.** 이 문서는 70개 고정 변형을 최신 비동기 계약으로 이행할 목표를 설명한다. 현재
+> `evals/contract-variants.jsonl`은 이전 동기식 필드를 포함하므로 baseline, Langfuse Dataset, 출시 게이트의
+> 실행 수치에 사용하지 않는다. 현재 실행 기준은 `evals/dataset.jsonl`의 30건 원문뿐이다.
+
 ## Why
 
 - 현재 `evals/dataset.jsonl`의 30개 원문은 의미 품질과 사용자 흐름을 평가한다.

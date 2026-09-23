@@ -1,9 +1,9 @@
 # UH케그려 PRD 기준 평가셋 30문항
 
 > 검토용 화면입니다. 실행·회귀 비교의 원본은 [`dataset.jsonl`](./dataset.jsonl)입니다.
-> 기준은 최신 `main`의 `api-contract.md`, `term-card-catalog.md`, `trust-boundary.md`와 팀이
-> 관리하는 정적 TERM_CARD 카탈로그입니다. 결과는 구현 후 Langfuse Dataset과 `EVAL_REPORT.md`에 기록합니다.
-> 표는 목표 계약을 설명하며, 현재 JSONL의 이전 동기식 필드·사유 코드는 별도 데이터 이행에서 함께 고칩니다.
+> 기준은 최신 `main`의 `api-contract.md`, `term-card-catalog.md`, `mcp-contract.md`,
+> `trust-boundary.md`와 팀이 관리하는 정적 TERM_CARD 카탈로그입니다. 결과는 구현 후 Langfuse Dataset과
+> `EVAL_REPORT.md`에 기록합니다. rubric과 baseline 기록 형식은 [`rubric-and-baseline.md`](./rubric-and-baseline.md)를 따른다.
 
 ## 한눈에 보기
 
@@ -24,7 +24,7 @@
 | 초보자 안내 품질 | 쉬운 뜻, 선택 근거, 관찰 지점, 혼동 안내, 추가 질문 | 0~2점 품질 평가 |
 
 품질 평가는 생성 모델과 다른 judge 또는 사람 검토자가 수행합니다. 먼저 응답 근거를 찾아
-판정하고, 장황함 자체에는 점수를 주지 않습니다.
+판정하고, 장황함 자체에는 점수를 주지 않습니다. 계약·안전 검사를 통과하지 못한 문항은 정성 점수로 보정하지 않습니다.
 
 ## 1. 정상 케이스
 
@@ -51,12 +51,12 @@
 
 | ID | 사용자 입력 | 기대 상태 | 핵심 판정 |
 | --- | --- | --- | --- |
-| EVAL-11 | 귀엽고 힙한 캐릭터 포즈를 찾고 싶어. | `needs_clarification` | `ABSTRACT_INTENT_ONLY`와 쉬운 질문 하나; 인상어만으로 전문 용어·Pin을 만들지 않음 |
-| EVAL-12 | 몸이 한쪽으로 휘어 보이는 멋있는 서 있는 포즈를 찾고 싶어. | `needs_clarification` | `INSUFFICIENT_VISUAL_EVIDENCE`; 지지 다리 없이 `pose_contrapposto`·`pose_s_curve`를 단정하지 않음 |
-| EVAL-13 | 퍼프소매와 큰 망토 때문에 어깨가 넓어 보이는 캐릭터 체형 자료를 찾아 줘. | `needs_clarification` | `INSUFFICIENT_VISUAL_EVIDENCE`; 의상 부피만으로 `body_inverted_triangle`을 추정하지 않음 |
+| EVAL-11 | 한쪽 다리에 힘을 싣고 서 있지만, 어깨와 골반은 같은 쪽으로 기울어진 포즈를 찾고 싶어. | `success` | `pose_weight_shift`만 선택. 체중 이동과 반대 기울기를 구분해 `pose_contrapposto`를 선택하지 않음 |
+| EVAL-12 | 몸이 한쪽으로 휘어 보이는 멋있는 서 있는 포즈를 찾고 싶어. | `needs_clarification` | `INSUFFICIENT_VISUAL_EVIDENCE`; 지지 다리/체중 이동 또는 허리·몸통 S자 흐름 중 하나를 묻고 `pose_contrapposto`·`pose_s_curve`를 단정하지 않음 |
+| EVAL-13 | 퍼프소매와 큰 망토 때문에 어깨가 넓어 보이는 캐릭터 체형 자료를 찾아 줘. | `needs_clarification` | `INSUFFICIENT_VISUAL_EVIDENCE`; 의상을 뺀 실제 체형인지, 의상 포함 실루엣인지 묻고 `body_inverted_triangle`을 추정하지 않음 |
 | EVAL-14 | 아래에서 올려다보는 광각 느낌의 캐릭터를 그리고 싶어. 손이나 발을 앞으로 내밀지는 않을 거야. | `success` | `view_low_angle`만 선택; `reason_codes=[]`, 단축법·3점 투시 금지 |
-| EVAL-15 | 캐릭터의 앞모습을 유지하면서 위에서 내려다보는 시점도 꼭 같이 보여 줘. | `needs_clarification` | `CONFLICTING_CONSTRAINTS`와 질문 하나; 한 `view` 역할에 하나의 카드만 허용 |
-| EVAL-16 | 이전 질문 뒤에도 “그냥 분위기 좋은 걸로 알아서 골라 줘.” | `needs_clarification` | `ABSTRACT_INTENT_ONLY`와 쉬운 질문 하나를 반환하고 임의 용어·Pin으로 덮지 않음 |
+| EVAL-15 | 허리는 잘록하고 어깨·골반 폭은 비슷한데, 어깨가 골반보다 훨씬 넓은 체형으로도 그리고 싶어. | `needs_clarification` | `CONFLICTING_CONSTRAINTS`; 모래시계형 비율과 역삼각형 실루엣 중 우선 조건을 묻고 어느 카드도 단정하지 않음 |
+| EVAL-16 | 캐릭터를 옆모습으로 그리고 싶은데, 정면처럼 양쪽 눈과 귀가 똑같이 잘 보이면 좋겠어. | `needs_clarification` | `CONFLICTING_CONSTRAINTS`; 옆모습 실루엣과 정면의 좌우 대칭 중 우선 조건을 묻고 어느 시점 카드도 단정하지 않음 |
 
 ## 3. 실패 유도 케이스
 
@@ -77,7 +77,7 @@
 | EVAL-24 | `pose_weight_shift` 검색 결과 0개 | `completed + partial_result`, 해당 역할 `pins=[]`, `PIN_RESULTS_EMPTY`; 0건은 재시도하지 않음 | API AC-03 |
 | EVAL-25 | `pose_reclining` 결과 중 Pin 1개 삭제됨 | 해당 Pin은 `deleted`; UI는 링크·썸네일을 표시하지 않으며 이미지 데이터를 저장하지 않음 | API PinResult 계약 |
 | EVAL-26 | `view_three_quarter` 검색 provider timeout | 내부 재시도 소진 뒤 `completed + partial_result`, 빈 pins, `PIN_SEARCH_UNAVAILABLE` | API AC-02, AC-03 |
-| EVAL-27 | 후속 메시지: “체형은 두고 포즈만 다시 찾아 줘.” | `POST /api/agent`로 새 job을 만들고 기존 attempt를 승계하지 않음. 브라우저는 이전 term·Pin을 요청 본문에 보내지 않음 | API 제출·세션 계약 |
+| EVAL-27 | 직전 job 뒤 후속 메시지: “체형은 두고, 한쪽 다리에 힘을 싣는 포즈만 다시 찾아 줘.” | `POST /api/agent`로 새 job을 만들고 기존 attempt를 승계하지 않음. 브라우저는 이전 term·Pin을 요청 본문에 보내지 않음 | API 제출·세션 계약 |
 | EVAL-28 | `pose_contrapposto`를 팀 정적 카드에서 선택하고 검수 상태 확인 | 외부 어휘 조회·URI 없이 활성 `team_card`와 카드 피드백을 근거로 조립 | TERM_CARD AC-01, AC-05 |
 | EVAL-29 | 첫 LLM 출력이 `role=style`, `term_id=body_unknown`; 재시도 출력은 유효 | 유효하지 않은 구조화 출력은 노출·검색에 사용하지 않고 내부 재시도 뒤 활성 `body_slim`만 사용 | API LLM adapter 계약 |
 | EVAL-30 | worker 작업 중단 | 자동 재시도 소진 시 `failed`, `result=null`, `JOB_INSTANCE_INTERRUPTED`; UI는 일반 실패 문구만 표시. 별도로 `GET /health`는 `200 {"status":"ok"}` | API AC-02, AC-04 |
@@ -86,7 +86,7 @@
 
 1. `dataset.jsonl`의 30줄을 독립 JSON으로 파싱한다.
 2. 제출 기대값이 `202 + queued`인지, polling한 종결 `JobEnvelope`가 `completed` 또는 `failed`인지 확인한다.
-3. `required_selections`·금지 용어가 현재 활성 `TERM_CARDS`와 일치하는지 확인한다.
+3. `required_selections`·금지 용어가 현재 활성 TERM_CARD JSON 카탈로그와 일치하는지 확인한다.
 4. `runtime_fixture`를 실제 네트워크가 아닌 테스트 double로 재현한다.
 5. 동일한 셋을 Langfuse Dataset으로 등록해, 한 가지 변경 전후에 두 번 이상 실행한다.
 6. 축별 점수·회귀 문항·p50/p95·요청당 비용은 실제 실행 뒤 `EVAL_REPORT.md`에 기록한다.
