@@ -1,5 +1,6 @@
 """공통 설정: 환경변수 로드·검증."""
 import os
+import warnings
 from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -17,17 +18,25 @@ class Settings(BaseSettings):
     langfuse_secret_key: str = ""
     langfuse_host: str = "http://localhost:3000"
 
-    # DB
-    database_url: str = "postgresql+asyncpg://app:app@db:5432/app"
+    # DB (필수, 기본값 없음 — Neon PostgreSQL 사용)
+    database_url: str
 
     # 앱
     allowed_origins: str = "http://localhost:3000"
     environment: str = "development"
 
-    # MCP
-    mcp_enabled: bool = True
+    # MCP (기본 비활성화 — 실제 도구 준비 후 true로 변경)
+    mcp_enabled: bool = False
 
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    s = Settings()
+    # SQLite 사용 시 경고 (운영 환경 부적합)
+    if s.database_url.startswith("sqlite"):
+        warnings.warn(
+            "SQLite는 운영 환경용이 아닙니다. Neon PostgreSQL(postgresql+asyncpg://) 사용 권장.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+    return s
