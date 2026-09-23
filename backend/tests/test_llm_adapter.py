@@ -4,6 +4,10 @@
 """
 import asyncio
 import json
+import os
+import tempfile
+from pathlib import Path
+from unittest.mock import patch
 
 import httpx
 import openai
@@ -255,3 +259,60 @@ def test_interpret_connection_error_raises_llm_upstream_unavailable():
 )
 def test_llm_errors_are_retryable(cls):
     assert cls.retryable is True
+
+
+# --- 리뷰 반영: env var · max_retries · 배포 경로 ---------------------------------
+
+
+def test_default_prompt_path_uses_env_var(tmp_path):
+    prompt_file = tmp_path / "my-prompt.md"
+    prompt_file.write_text("## System message\n```text\nHi\n```\n\n## User message template\n```text\n{{request_text}}\n```\n", encoding="utf-8")
+
+    class S:
+        interpreter_prompt_path = str(prompt_file)
+
+    p = llm.default_prompt_path(S())
+    assert p == prompt_file
+    system_message, template = llm.load_interpreter_prompt(p)
+    assert "Hi" in system_message
+    assert "{{request_text}}" in template
+
+
+def test_default_prompt_path_falls_back_to_repo_when_env_empty():
+    with patch.dict(os.environ, {"INTERPRETER_PROMPT_PATH": ""}):
+        p = llm.default_prompt_path()
+    assert p.name == "uhkegryo-interpreter-v0.md"
+    assert p.exists()
+
+
+def test_default_prompt_path_raises_on_missing_configured_file():
+    class S:
+        interpreter_prompt_path = "/nonexistent/prompt.md"
+
+    p = llm.default_prompt_path(S())
+    assert p.name == "prompt.md"
+    with pytest.raises(FileNotFoundError):
+        llm.load_interpreter_prompt(p)
+
+
+def test_openai_client_has_max_retries_zero():
+    with patch("openai.AsyncOpenAI") as fake_client_cls:
+        adapter = llm.LLMInterpretationAdapter(
+            system_message=SYSTEM_EXAMPLE,
+            user_template=TEMPLATE_EXAMPLE,
+        )
+    call_kwargs = fake_client_cls.call_args.kwargs
+    assert call_kwargs.get("max_retries") == 0
+
+
+def test_docker_deploy_path_consistency():
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    prompt_source = repo_root / "prompts" / "uhkegryo-interpreter-v0.md"
+    assert prompt_source.exists()
+    dockerfile = (repo_root / "Dockerfile").read_text(encoding="utf-8")
+    assert "COPY prompts/uhkegryo-interpreter-v0.md /app/prompts/uhkegryo-interpreter-v0.md" in dockerfile
+    cloudbuild = (repo_root / "cloudbuild.yaml").read_text(encoding="utf-8")
+    assert "INTERPRETER_PROMPT_PATH=/app/prompts/uhkegryo-interpreter-v0.md" in cloudbuild
+    env_example = (repo_root / ".env.example").read_text(encoding="utf-8")
+    assert "INTERPRETER_PROMPT_PATH" in env_example
+    assert "./prompts/uhkegryo-interpreter-v0.md" in env_example

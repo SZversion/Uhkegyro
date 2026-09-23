@@ -82,6 +82,11 @@ bash scripts/gcp-setup-free.sh
 4. `SESSION_SECRET` — 임의 32자 문자열 (`openssl rand -base64 32 | tr -d "=+/" | cut -c1-32`)
 5. `DATABASE_URL` — **Neon 연결 문자열** (`postgresql+asyncpg://...`)
 
+**프롬프트 파일 환경변수** (API 서비스 전용, MCP 서비스 불필요):
+- `INTERPRETER_PROMPT_PATH=/app/prompts/uhkegryo-interpreter-v0.md`
+  - Docker 이미지 내부 경로와 반드시 일치해야 합니다.
+  - 설정 누락 시 `FileNotFoundError`로 앱 시작이 실패합니다.
+
 CLI로 한 번에 입력 예시:
 ```bash
 gcloud secrets create OPENROUTER_API_KEY --data-file=- --project=proj2-509406 <<< 'sk-or-xxx'
@@ -174,6 +179,7 @@ cp .env.example .env
 # .env 편집: OPENROUTER_API_KEY, LANGFUSE_* 등 입력
 # DATABASE_URL에는 Neon dev 브랜치 연결 문자열 필수 입력
 # TERM_CARDS_PATH 미설정 시 자동 탐지 (레포 내 term-cards 디렉터리)
+# INTERPRETER_PROMPT_PATH 미설정 시 ./prompts/uhkegryo-interpreter-v0.md 폴백; 설정 시 Docker 이미지 경로(/app/prompts/...)를 사용
 
 # 전체 스택 실행 (Neon dev 브랜치 사용)
 docker compose up --build

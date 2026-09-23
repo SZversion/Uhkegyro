@@ -102,6 +102,7 @@ class LLMInterpretationAdapter:
                 api_key=self.settings.openrouter_api_key,
                 base_url=self.settings.openrouter_base_url,
                 timeout=self.settings.llm_timeout_seconds,
+                max_retries=0,
             )
         self._client = client
 
@@ -214,9 +215,13 @@ class LLMInterpretationAdapter:
 
 
 def default_prompt_path(settings: Any | None = None) -> Path:
-    """prompts/{version}.md 기본 경로. settings가 빈 값이면 저장소 기본 경로를 쓴다."""
+    """INTERPRETER_PROMPT_PATH(env) 설정 시 해당 경로를 엄격히 사용.
+
+    설정 없거나 빈 문자열이면 로컬 레포의 프롬프트 파일로 폴백한다.
+    설정된 경로가 누락·읽기 불가하면 FileNotFoundError·IOError를 전파한다.
+    """
     if settings is not None:
-        configured = settings.interpreter_prompt_path.strip()
+        configured = str(settings.interpreter_prompt_path).strip()
         if configured:
             return Path(configured)
     repo_root = Path(__file__).resolve().parent.parent.parent

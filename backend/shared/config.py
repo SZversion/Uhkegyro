@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     llm_timeout_seconds: float = 30.0
     llm_max_tokens: int = 800
     interpreter_prompt_version: str = "uhkegryo-interpreter-v0"
-    interpreter_prompt_path: str = ""
+    interpreter_prompt_path: str = ""  # INTERPRETER_PROMPT_PATH env var로도 설정 가능 (pydantic-settings)
 
     # Langfuse
     langfuse_public_key: str = ""
