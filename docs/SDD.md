@@ -43,7 +43,7 @@ LLM timeout/429/일시적 5xx·구조화 출력 오류, PinterestCrawlerProvider
 
 ## 5. 데이터·보안·관측
 
-세션·job 이력 저장소는 TERM_CARD 카탈로그와 분리한다. `sessions`와 `jobs`는 별도 테이블이며 `jobs.session_id`로 연결한다. 수락한 사용자 원문은 `jobs.request_text`에 기록한다. 세션과 job에는 자동 만료·보관 기한을 두지 않는다. session 행을 명시적으로 삭제하면 연결된 job 행은 foreign key cascade로 함께 삭제한다. 별도 users·messages·Pin 결과 테이블은 만들지 않는다. `PinterestCrawlerProvider`는 서버에서만 실행하고 활성 카드의 `query_fragments`만 검색 URL에 사용한다. 세션·job 이력에 포함된 결과의 `pin_url`과 `status`는 유지하되, 이를 위한 별도 Pin 저장소는 만들지 않는다. widget의 이미지 바이트·`thumbnail_url`과 부가 Pin 필드는 저장·LLM 입력·trace·로그에 사용하지 않는다. trace에는 요청 원문 해시, 세션 ID 해시와 비밀이 아닌 안전한 운영 필드만 남긴다. 세션 쿠키 토큰 원문과 그 해시는 trace·로그에 남기지 않는다.
+세션·job 이력 저장소는 TERM_CARD 카탈로그와 분리한다. `sessions`와 `jobs`는 별도 테이블이며 `jobs.session_id`로 연결한다. 수락한 사용자 원문은 `jobs.request_text`에 기록한다. 세션과 job에는 자동 만료·보관 기한을 두지 않는다. session 행을 명시적으로 삭제하면 연결된 job 행은 foreign key cascade로 함께 삭제한다. 별도 users·messages·Pin 결과 테이블은 만들지 않는다. `PinterestCrawlerProvider`는 서버에서만 실행하고 활성 카드의 `query_fragments`만 검색 URL에 사용한다. 세션·job 이력에 포함된 결과의 `pin_url`과 `status`는 유지하되, 이를 위한 별도 Pin 저장소는 만들지 않는다. widget의 이미지 바이트·`thumbnail_url`과 부가 Pin 필드는 저장·LLM 입력·trace·로그에 사용하지 않는다. Langfuse trace에는 사용자 원문, 세션 ID 해시와 비밀이 아닌 운영 필드를 남기되 일반 애플리케이션 로그와 LLM 원본 응답에는 남기지 않는다. 세션 쿠키 토큰 원문과 그 해시는 trace·로그에 남기지 않는다.
 
 ## 6. 검증
 
