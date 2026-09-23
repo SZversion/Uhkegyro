@@ -40,27 +40,27 @@
 - Consumes: `docs/specs/pinterest-widget-crawler.md`의 crawler·widget·저장 제약
 - Produces: 제품 범위와 컴포넌트 다이어그램의 `PinterestCrawlerProvider` 계약
 
-- [ ] **Step 1: 기존 금지·보류 표현 확인**
+- [x] **Step 1: 기존 금지·보류 표현 확인**
 
 Run: `rg -n "크롤링.*범위 밖|검색 제공자 확정|승인된 provider|PinterestSearchProvider" README.md NOT_BUILD.md docs/PRD.md docs/SDD.md`
 
 Expected: 기존 Pinterest API 보류와 크롤링 금지 표현을 확인한다.
 
-- [ ] **Step 2: 제품 범위 문서 수정**
+- [x] **Step 2: 제품 범위 문서 수정**
 
 `README.md`와 `NOT_BUILD.md`에서 “Pinterest 크롤링은 하지 않음”과 “provider 미확정”을 제거한다. 이미지 파일·`thumbnail_url` 비저장, 세션·job 이력의 `pin_url`·`status` 유지, Pinterest API v5 미사용은 유지한다.
 
-- [ ] **Step 3: PRD·SDD 아키텍처 수정**
+- [x] **Step 3: PRD·SDD 아키텍처 수정**
 
 `docs/PRD.md`와 `docs/SDD.md`에서 Search provider를 서버 측 `PinterestCrawlerProvider`로 명시한다. 활성 카드 검색 조각 → 공개 검색 크롤링 → Pin ID widget 조회 → 응답 전용 이미지 URL의 흐름과 `partial_result` 경계를 Spec과 같은 문구로 반영한다.
 
-- [ ] **Step 4: 문서 계약 검사**
+- [x] **Step 4: 문서 계약 검사**
 
 Run: `rg -n "크롤링.*범위 밖|검색 제공자 확정|승인된 provider" README.md NOT_BUILD.md docs/PRD.md docs/SDD.md`
 
 Expected: 0건.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add README.md NOT_BUILD.md docs/PRD.md docs/SDD.md
@@ -82,21 +82,21 @@ git commit -m "docs: adopt pinterest widget crawler"
 - Consumes: `PinterestCrawlerProvider.search(query_fragments) -> PinResult[]`의 Spec 규칙
 - Produces: API·보안·도메인 문서에서 동일한 외부 데이터와 오류 경계
 
-- [ ] **Step 1: API와 신뢰 경계 수정**
+- [x] **Step 1: API와 신뢰 경계 수정**
 
 `api-contract.md`에 widget endpoint가 서버 측 provider의 기본 이미지 URL 조회임을 연결한다. `mcp-contract.md`의 후속 검색 호출을 `PinterestCrawlerProvider`로 바꾼다. `trust-boundary.md`에 Pin ID·`pin_url`·`status`의 세션·job 결과 보관과 `thumbnail_url`·이미지·widget 부가 필드의 비저장·비LLM 입력을 명시한다.
 
-- [ ] **Step 2: 실행 책임 문서 수정**
+- [x] **Step 2: 실행 책임 문서 수정**
 
 `work-tickets.md`, 도메인 설계·경쟁 분석, `skills/SKILL.md`에서 “크롤링 범위 밖”을 제거하고 활성 `query_fragments`만 쓰는 서버 crawler와 widget 조회를 명시한다. 브라우저 직접 호출·자유 검색어·외부 본문 LLM 주입 금지는 유지한다.
 
-- [ ] **Step 3: 정책 상충 검사**
+- [x] **Step 3: 정책 상충 검사**
 
 Run: `rg -n "크롤링.*범위 밖|PinterestSearchProvider|승인된 provider|thumbnail_url.*저장|이미지.*LLM" README.md NOT_BUILD.md docs skills`
 
 Expected: 허용된 crawler 계약만 남고, 금지·저장 정책은 Spec과 모순되지 않는다.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add docs/specs/api-contract.md docs/specs/mcp-contract.md docs/specs/trust-boundary.md docs/work-tickets.md docs/domains/illustration-reference/design.md docs/domains/illustration-reference/competitive-analysis.md skills/SKILL.md
@@ -113,7 +113,7 @@ git commit -m "docs: align crawler runtime boundaries"
 - Consumes: Task 1·2의 문서 계약
 - Produces: 구현 착수 가능한 일관된 문서 상태
 
-- [ ] **Step 1: Spec 형식·JSON 검증**
+- [x] **Step 1: Spec 형식·JSON 검증**
 
 Run:
 
@@ -126,13 +126,13 @@ git diff --check
 
 Expected: 모든 활성 Spec이 다섯 섹션을 갖고 JSON과 diff 검사가 통과한다.
 
-- [ ] **Step 2: 금지 정책 잔존 검사**
+- [x] **Step 2: 금지 정책 잔존 검사**
 
 Run: `rg -n "Pinterest 크롤링은.*범위 밖|검색 제공자 확정|승인된 provider 계약" README.md NOT_BUILD.md docs skills`
 
 Expected: 0건.
 
-- [ ] **Step 3: Commit 검증 결과**
+- [x] **Step 3: Commit 검증 결과**
 
 ```bash
 git status --short
