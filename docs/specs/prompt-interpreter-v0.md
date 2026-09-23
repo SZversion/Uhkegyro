@@ -86,7 +86,7 @@ Selection
 ```
 
 - `select_terms`: selections는 한 개 이상, 역할 중복 없음, `unresolved_constraints=[]`, `clarifying_question=null`, `clarification_type=null`. `evidence`는 실제 한국어 요청에 있는 비어 있지 않은 짧은 표현을 하나 이상 쓴다.
-- `needs_clarification`: `selections=[]`, `unresolved_constraints`는 한 개 이상, `clarifying_question`은 한국어 질문 하나, `clarification_type`은 비어 있지 않은 enum 하나다. `evidence`, `unresolved_constraints`, `clarifying_question` 등 사람이 읽는 문자열은 한국어로만 반환한다.
+- `needs_clarification`: `selections=[]`, `unresolved_constraints`는 비어 있거나 공백만으로 이루어지지 않은 항목을 한 개 이상, `clarifying_question`은 한국어 질문 하나, `clarification_type`은 비어 있지 않은 enum 하나다. `evidence`, `unresolved_constraints`, `clarifying_question` 등 사람이 읽는 문자열은 한국어로만 반환한다.
 - Prompt는 최종 `agent_status`, `reason_codes`, Pinterest 검색어·URL·MCP 호출·카드 설명을 만들지 않는다. Pydantic 검증과 resolver가 이를 각각 조립·검증한다.
 - `clarification_type`은 최종 `reason_code`가 아니다. resolver는 입력 단서와 카드 `confidence_gate`, 카탈로그 의존 그래프를 다시 확인한 뒤에만 `ABSTRACT_INTENT_ONLY`, `INSUFFICIENT_VISUAL_EVIDENCE`, `CONFLICTING_CONSTRAINTS` 중 최종 코드를 조립한다. `requires_*`의 부모 ID가 selection에 없다는 사실만으로 후보를 실패시키지 않는다. 직접 검색 금지는 LLM 출력과 무관하게 `DIRECT_SEARCH_DISABLED`로 처리한다.
 - 해결되지 않은 모호성은 새 사용자 메시지의 새 job에서 다시 `needs_clarification`으로 처리한다. `pending_human_review`는 현재 공개 API와 `InterpretationOutput`의 enum이 아니다.

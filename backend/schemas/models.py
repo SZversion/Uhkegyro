@@ -251,7 +251,7 @@ class InterpretationSelection(BaseModel):
     role: Role
     term_id: str
     evidence: Annotated[list[str], Field(min_length=1)]
-    confidence: float
+    confidence: Annotated[float, Field(ge=0.0, le=1.0)]
 
     @model_validator(mode="after")
     def _validate_evidence(self) -> "InterpretationSelection":
@@ -280,6 +280,13 @@ class InterpretationOutput(BaseModel):
     unresolved_constraints: list[str] = Field(default_factory=list)
     clarifying_question: str | None = None
     clarification_type: ClarificationType | None = None
+
+    @model_validator(mode="after")
+    def _validate_unresolved_constraints(self) -> "InterpretationOutput":
+        for constraint in self.unresolved_constraints:
+            if not constraint or not constraint.strip():
+                raise ValueError("unresolved_constraints 항목은 비어 있거나 공백만으로 이루어질 수 없다")
+        return self
 
     @model_validator(mode="after")
     def _validate_state_rules(self) -> "InterpretationOutput":

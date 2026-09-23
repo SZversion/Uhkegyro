@@ -526,3 +526,36 @@ def test_interpretation_output_needs_clarification_invalid(overrides):
 def test_interpretation_selection_rejects_empty_evidence(evidence):
     with pytest.raises(ValidationError):
         InterpretationSelection(role="body", term_id="body_slim", evidence=evidence, confidence=0.9)
+@pytest.mark.parametrize("confidence", [-0.1, 1.1])
+def test_interpretation_selection_rejects_confidence_out_of_range(confidence):
+    with pytest.raises(ValidationError):
+        InterpretationSelection(
+            role="body", term_id="body_slim", evidence=["마른 체형"], confidence=confidence
+        )
+
+
+@pytest.mark.parametrize("confidence", [0.0, 1.0, 0.5])
+def test_interpretation_selection_accepts_confidence_boundaries(confidence):
+    selection = InterpretationSelection(
+        role="body", term_id="body_slim", evidence=["마른 체형"], confidence=confidence
+    )
+    assert selection.confidence == confidence
+
+
+@pytest.mark.parametrize(
+    "unresolved_constraints",
+    [
+        [""],
+        ["   "],
+        ["유효한 단서", ""],
+    ],
+)
+def test_interpretation_output_rejects_whitespace_unresolved_constraints(unresolved_constraints):
+    with pytest.raises(ValidationError):
+        _interpretation_output(
+            interpretation_state="needs_clarification",
+            selections=[],
+            unresolved_constraints=unresolved_constraints,
+            clarifying_question="질문?",
+            clarification_type="abstract_intent",
+        )
