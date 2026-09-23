@@ -61,8 +61,16 @@ KHS03/fix/streamlit-upload
 
 ## 4. 작업 흐름
 
+브랜치를 생성하기 전에는 반드시 최신 `main`을 기준으로 작업해야 합니다. 아래 순서를 생략하거나 다른 브랜치에서 새 브랜치를 분기해서는 안 됩니다.
+
+1. `main` 브랜치로 이동합니다.
+2. `origin/main`의 최신 변경사항을 fast-forward 방식으로 반영합니다.
+3. 최신화된 `main`에서 새 작업 브랜치를 생성합니다.
+
 ```text
 작업 내용 확인
+    ↓
+main 브랜치 이동 및 origin/main 최신화
     ↓
 개인 번호를 증가시킨 브랜치 생성
     ↓
@@ -81,9 +89,11 @@ Pull Request 생성
 
 ```bash
 git switch main
-git pull
+git pull --ff-only origin main
 git switch -c KHS02/docs/github-workflow
 ```
+
+위 순서는 필수입니다. `main`을 최신화하지 않았거나 `main`이 아닌 브랜치에서 분기한 브랜치는 작업 브랜치로 사용하지 않습니다.
 
 커밋 및 push 예시:
 
@@ -97,6 +107,9 @@ git push -u origin KHS02/docs/github-workflow
 
 ## 5. 브랜치 점검 체크리스트
 
+- 브랜치를 생성하기 전에 `main`으로 이동했는가?
+- 브랜치 생성 직전에 `git pull --ff-only origin main`으로 `main`을 최신화했는가?
+- 최신화된 `main`에서 작업 브랜치를 분기했는가?
 - 브랜치가 본인의 이니셜로 시작하는가?
 - 개인 브랜치 번호가 이전 사용 번호와 중복되지 않는가?
 - 작업 유형이 `feature`, `fix`, `refactor`, `docs`, `test` 중 하나인가?
