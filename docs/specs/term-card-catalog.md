@@ -28,12 +28,18 @@
 - 활성 카드의 비어 있지 않은 `query_fragments`
 - 활성 카드의 비어 있지 않은 `source_answer_draft`, `look_for`
 - 허용 역할과 활성 조건 유효성
+- 모든 `requires_all_of`·`requires_any_of`의 부모 `term_id`가 카탈로그에 존재하고, 활성 카드가 참조하는 부모도 활성 상태인지
+- `requires_all_of`·`requires_any_of`를 합친 의존 그래프에 순환이 없는지
 - `active_term_feedback`의 모든 term ID가 활성 카드에 연결되는지
 - 연결된 피드백의 비어 있지 않은 `plain_meaning_ko`, `selection_reason_template_ko`, `reference_checkpoints_ko`
 
 전체 카드 수, 활성 카드 수, `card_count`의 특정 값은 검증하지 않는다. 카탈로그 검증 실패는 `CATALOG_INVALID_AT_STARTUP` 운영 원인으로 기록하고 worker/job 수신을 시작하지 않는다.
 
+`requires_all_of`·`requires_any_of`는 세부 카드가 전제하는 부모 `term_id`의 카탈로그 의존 관계다. 이는 LLM이 같은 역할의 부모 카드를 추가로 selection해야 한다는 뜻이 아니다. 예를 들어 `pose_legs_crossed_at_knee`를 고르면 해당 세부 포즈 하나만 `pose` 결과로 남고, resolver는 `pose_sitting`이 선택 목록에 없다는 이유로 거부하지 않는다. resolver가 검사하는 것은 선택 카드의 의존 그래프가 시작 검증을 통과했는지이며, 입력 단서의 의미 해석은 LLM의 `confidence_gate` 준수와 `evidence` 계약으로 분리한다.
+
 모든 카드의 `source_type`은 `team_card`다. Getty URI·외부 어휘 결과·이미지·Pin 메타데이터는 카드에 저장하지 않는다.
+
+Pinterest 검색어 조립기는 검증된 활성 카드의 `query_fragments`만 입력으로 받고, 역할·용어와 무관하게 고정 접미사 `drawing`을 한 번 붙인다. LLM과 UI는 조각이나 접미사를 임의로 추가·교체하지 않는다.
 
 화면 피드백은 `active_term_feedback[term_id]`를 우선한다. 이 경우 `plain_meaning_ko`, `selection_reason_template_ko`, `reference_checkpoints_ko`를 API의 `plain_meaning_ko`, `selection_reason`, `reference_checkpoints`로 각각 매핑한다. 피드백이 없는 새 활성 카드는 `source_answer_draft`를 `plain_meaning_ko`로, `look_for`를 `reference_checkpoints`로 사용하며 `selection_reason=null`이다. `pinterest_search_notice_ko`, `common_confusion_ko`, `clarifying_question_ko`는 검수용 비공개 메타데이터로 API와 UI에 노출하지 않는다. LLM은 fallback 문구를 보완하거나 새로 만들지 않는다.
 
@@ -71,3 +77,10 @@
 - GIVEN: 활성 카드 또는 `active_term_feedback` 항목이 있다.
 - WHEN: 앱이 시작한다.
 - THEN: fallback 필드와 연결된 피드백 필드가 비어 있거나 피드백 ID가 활성 카드에 없으면 ready 상태를 거부한다.
+
+**AC-06 · 같은 역할의 부모 의존**
+
+- GIVEN: `pose_legs_crossed_at_knee`처럼 같은 `pose` 역할의 부모 카드를 의존하는 활성 카드가 있다.
+- WHEN: LLM 후보와 resolver가 해당 세부 카드를 처리한다.
+- THEN: 세부 카드 하나만 `pose` selection으로 유지하고, 부모 ID의 별도 selection을 요구하지 않는다.
+- AND THEN: 시작 검증은 부모 ID의 존재·활성 상태와 의존 그래프의 비순환성을 확인한다.
