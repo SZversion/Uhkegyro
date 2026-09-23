@@ -1,5 +1,7 @@
 # Pinterest Widget Crawler Documentation Implementation Plan
 
+> **Historical plan:** 이 문서는 2026-09-23 작업 계획 기록이다. 현재 구현 계약은 [`pinterest-widget-crawler.md`](../../specs/pinterest-widget-crawler.md)와 [`session-job-persistence.md`](../../specs/session-job-persistence.md)만 사용한다.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 승인된 서버 측 Pinterest 크롤링과 widget 기반 이미지 URL 조회를 모든 제품 문서의 단일 계약으로 정렬한다.
