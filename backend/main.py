@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from backend.routes.agent import ApiContractError, router as agent_router
+from backend.routes.agent import ApiContractError, router as agent_router, set_session_cookie
 from backend.services.catalog_repository import CatalogLoadError, load_catalog
 from backend.shared.config import get_settings, resolve_term_cards_dir
 
@@ -41,8 +41,12 @@ async def handle_api_contract_error(request: FastAPI, exc: ApiContractError) -> 
     """계약이 정한 오류 본문(`ApiError`)을 그대로 내보낸다.
 
     기본 FastAPI 오류는 `{"detail": ...}`이라 프론트가 두 모양을 다뤄야 한다.
+    오류 응답은 라우터가 만든 새 응답이라 쿠키 갱신이 함께 실려 있다.
     """
-    return JSONResponse(status_code=exc.status_code, content=exc.error.model_dump())
+    response = JSONResponse(status_code=exc.status_code, content=exc.error.model_dump())
+    if exc.session_token:
+        set_session_cookie(response, exc.session_token)
+    return response
 
 
 app.include_router(agent_router)

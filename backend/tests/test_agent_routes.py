@@ -50,16 +50,95 @@ def test_new_session_gets_httponly_cookie_and_202(client: TestClient) -> None:
 
 
 def test_existing_cookie_is_reused(client: TestClient) -> None:
-    """AC-01: 이미 쿠키가 있으면 같은 세션을 재사용한다."""
+    """AC-01: 이미 쿠키가 있으면 새 세션을 만들지 않고 같은 세션을 재사용한다."""
     first = submit(client, "다리는 옆으로 벌리고 서 있는 자세")
+    token = client.cookies.get(SESSION_COOKIE_NAME)
     second = submit(client, "이번에는 앉아 있는 모습")
 
-    assert client.cookies.get(SESSION_COOKIE_NAME)
-    assert "set-cookie" not in second["headers"]  # 재발급하지 않는다
+    assert client.cookies.get(SESSION_COOKIE_NAME) == token  # 식별자가 바뀌지 않는다
 
     first_envelope = client.get(f"/api/jobs/{first['body']['job_id']}").json()
     second_envelope = client.get(f"/api/jobs/{second['body']['job_id']}").json()
     assert first_envelope["session_id"] == second_envelope["session_id"]
+
+
+# --- session-job-persistence:25 · 활동마다 쿠키 갱신 -------------------------
+
+
+def test_existing_session_cookie_max_age_is_renewed(client: TestClient) -> None:
+    """유효 세션의 활동마다 90일 Max-Age를 다시 내보낸다."""
+    first = submit(client, "다리를 벌리고 선 자세")
+    token = client.cookies.get(SESSION_COOKIE_NAME)
+
+    second = submit(client, "다리를 벌리고 선 자세", key=str(uuid.uuid4()))
+    cookie_header = second["headers"]["set-cookie"]
+
+    assert SESSION_COOKIE_NAME in cookie_header
+    assert f"{SESSION_COOKIE_NAME}={token}" in cookie_header  # 같은 토큰
+    assert "Max-Age=7776000" in cookie_header  # 90일로 갱신
+    assert "HttpOnly" in cookie_header
+    assert first["body"]["job_id"] != second["body"]["job_id"]
+
+
+def test_job_read_renews_cookie(client: TestClient) -> None:
+    """조회도 API 활동이므로 쿠키를 갱신한다."""
+    created = submit(client, "다리를 옆으로 벌린 자세")
+    token = client.cookies.get(SESSION_COOKIE_NAME)
+
+    response = client.get(f"/api/jobs/{created['body']['job_id']}")
+
+    assert f"{SESSION_COOKIE_NAME}={token}" in response.headers["set-cookie"]
+    assert "Max-Age=7776000" in response.headers["set-cookie"]
+
+
+def test_404_still_renews_cookie(client: TestClient) -> None:
+    """결과가 404여도 유효 세션의 활동이므로 쿠키는 갱신된다."""
+    submit(client, "서 있는 자세")
+    token = client.cookies.get(SESSION_COOKIE_NAME)
+
+    response = client.get(f"/api/jobs/{uuid.uuid4()}")
+
+    assert response.status_code == 404
+    assert f"{SESSION_COOKIE_NAME}={token}" in response.headers["set-cookie"]
+
+
+def test_unauthorized_read_does_not_issue_cookie(client: TestClient) -> None:
+    """세션이 없으면 갱신할 쿠키도 없다."""
+    client.cookies.clear()
+
+    response = client.get(f"/api/jobs/{uuid.uuid4()}")
+
+    assert response.status_code == 401
+    assert "set-cookie" not in response.headers
+
+
+def test_invalid_cookie_is_replaced_by_new_session(client: TestClient) -> None:
+    """만료되거나 조작된 쿠키는 새 세션으로 대체한다."""
+    created = submit(client, "서 있는 자세")
+    job_id = created["body"]["job_id"]
+    forged = {"Cookie": f"{SESSION_COOKIE_NAME}=forged-token-value"}
+
+    # 별도 브라우저가 조작된 토큰을 들고 온다. 저장소에는 해시만 있어 매칭되지
+    # 않으므로 새 세션이 발급되어야 한다.
+    stranger = TestClient(app)
+    response = stranger.post(
+        "/api/agent",
+        json={"request_text": "앉아 있는 자세"},
+        headers={"Idempotency-Key": str(uuid.uuid4()), **forged},
+    )
+
+    assert response.status_code == 202
+    assert "forged-token-value" not in response.headers["set-cookie"]
+    # 조작된 토큰은 어떤 세션에도 대응하지 않으므로 404가 아니라 401이다. 세션의
+    # 존재 여부를 새지 않는다.
+    unknown = stranger.get(f"/api/jobs/{job_id}", headers=forged)
+    assert unknown.status_code == 401
+    assert unknown.json()["failure_code"] == "session_required"
+    # 새로 발급된 세션에는 기존 세션의 job이 보이지 않는다.
+    assert stranger.get(f"/api/jobs/{job_id}").status_code == 404
+    # 원래 세션은 그대로 자기 job을 본다.
+    assert client.get(f"/api/jobs/{job_id}").status_code == 200
+    stranger.close()
 
 
 def test_invalid_request_text_is_422(client: TestClient) -> None:

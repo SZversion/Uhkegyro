@@ -50,13 +50,36 @@ STATUS_CODES = {
 
 
 class ApiContractError(Exception):
-    """`ApiError` 본문을 그대로 응답으로 내보내는 예외."""
+    """`ApiError` 본문을 그대로 응답으로 내보내는 예외.
 
-    def __init__(self, code: ApiErrorCode) -> None:
+    `session_token`이 있으면 오류 응답에서도 세션 쿠키를 갱신한다. 유효 세션의
+    활동이라면 결과가 404여도 90일 Max-Age를 다시 내보내야 하기 때문이다
+    (`session-job-persistence.md:25`).
+    """
+
+    def __init__(self, code: ApiErrorCode, session_token: str | None = None) -> None:
         self.code = code
         self.status_code = STATUS_CODES[code]
+        self.session_token = session_token
         self.error = ApiError(failure_code=code, user_message=MESSAGES[code], retryable=False)
         super().__init__(code.value)
+
+
+def set_session_cookie(response: Response, token: str) -> None:
+    """세션 쿠키의 `Max-Age`를 90일로 갱신한다(`session-job-persistence.md:25`).
+
+    유효 세션의 API 활동마다 다시 내보낸다. 토큰 값 자체는 바꾸지 않아 이미
+    브라우저가 가진 세션 식별자가 그대로 유지되고, 갱신이 실패해도 사용자는
+    기존 세션으로 계속 작업할 수 있다.
+    """
+    response.set_cookie(
+        key=SESSION_COOKIE_NAME,
+        value=token,
+        max_age=SESSION_MAX_AGE_SECONDS,
+        httponly=True,
+        samesite="lax",
+        path="/",
+    )
 
 
 async def _parse_agent_request(request: Request) -> AgentRequest:
@@ -116,7 +139,7 @@ async def submit_agent(
     raw_cookie = request.cookies.get(SESSION_COOKIE_NAME)
     try:
         session_id = store.resolve_session(raw_cookie)
-        token = None
+        token = raw_cookie
     except SessionRequired:
         token, session_id = store.issue_session()
 
@@ -127,19 +150,13 @@ async def submit_agent(
             idempotency_key=key,
         )
     except IdempotencyConflict:
-        raise ApiContractError(ApiErrorCode.IDEMPOTENCY_KEY_CONFLICT) from None
+        raise ApiContractError(
+            ApiErrorCode.IDEMPOTENCY_KEY_CONFLICT, session_token=token
+        ) from None
 
-    if token is not None:
-        # 새 세션일 때만 쿠키를 내려준다. 기존 세션은 갱신만 하고 식별자는 바꾸지
-        # 않는다(`session-job-persistence.md:25`).
-        response.set_cookie(
-            key=SESSION_COOKIE_NAME,
-            value=token,
-            max_age=SESSION_MAX_AGE_SECONDS,
-            httponly=True,
-            samesite="lax",
-            path="/",
-        )
+    # 신규 발급이든 재사용이든 세션 활동이므로 90일로 갱신한다. 재사용할 때는
+    # 토큰을 그대로 내보내 식별자가 바뀌지 않는다(`session-job-persistence.md:25`).
+    set_session_cookie(response, token)
 
     return SubmissionResponse(job_id=job.job_id)
 
@@ -156,15 +173,22 @@ async def submit_agent(
 async def read_job(
     job_id: str,
     request: Request,
+    response: Response,
 ) -> JobEnvelope:
     """소유 세션만 자신의 job을 읽는다. `api-contract.md` AC-06."""
     store = get_session_store()
+    raw_cookie = request.cookies.get(SESSION_COOKIE_NAME)
     try:
-        session_id = store.resolve_session(request.cookies.get(SESSION_COOKIE_NAME))
+        session_id = store.resolve_session(raw_cookie)
     except SessionRequired:
         raise ApiContractError(ApiErrorCode.SESSION_REQUIRED) from None
+
+    # 조회가 성공하든 404여도 유효 세션의 활동이므로 쿠키를 갱신한다.
+    set_session_cookie(response, raw_cookie)
 
     try:
         return store.read_job(session_id=session_id, job_id=job_id)
     except JobNotFound:
-        raise ApiContractError(ApiErrorCode.JOB_NOT_FOUND) from None
+        raise ApiContractError(
+            ApiErrorCode.JOB_NOT_FOUND, session_token=raw_cookie
+        ) from None

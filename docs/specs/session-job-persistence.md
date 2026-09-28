@@ -41,3 +41,4 @@ DB의 `attempt=0`은 아직 실행되지 않은 job을 뜻한다. worker가 clai
 - GIVEN: 마지막 활동 후 3개월이 지난 session, WHEN: 보관 정리 작업이 실행, THEN: session·연결 job·`request_text`가 함께 삭제된다.
 - GIVEN: 신규 job, WHEN: 저장한다, THEN: `next_retry_at=null`이며 즉시 claim할 수 있다.
 - GIVEN: retry를 예약한 queued job, WHEN: `next_retry_at` 전 worker가 claim한다, THEN: claim하지 않는다.
+- GIVEN: 유효 세션, WHEN: 어떤 API 요청이든 처리한다, THEN: `last_activity_at`과 쿠키 `Max-Age=90일`을 갱신한다. 결과가 `409`나 `404`여도 갱신하고, 세션이 없거나 쿠키가 조작되었으면 쿠키를 내보내지 않는다. 갱신은 토큰 값을 바꾸지 않아 세션 식별자가 유지된다.
