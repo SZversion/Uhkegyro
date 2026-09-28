@@ -1,9 +1,13 @@
 CREATE TABLE IF NOT EXISTS sessions (
     session_id UUID PRIMARY KEY,
+    user_id UUID NOT NULL,
     session_token_hash TEXT NOT NULL UNIQUE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_activity_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+ALTER TABLE sessions ADD COLUMN IF NOT EXISTS user_id UUID;
+ALTER TABLE sessions ALTER COLUMN user_id SET NOT NULL;
 
 CREATE TABLE IF NOT EXISTS jobs (
     job_id UUID PRIMARY KEY,

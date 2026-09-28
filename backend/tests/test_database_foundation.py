@@ -12,6 +12,7 @@ def test_initial_migration_contains_session_and_job_tables():
     sql = migration_sql()
 
     assert "CREATE TABLE IF NOT EXISTS sessions" in sql
+    assert "user_id UUID NOT NULL" in sql
     assert "CREATE TABLE IF NOT EXISTS jobs" in sql
     assert "REFERENCES sessions(session_id) ON DELETE CASCADE" in sql
     assert "next_retry_at TIMESTAMPTZ DEFAULT NULL" in sql
