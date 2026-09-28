@@ -5,6 +5,7 @@
 import asyncio
 import json
 import os
+import sys
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -198,6 +199,61 @@ def test_interpret_passes_system_and_user_messages():
     assert messages[1]["role"] == "user"
     assert "반동" in messages[1]["content"]
     assert '{"active_cards": []}' in messages[1]["content"]
+
+
+# --- 관측 계약 (observability-and-prompt-versioning.md) ----------------------
+
+
+def test_interpret_structured_log_carries_job_id(caplog):
+    """구조화 로그가 관측 스펙이 요구하는 `job_id`를 남긴다."""
+    completions = _FakeCompletions(responses=[_FakeResponse(SELECT_JSON)])
+    adapter = _adapter(completions)
+    with caplog.at_level("INFO", logger="backend.services.llm"):
+        _run(adapter.interpret("반동", job_id="job-42", active_cards_json="{}"))
+
+    payloads = [json.loads(r.message) for r in caplog.records if r.name == "backend.services.llm"]
+    ok = [p for p in payloads if p.get("event") == "llm.interpret.ok"]
+    assert len(ok) == 1
+    assert ok[0]["job_id"] == "job-42"
+    assert ok[0]["prompt_version"] == adapter.prompt_version
+
+
+def test_interpret_langfuse_metadata_carries_job_id(monkeypatch):
+    """Langfuse metadata에 `job_id`가 전달된다. 네트워크는 호출하지 않는다."""
+    recorded = {}
+
+    class _FakeGeneration:
+        usage = None
+
+    class _FakeLangfuse:
+        def __init__(self, **kwargs):
+            recorded["init"] = kwargs
+
+        def generation(self, **kwargs):
+            recorded["generation"] = kwargs
+            return _FakeGeneration()
+
+    fake_module = type(sys)("langfuse")
+    fake_module.Langfuse = _FakeLangfuse
+    monkeypatch.setitem(sys.modules, "langfuse", fake_module)
+
+    settings = _real_settings()
+    monkeypatch.setattr(settings, "langfuse_public_key", "pk-test", raising=False)
+    monkeypatch.setattr(settings, "langfuse_secret_key", "sk-test", raising=False)
+
+    completions = _FakeCompletions(responses=[_FakeResponse(SELECT_JSON)])
+    adapter = _adapter(completions, settings=settings)
+    _run(adapter.interpret("반동", job_id="job-42", active_cards_json="{}"))
+
+    assert recorded["generation"]["metadata"] == {"job_id": "job-42"}
+
+
+def test_interpret_requires_job_id_keyword():
+    """`job_id`는 관측 필수 식별자이므로 생략할 수 없다."""
+    completions = _FakeCompletions(responses=[_FakeResponse(SELECT_JSON)])
+    adapter = _adapter(completions)
+    with pytest.raises(TypeError):
+        _run(adapter.interpret("반동", active_cards_json="{}"))
 
 
 # --- 구조화 출력 실패 (LLM_INVALID_STRUCTURED_OUTPUT) ------------------------
