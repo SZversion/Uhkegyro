@@ -12,7 +12,7 @@
 
 ## What
 
-`sessions`는 `session_id` UUID PK, 고유 `session_token_hash`, `created_at`, `last_activity_at`을 가진다. `jobs`는 `job_id` UUID PK, `session_id` FK `ON DELETE CASCADE`, `request_text`, `request_text_hash`, `idempotency_key_hash`, `idempotency_expires_at`, `status`, `attempt=0`, `max_attempts=3`, `lease_expires_at`, `next_retry_at nullable timestamptz`, `succeeded`, `final_payload_json`, `created_at`, `updated_at`, `completed_at`을 가진다. 신규 job의 `next_retry_at`은 `null`이다.
+`sessions`는 `session_id` UUID PK, 인증 쿠키에서 확인한 `user_id` UUID, 고유 `session_token_hash`, `created_at`, `last_activity_at`을 가진다. 한 `user_id`는 여러 session을 가질 수 있다. `jobs`는 `job_id` UUID PK, `session_id` FK `ON DELETE CASCADE`, `request_text`, `request_text_hash`, `idempotency_key_hash`, `idempotency_expires_at`, `status`, `attempt=0`, `max_attempts=3`, `lease_expires_at`, `next_retry_at nullable timestamptz`, `succeeded`, `final_payload_json`, `created_at`, `updated_at`, `completed_at`을 가진다. 신규 job의 `next_retry_at`은 `null`이다.
 
 DB의 `attempt=0`은 아직 실행되지 않은 job을 뜻한다. worker가 claim transaction에서 `attempt`를 1 증가시킨 뒤 해당 값을 실행 시도 번호로 사용한다. 따라서 API `JobEnvelope.attempt`와 Langfuse trace의 `attempt`에는 claim 이후 값인 `1..max_attempts`만 기록하며, `attempt=0`을 API에 노출하지 않는다.
 
@@ -23,9 +23,9 @@ DB의 `attempt=0`은 아직 실행되지 않은 job을 뜻한다. worker가 clai
 ## How
 
 - 배포 환경의 `DATABASE_URL`은 Secret Manager에서 주입한 Neon `postgresql+asyncpg://...?...sslmode=require` 연결 문자열이다. 로컬 개발은 같은 형식의 `.env` 값만 사용한다.
-- 원문 쿠키 토큰은 DB에 저장하지 않고 SHA-256 해시로 `sessions.session_token_hash`를 조회한다.
+- 검증된 쿠키의 `user_id` UUID와 원문 쿠키 토큰의 SHA-256 hash로 `sessions.user_id`, `sessions.session_token_hash`를 조회한다. 쿠키 원문을 DB에 저장하지 않는다.
 - 유효 세션의 API 활동마다 `last_activity_at`과 쿠키 `Max-Age=90일`을 갱신한다.
-- 1일마다 `last_activity_at`이 3개월보다 오래된 session 행을 삭제한다. FK cascade로 연결 job과 그 `request_text`도 함께 삭제한다. users, messages, search_results, Pin 전용 테이블은 만들지 않는다.
+- 1일마다 `last_activity_at`이 3개월보다 오래된 session 행을 삭제한다. FK cascade로 연결 job과 그 `request_text`도 함께 삭제한다. users, messages, search_results, Pin 전용 테이블은 만들지 않는다. user 정보의 원본·프로필은 이 서비스 DB에 저장하지 않는다.
 - idempotency 판정과 job 생성은 같은 PostgreSQL transaction에서 session별 advisory lock으로 직렬화한다.
 - migration은 `jobs.next_retry_at timestamptz NULL DEFAULT NULL`을 추가하고 기존 행은 `null`로 둔다. worker claim은 queued job에 한해 `next_retry_at IS NULL OR next_retry_at <= now()`를 만족할 때만 허용한다.
 - `GET /api/jobs/{job_id}`는 소유 세션만 읽을 수 있고, 소유하지 않은 경우 `JOB_NOT_FOUND`를 반환한다.
