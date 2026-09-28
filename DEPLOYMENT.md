@@ -85,7 +85,7 @@ bash scripts/gcp-setup-free.sh
 **프롬프트 파일 환경변수** (API 서비스 전용, MCP 서비스 불필요):
 - `INTERPRETER_PROMPT_PATH=/app/prompts/uhkegryo-interpreter-v0.md`
   - Docker 이미지 내부 경로와 반드시 일치해야 합니다.
-  - 설정 누락 시 `FileNotFoundError`로 앱 시작이 실패합니다.
+  - 설정 누락, 파일 부재·읽기 실패, 필수 섹션 또는 닫힌 code fence 누락 시 adapter 초기화에서 `PromptConfigurationError` (`CONFIGURATION_ERROR`, 재시도 불가)로 실패합니다.
 
 CLI로 한 번에 입력 예시:
 ```bash
@@ -179,7 +179,7 @@ cp .env.example .env
 # .env 편집: OPENROUTER_API_KEY, LANGFUSE_* 등 입력
 # DATABASE_URL에는 Neon dev 브랜치 연결 문자열 필수 입력
 # TERM_CARDS_PATH 미설정 시 자동 탐지 (레포 내 term-cards 디렉터리)
-# INTERPRETER_PROMPT_PATH 미설정 시 ./prompts/uhkegryo-interpreter-v0.md 폴백; 설정 시 Docker 이미지 경로(/app/prompts/...)를 사용
+# INTERPRETER_PROMPT_PATH=./prompts/uhkegryo-interpreter-v0.md (필수; 폴백 없음)
 
 # 전체 스택 실행 (Neon dev 브랜치 사용)
 docker compose up --build

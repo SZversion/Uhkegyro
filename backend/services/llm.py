@@ -303,7 +303,8 @@ def _extract_fenced_block(text: str, heading: str) -> str:
         raise ValueError(f"'{heading}' 다음에 코드 펜스를 찾지 못했다")
     body_start = text.find("\n", fence_start) + 1
     fence_end = text.find(FENCE, body_start)
-    if fence_end < 0:
+    next_heading = text.find("\n## ", body_start)
+    if fence_end < 0 or (next_heading >= 0 and next_heading < fence_end):
         raise ValueError(f"'{heading}' 코드 펜스가 닫히지 않았다")
     return text[body_start:fence_end].strip("\n")
 

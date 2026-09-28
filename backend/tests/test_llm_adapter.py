@@ -137,6 +137,46 @@ def test_load_interpreter_prompt_reads_repo_file():
     assert "```" not in template
 
 
+@pytest.mark.parametrize(
+    "prompt_text",
+    [
+        "## User message template\n```text\n{{request_text}}\n```\n",
+        "## System message\n```text\nsystem\n```\n",
+    ],
+    ids=["system-heading-missing", "user-template-heading-missing"],
+)
+def test_load_interpreter_prompt_rejects_missing_sections(tmp_path, prompt_text):
+    prompt_path = tmp_path / "malformed-prompt.md"
+    prompt_path.write_text(prompt_text, encoding="utf-8")
+
+    with pytest.raises(llm.PromptConfigurationError) as exc:
+        llm.load_interpreter_prompt(prompt_path)
+
+    assert exc.value.failure_code is FailureCode.CONFIGURATION_ERROR
+    assert exc.value.retryable is False
+
+
+@pytest.mark.parametrize(
+    "prompt_text",
+    [
+        "## System message\n```text\nsystem\n\n"
+        "## User message template\n```text\n{{request_text}}\n```\n",
+        "## System message\n```text\nsystem\n```\n\n"
+        "## User message template\n```text\n{{request_text}}\n",
+    ],
+    ids=["system-fence-unclosed", "user-template-fence-unclosed"],
+)
+def test_load_interpreter_prompt_rejects_unclosed_fences(tmp_path, prompt_text):
+    prompt_path = tmp_path / "malformed-prompt.md"
+    prompt_path.write_text(prompt_text, encoding="utf-8")
+
+    with pytest.raises(llm.PromptConfigurationError) as exc:
+        llm.load_interpreter_prompt(prompt_path)
+
+    assert exc.value.failure_code is FailureCode.CONFIGURATION_ERROR
+    assert exc.value.retryable is False
+
+
 def test_render_user_message_replaces_placeholders():
     rendered = llm.render_user_message(TEMPLATE_EXAMPLE, "반동 자세", "[{...}]")
     assert "반동 자세" in rendered
