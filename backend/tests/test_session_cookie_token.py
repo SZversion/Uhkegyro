@@ -1,4 +1,5 @@
 import hashlib
+from types import SimpleNamespace
 
 from fastapi import Response
 
@@ -22,8 +23,9 @@ def test_hash_session_token_uses_sha256_hex():
 
 def test_development_session_cookie_is_http_only_and_90_days():
     response = Response()
+    settings = SimpleNamespace(environment="development")
 
-    set_session_cookie(response, "opaque-token", environment="development")
+    set_session_cookie(response, "opaque-token", settings)
 
     cookie = response.headers["set-cookie"]
     assert cookie.startswith("session_id=opaque-token;")
@@ -36,7 +38,8 @@ def test_development_session_cookie_is_http_only_and_90_days():
 
 def test_non_development_session_cookie_is_secure():
     response = Response()
+    settings = SimpleNamespace(environment="production")
 
-    set_session_cookie(response, "opaque-token", environment="production")
+    set_session_cookie(response, "opaque-token", settings)
 
     assert "Secure" in response.headers["set-cookie"]

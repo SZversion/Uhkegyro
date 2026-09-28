@@ -4,7 +4,8 @@ MCP 인증은 Cloud Run IAM으로 처리하므로 별도 JWT 불필요.
 import hashlib
 import secrets
 
-from fastapi import Cookie, HTTPException, Request
+from fastapi import Cookie, HTTPException, Request, Response
+from backend.shared.config import Settings
 
 SESSION_COOKIE_NAME = "session_id"
 SESSION_COOKIE_MAX_AGE = 90 * 24 * 60 * 60
@@ -20,14 +21,14 @@ def hash_session_token(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
-def set_session_cookie(response, token: str, *, environment: str) -> None:
+def set_session_cookie(response: Response, token: str, settings: Settings) -> None:
     """환경별 보안 옵션을 적용해 90일 세션 쿠키를 설정한다."""
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=token,
         max_age=SESSION_COOKIE_MAX_AGE,
         httponly=True,
-        secure=environment != "development",
+        secure=settings.environment != "development",
         samesite="lax",
         path="/",
     )
