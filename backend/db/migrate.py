@@ -9,4 +9,5 @@ def migration_sql() -> str:
 
 
 async def migrate(connection) -> None:
-    await connection.execute(migration_sql())
+    for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
+        await connection.execute(migration.read_text(encoding="utf-8"))
