@@ -39,7 +39,7 @@
 
 모든 카드의 `source_type`은 `team_card`다. Getty URI·외부 어휘 결과·이미지·Pin 메타데이터는 카드에 저장하지 않는다.
 
-Pinterest 검색어 조립기는 검증된 활성 카드의 `query_fragments`만 입력으로 사용한다. LLM과 UI는 조각 밖 문자열을 추가·교체하지 않는다.
+Pinterest 검색어 조립기는 구현 시 검증된 활성 카드의 `query_fragments`만 카드 유래 입력으로 사용해야 한다. 결정론 URL 빌더만 기존 조각의 `drawing` 포함 여부를 검사하거나 제거하지 않고 결합한 검색어 끝에 고정 접미사 `drawing`을 무조건 한 번 추가해야 한다. 따라서 현재 `pose_gesture` 카드의 `gesture drawing`과 `action line reference` 조각을 결합한 최종 검색어는 `gesture drawing action line reference drawing`이다. LLM·UI·사용자 일상어는 검색어에 추가·교체하지 않는다.
 
 화면 피드백은 `active_term_feedback[term_id]`를 우선한다. 이 경우 `plain_meaning_ko`, `selection_reason_template_ko`, `reference_checkpoints_ko`를 API의 `plain_meaning_ko`, `selection_reason`, `reference_checkpoints`로 각각 매핑한다. 피드백이 없는 새 활성 카드는 `source_answer_draft`를 `plain_meaning_ko`로, `look_for`를 `reference_checkpoints`로 사용하며 `selection_reason=null`이다. `pinterest_search_notice_ko`, `common_confusion_ko`, `clarifying_question_ko`는 검수용 비공개 메타데이터로 API와 UI에 노출하지 않는다. LLM은 fallback 문구를 보완하거나 새로 만들지 않는다.
 

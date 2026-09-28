@@ -2,4 +2,4 @@
 
 현재 구현 기준은 `docs/PRD.md`, `docs/SDD.md`, `docs/specs/api-contract.md`, `docs/specs/term-card-catalog.md`, `docs/specs/mcp-contract.md`다. TERM_CARD는 역할별 JSON 카탈로그를 시작 시 검증해 FastMCP 프로세스의 메모리에 로드하며 DB에 적재하지 않는다.
 
-LLM은 활성 term ID 후보와 근거만 만든다. Pydantic과 결정론 resolver가 후보를 검증한 뒤 `get_active_term_card(term_id)`로 활성 카드만 받는다. 서버 `PinterestCrawlerProvider`는 반환 카드의 조건을 다시 검증하고 `query_fragments`만 공개 검색에 전달한 뒤, 수집한 Pin ID를 widget endpoint로 조회한다. 사용자 의미 상태와 Pin 상태는 API 계약의 enum만 사용한다. `thumbnail_url`은 응답 전용이며 `pin_id`, `pin_url`, `status`만 세션·job 이력에 포함한다.
+LLM은 활성 term ID 후보와 근거만 만든다. Pydantic과 결정론 resolver가 후보를 검증한 뒤 `get_active_term_card(term_id)`로 활성 카드만 받는다. `PinterestCrawlerProvider` 구현 시 서버는 반환 카드의 조건을 다시 검증하고 `query_fragments`만 카드 유래 입력으로 공개 검색에 전달한다. 결정론 URL 빌더는 기존 조각의 `drawing` 포함 여부를 검사하지 않고 결합한 검색어 끝에 고정 접미사 `drawing`을 무조건 한 번 추가한 뒤, 수집한 Pin ID를 widget endpoint로 조회해야 한다. 사용자 의미 상태와 Pin 상태는 API 계약의 enum만 사용한다. `thumbnail_url`은 응답 전용이며 `pin_id`, `pin_url`, `status`만 세션·job 이력에 포함한다.

@@ -3,7 +3,7 @@
 > 전문 용어가 낯선 초보자가 텍스트로 묘사한 캐주얼 캐릭터의 **체형/소체, 포즈, 구도**를 기초 드로잉 용어와 역할별 Pinterest 탐색 계획으로 바꾸는 Agent입니다.
 
 > **현재 상태: 기반 골조 구현 중**
-> 현재 API는 `GET /health`만 동작합니다. LLM 기반 해석, Agent 메시지 API, MCP 도구, Langfuse, UI 및 배포는 아직 구현·측정하지 않았습니다. 아래의 목표 구조와 계획 항목은 완료 기능으로 해석하면 안 됩니다.
+> 기본 Agent API는 `GET /health`만 동작합니다. LLM 기반 해석, Agent 메시지 API, Langfuse, UI 및 Agent API 배포는 아직 구현·측정하지 않았습니다. 별도 MCP 서비스의 `get_active_term_card` FastMCP 도구와 TERM_CARD 시작 검증은 구현됐지만, 외부 MCP client 호출·Agent worker 연동·배포 실행 증거는 아직 없습니다. 아래의 목표 구조와 계획 항목은 완료 기능으로 해석하면 안 됩니다.
 
 ## 한눈에 보기
 
@@ -107,11 +107,11 @@ PinterestCrawlerProvider와 widget 기반 Pin 미리보기·보관 경계는 [Pi
 | `POST /api/agent` | 명세 확정·미구현 | 가이드 제출용 Agent API. 서버 세션 쿠키를 발급·재사용하고 `202`와 비동기 `job_id` 반환 |
 | `GET /api/jobs/{job_id}` | 명세 확정·미구현 | 소유 job의 실제 상태·완료 결과·실패·재시도 가능 여부 반환 |
 | `/docs` | FastAPI 기본 문서에서 확인 가능 | 요청·응답 모델 및 오류 응답 확인 |
-| `/mcp` | 미구현. `example_tool` 골조만 존재 | `get_active_term_card(term_id)` FastMCP Streamable HTTP endpoint와 도구 호출 증거 |
-| TERM_CARD JSON 카탈로그 | 문서화·미구현 | 시작 검증 뒤 역할별 활성 카드를 메모리에서 조회 |
-| MCP 접근 제어 | 미구현 | 토큰 또는 허용 클라이언트 정책을 문서화하고 적용 |
+| `/mcp` | 구현됨. `backend/mcp/server.py`의 `get_active_term_card(term_id)` FastMCP 도구. 외부 클라이언트 호출 증거는 미기록 | Streamable HTTP endpoint와 도구 호출 증거 |
+| TERM_CARD JSON 카탈로그 | 구현됨. API·MCP 시작 시 검증 후 역할별 활성 카드를 메모리에 로드 | 요청 중 재읽기·DB 적재 없이 활성 카드를 조회 |
+| MCP 접근 제어 | Cloud Run IAM 배포 설정 구현됨. 실제 배포·호출 증거는 미기록 | 내부 호출자만 `roles/run.invoker`로 접근하는지 검증 |
 
-`/mcp`를 공개 데모 API처럼 무제한 노출하지 않습니다. 구현 시 연결 방법, 도구 목록, 실제 호출 결과, 접근 제어 방식을 이 README에 추가합니다.
+`/mcp`를 공개 데모 API처럼 무제한 노출하지 않습니다. 실제 배포 전 Cloud Run IAM, 연결 방법, 도구 목록과 외부 클라이언트 호출 결과를 함께 검증·기록합니다.
 
 ## 로컬 실행
 
@@ -208,7 +208,7 @@ git push -u origin feat/<작업내용>
 | --- | --- |
 | 사용자 UI URL | 미배포 |
 | Cloud Run Agent API URL | 미배포 |
-| MCP 연결·도구 호출 화면 | 미구현 |
+| 외부 MCP client 연결·도구 호출 증거 화면 | 미구현 |
 | Langfuse 대시보드 스크린샷 | 미측정 |
 | 정상·실패 경로 데모 영상 | 미제작 |
 
