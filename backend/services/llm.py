@@ -16,6 +16,7 @@ LLM 호출은 이 파일 하나로 모은다. 라우터·worker·MCP는 openai�
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import time
@@ -80,6 +81,9 @@ class AgentInterpretationAdapter(Protocol):
         request_text: str,
         *,
         job_id: str,
+        session_id: str,
+        attempt: int,
+        max_attempts: int,
         active_cards_json: str = "",
     ) -> InterpretationOutput:
         ...
@@ -133,13 +137,16 @@ class LLMInterpretationAdapter:
         request_text: str,
         *,
         job_id: str,
+        session_id: str,
+        attempt: int,
+        max_attempts: int,
         active_cards_json: str = "",
     ) -> InterpretationOutput:
         user_message = render_user_message(self._user_template, request_text, active_cards_json)
         started = time.perf_counter()
         try:
             response = await self._client.chat.completions.create(
-                model=self.settings.openrouter_model,
+                model=self.settings.llm_model,
                 messages=[
                     {"role": "system", "content": self._system_message},
                     {"role": "user", "content": user_message},
@@ -181,7 +188,7 @@ class LLMInterpretationAdapter:
                 {
                     "event": "llm.interpret.ok",
                     "job_id": job_id,
-                    "model": self.settings.openrouter_model,
+                    "model": self.settings.llm_model,
                     "prompt_version": self.prompt_version,
                     "latency_ms": latency_ms,
                     "usage": usage,
@@ -192,6 +199,9 @@ class LLMInterpretationAdapter:
         )
         self._observe_langfuse(
             job_id=job_id,
+            session_id=session_id,
+            attempt=attempt,
+            max_attempts=max_attempts,
             usage=usage,
             output=summary,
             request_text=request_text,
@@ -202,6 +212,9 @@ class LLMInterpretationAdapter:
         self,
         *,
         job_id: str,
+        session_id: str,
+        attempt: int,
+        max_attempts: int,
         usage: dict[str, int],
         output: dict[str, Any],
         request_text: str,
@@ -221,17 +234,29 @@ class LLMInterpretationAdapter:
                 secret_key=self.settings.langfuse_secret_key,
                 host=self.settings.langfuse_host,
             )
-            generation = langfuse.generation(
+            # job trace는 worker 소유다. 현재 trace context가 없으면 adapter가
+            # 독립적인 root trace를 만들지 않는다.
+            if not langfuse.get_current_trace_id():
+                logger.debug("Langfuse observation 생략: worker trace context 없음")
+                return
+
+            session_id_hash = hashlib.sha256(session_id.encode("utf-8")).hexdigest()
+            with langfuse.start_as_current_observation(
+                as_type="generation",
                 name=self.prompt_version,
-                model=self.settings.openrouter_model,
+                model=self.settings.llm_model,
+                version=self.prompt_version,
                 input={"request_text": request_text},
-                output=output,
-                metadata={"job_id": job_id},
-            )
-            if usage:
-                generation.usage = usage
+                metadata={
+                    "job_id": job_id,
+                    "session_id": session_id_hash,
+                    "attempt": attempt,
+                    "max_attempts": max_attempts,
+                },
+            ) as generation:
+                generation.update(output=output, usage_details=usage or None)
         except Exception:
-            logger.debug("Langfuse trace 미전송(무시): job_id=%s", job_id, exc_info=True)
+            logger.debug("Langfuse observation 미전송(무시): job_id=%s", job_id, exc_info=True)
 
 
 def default_prompt_path(settings: Any | None = None) -> Path:

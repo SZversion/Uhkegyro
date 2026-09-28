@@ -1,8 +1,10 @@
-﻿"""T14 기본 해석 LLM 어댑터 테스트.
+"""T14 기본 해석 LLM 어댑터 테스트.
 
 진짜 API 호출 없이 가짜 transport로 오류 분류 전 경로와 prompt 조립·출력 검증 계약을 확인한다.
 """
 import asyncio
+import contextlib
+import hashlib
 import json
 import os
 import sys
@@ -208,7 +210,7 @@ def test_format_active_cards_json_keeps_only_contract_fields(snapshot_factory, c
 def test_interpret_select_terms_valid():
     completions = _FakeCompletions(responses=[_FakeResponse(SELECT_JSON)])
     adapter = _adapter(completions)
-    result = _run(adapter.interpret("반동 자세를 찾아요", job_id="r1", active_cards_json="{}"))
+    result = _run(adapter.interpret("반동 자세를 찾아요", job_id="r1", session_id="session-1", attempt=1, max_attempts=3, active_cards_json="{}"))
     assert isinstance(result, InterpretationOutput)
     assert result.interpretation_state is InterpretationState.SELECT_TERMS
     assert len(result.selections) == 1
@@ -219,7 +221,7 @@ def test_interpret_select_terms_valid():
 def test_interpret_needs_clarification_valid():
     completions = _FakeCompletions(responses=[_FakeResponse(CLARIFY_JSON)])
     adapter = _adapter(completions)
-    result = _run(adapter.interpret("자연스러운 자세", job_id="r1"))
+    result = _run(adapter.interpret("자연스러운 자세", job_id="r1", session_id="session-1", attempt=1, max_attempts=3))
     assert result.interpretation_state is InterpretationState.NEEDS_CLARIFICATION
     assert result.clarifying_question
     assert result.clarification_type is not None
@@ -228,7 +230,7 @@ def test_interpret_needs_clarification_valid():
 def test_interpret_passes_system_and_user_messages():
     completions = _FakeCompletions(responses=[_FakeResponse(SELECT_JSON)])
     adapter = _adapter(completions)
-    _run(adapter.interpret("반동", job_id="r1", active_cards_json='{"active_cards": []}'))
+    _run(adapter.interpret("반동", job_id="r1", session_id="session-1", attempt=1, max_attempts=3, active_cards_json='{"active_cards": []}'))
     assert len(completions.calls) == 1
     call = completions.calls[0]
     assert call["model"] == "openai/gpt-4o-mini"
@@ -251,15 +253,20 @@ def _langfuse_generation_kwargs(monkeypatch, *, with_keys=True):
     recorded = {}
 
     class _FakeGeneration:
-        usage = None
+        def update(self, **kwargs):
+            recorded["generation_update"] = kwargs
 
     class _FakeLangfuse:
         def __init__(self, **kwargs):
             recorded["init"] = kwargs
 
-        def generation(self, **kwargs):
+        def get_current_trace_id(self):
+            return "worker-owned-trace"
+
+        def start_as_current_observation(self, **kwargs):
+            recorded["parent_trace_id"] = self.get_current_trace_id()
             recorded["generation"] = kwargs
-            return _FakeGeneration()
+            return contextlib.nullcontext(_FakeGeneration())
 
     fake_module = type(sys)("langfuse")
     fake_module.Langfuse = _FakeLangfuse
@@ -275,7 +282,7 @@ def _langfuse_generation_kwargs(monkeypatch, *, with_keys=True):
 
     completions = _FakeCompletions(responses=[_FakeResponse(SELECT_JSON)])
     adapter = _adapter(completions, settings=settings)
-    _run(adapter.interpret(_REQUEST_TEXT, job_id="job-42", active_cards_json="{}"))
+    _run(adapter.interpret(_REQUEST_TEXT, job_id="job-42", session_id="session-42", attempt=2, max_attempts=3, active_cards_json="{}"))
     return recorded, adapter
 
 
@@ -284,7 +291,7 @@ def test_interpret_structured_log_carries_job_id(caplog):
     completions = _FakeCompletions(responses=[_FakeResponse(SELECT_JSON)])
     adapter = _adapter(completions)
     with caplog.at_level("INFO", logger="backend.services.llm"):
-        _run(adapter.interpret(_REQUEST_TEXT, job_id="job-42", active_cards_json="{}"))
+        _run(adapter.interpret(_REQUEST_TEXT, job_id="job-42", session_id="session-1", attempt=1, max_attempts=3, active_cards_json="{}"))
 
     payloads = [json.loads(r.message) for r in caplog.records if r.name == "backend.services.llm"]
     ok = [p for p in payloads if p.get("event") == "llm.interpret.ok"]
@@ -298,11 +305,12 @@ def test_structured_log_does_not_carry_request_text(caplog):
     completions = _FakeCompletions(responses=[_FakeResponse(SELECT_JSON)])
     adapter = _adapter(completions)
     with caplog.at_level("DEBUG", logger="backend.services.llm"):
-        _run(adapter.interpret(_REQUEST_TEXT, job_id="job-42", active_cards_json="{}"))
+        _run(adapter.interpret(_REQUEST_TEXT, job_id="job-42", session_id="session-1", attempt=1, max_attempts=3, active_cards_json="{}"))
 
     messages = [r.getMessage() for r in caplog.records if r.name == "backend.services.llm"]
     assert messages
     assert all(_REQUEST_TEXT not in message for message in messages)
+    assert all("session-1" not in message for message in messages)
 
 
 def test_langfuse_input_carries_request_text(monkeypatch):
@@ -312,9 +320,20 @@ def test_langfuse_input_carries_request_text(monkeypatch):
 
 
 def test_langfuse_metadata_keeps_job_id(monkeypatch):
-    """Langfuse metadata의 `job_id`는 그대로 유지된다."""
+    """job 관측 context가 원문 없이 worker trace 아래 observation에 기록된다."""
     recorded, _ = _langfuse_generation_kwargs(monkeypatch)
-    assert recorded["generation"]["metadata"] == {"job_id": "job-42"}
+    metadata = recorded["generation"]["metadata"]
+    assert metadata["job_id"] == "job-42"
+    assert metadata["session_id"] == hashlib.sha256(b"session-42").hexdigest()
+    assert len(metadata["session_id"]) == 64
+    assert metadata["attempt"] == 2
+    assert metadata["max_attempts"] == 3
+    assert recorded["generation"]["model"] == "openai/gpt-4o-mini"
+    assert recorded["generation"]["version"] == "uhkegryo-interpreter-v0"
+    assert recorded["parent_trace_id"] == "worker-owned-trace"
+    assert recorded["generation_update"]["usage_details"] == {
+        "input_tokens": 10, "output_tokens": 5, "total_tokens": 15
+    }
 
 
 def test_langfuse_keeps_prompt_version(monkeypatch):
@@ -329,12 +348,48 @@ def test_langfuse_disabled_sends_nothing(monkeypatch):
     assert recorded == {}
 
 
-def test_interpret_requires_job_id_keyword():
-    """`job_id`는 관측 필수 식별자이므로 생략할 수 없다."""
+@pytest.mark.parametrize("missing", ["job_id", "session_id", "attempt", "max_attempts"])
+def test_interpret_requires_worker_context_keywords(missing):
+    """worker trace context는 adapter 계약에서 모두 필수다."""
     completions = _FakeCompletions(responses=[_FakeResponse(SELECT_JSON)])
     adapter = _adapter(completions)
+    context = {
+        "job_id": "job-42",
+        "session_id": "session-42",
+        "attempt": 1,
+        "max_attempts": 3,
+    }
+    context.pop(missing)
     with pytest.raises(TypeError):
-        _run(adapter.interpret("반동", active_cards_json="{}"))
+        adapter.interpret("반동", **context)
+
+
+def test_langfuse_does_not_create_root_trace_without_worker_context(monkeypatch):
+    recorded = {}
+
+    class _FakeLangfuse:
+        def __init__(self, **kwargs):
+            pass
+
+        def get_current_trace_id(self):
+            return None
+
+        def start_as_current_observation(self, **kwargs):
+            recorded["generation"] = kwargs
+            raise AssertionError("adapter must not create a root observation")
+
+    fake_module = type(sys)("langfuse")
+    fake_module.Langfuse = _FakeLangfuse
+    monkeypatch.setitem(sys.modules, "langfuse", fake_module)
+    settings = _real_settings()
+    settings.langfuse_public_key = "pk-test"
+    settings.langfuse_secret_key = "sk-test"
+    adapter = _adapter(_FakeCompletions(responses=[_FakeResponse(SELECT_JSON)]), settings=settings)
+
+    _run(adapter.interpret(
+        _REQUEST_TEXT, job_id="job-42", session_id="session-42", attempt=1, max_attempts=3
+    ))
+    assert "generation" not in recorded
 
 
 # --- 구조화 출력 실패 (LLM_INVALID_STRUCTURED_OUTPUT) ------------------------
@@ -344,7 +399,7 @@ def test_interpret_invalid_json_raises_structured_output_error():
     completions = _FakeCompletions(responses=[_FakeResponse("이건 JSON이 아닙니다")])
     adapter = _adapter(completions)
     with pytest.raises(llm.LLMInvalidStructuredOutput):
-        _run(adapter.interpret("반동", job_id="r1"))
+        _run(adapter.interpret("반동", job_id="r1", session_id="session-1", attempt=1, max_attempts=3))
 
 
 def test_interpret_schema_violation_raises_structured_output_error():
@@ -352,14 +407,14 @@ def test_interpret_schema_violation_raises_structured_output_error():
     completions = _FakeCompletions(responses=[_FakeResponse(bad)])
     adapter = _adapter(completions)
     with pytest.raises(llm.LLMInvalidStructuredOutput):
-        _run(adapter.interpret("반동", job_id="r1"))
+        _run(adapter.interpret("반동", job_id="r1", session_id="session-1", attempt=1, max_attempts=3))
 
 
 def test_interpret_empty_content_raises_structured_output_error():
     completions = _FakeCompletions(responses=[_FakeResponse("")])
     adapter = _adapter(completions)
     with pytest.raises(llm.LLMInvalidStructuredOutput):
-        _run(adapter.interpret("반동", job_id="r1"))
+        _run(adapter.interpret("반동", job_id="r1", session_id="session-1", attempt=1, max_attempts=3))
 
 
 # --- 오류 분류 (LLM_* retryable) ---------------------------------------------
@@ -373,7 +428,7 @@ def test_interpret_timeout_raises_llm_timeout():
     completions = _FakeCompletions(error=error)
     adapter = _adapter(completions)
     with pytest.raises(llm.LLMTimeout) as exc:
-        _run(adapter.interpret("반동", job_id="r1"))
+        _run(adapter.interpret("반동", job_id="r1", session_id="session-1", attempt=1, max_attempts=3))
     assert exc.value.failure_code is FailureCode.LLM_TIMEOUT
     assert exc.value.retryable
 
@@ -385,7 +440,7 @@ def test_interpret_rate_limited_raises_llm_rate_limited():
     completions = _FakeCompletions(error=error)
     adapter = _adapter(completions)
     with pytest.raises(llm.LLMRateLimited) as exc:
-        _run(adapter.interpret("반동", job_id="r1"))
+        _run(adapter.interpret("반동", job_id="r1", session_id="session-1", attempt=1, max_attempts=3))
     assert exc.value.failure_code is FailureCode.LLM_RATE_LIMITED
     assert exc.value.retryable
 
@@ -397,7 +452,7 @@ def test_interpret_upstream_5xx_raises_llm_upstream_unavailable():
     completions = _FakeCompletions(error=error)
     adapter = _adapter(completions)
     with pytest.raises(llm.LLMUpstreamUnavailable) as exc:
-        _run(adapter.interpret("반동", job_id="r1"))
+        _run(adapter.interpret("반동", job_id="r1", session_id="session-1", attempt=1, max_attempts=3))
     assert exc.value.failure_code is FailureCode.LLM_UPSTREAM_UNAVAILABLE
     assert exc.value.retryable
 
@@ -407,7 +462,7 @@ def test_interpret_connection_error_raises_llm_upstream_unavailable():
     completions = _FakeCompletions(error=error)
     adapter = _adapter(completions)
     with pytest.raises(llm.LLMUpstreamUnavailable):
-        _run(adapter.interpret("반동", job_id="r1"))
+        _run(adapter.interpret("반동", job_id="r1", session_id="session-1", attempt=1, max_attempts=3))
 
 
 @pytest.mark.parametrize(
@@ -501,7 +556,7 @@ def test_adapter_uses_prompt_file_configured_by_env(tmp_path):
         adapter = llm.LLMInterpretationAdapter(
             client=_FakeClient(completions), settings=settings
         )
-    _run(adapter.interpret("반동", job_id="r1"))
+    _run(adapter.interpret("반동", job_id="r1", session_id="session-1", attempt=1, max_attempts=3))
     sent = completions.calls[0]["messages"][0]["content"]
     assert "ADAPTER ENV MARKER" in sent
     assert sent.strip() == "ADAPTER ENV MARKER"
@@ -515,6 +570,50 @@ def test_openai_client_has_max_retries_zero():
         )
     call_kwargs = fake_client_cls.call_args.kwargs
     assert call_kwargs.get("max_retries") == 0
+    assert call_kwargs.get("timeout") == 180.0
+
+
+def test_settings_reads_llm_model_and_timeout_from_env():
+    with patch.dict(os.environ, {"LLM_MODEL": "vendor/model-x", "LLM_TIMEOUT_SECONDS": "72"}):
+        settings = _real_settings()
+    assert settings.llm_model == "vendor/model-x"
+    assert settings.llm_timeout_seconds == 72.0
+
+
+def test_settings_defaults_to_spec_model_and_180_second_timeout(monkeypatch):
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    monkeypatch.delenv("LLM_TIMEOUT_SECONDS", raising=False)
+    settings = _real_settings()
+    assert settings.llm_model == "openai/gpt-4o-mini"
+    assert settings.llm_timeout_seconds == 180.0
+
+
+def test_adapter_uses_llm_model_env_value(monkeypatch):
+    with patch.dict(os.environ, {"LLM_MODEL": "vendor/model-x"}):
+        settings = _real_settings()
+    completions = _FakeCompletions(responses=[_FakeResponse(SELECT_JSON)])
+    adapter = _adapter(completions, settings=settings)
+    _run(adapter.interpret("반동", job_id="j1", session_id="s1", attempt=1, max_attempts=3))
+    assert completions.calls[0]["model"] == "vendor/model-x"
+
+
+def test_openrouter_spec_and_deployment_use_llm_model_and_180_second_timeout():
+    spec = (REPO_ROOT / "docs/specs/openrouter-llm-adapter.md").read_text(encoding="utf-8")
+    env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
+    deployment = (REPO_ROOT / "DEPLOYMENT.md").read_text(encoding="utf-8")
+    cloudbuild = (REPO_ROOT / "cloudbuild.yaml").read_text(encoding="utf-8")
+
+    assert "`LLM_MODEL`" in spec
+    assert "180초" in spec
+    assert "LLM_MODEL=openai/gpt-4o-mini" in env_example
+    assert "LLM_TIMEOUT_SECONDS=180" in env_example
+    assert "LLM_MODEL=openai/gpt-4o-mini" in deployment
+    assert "LLM_TIMEOUT_SECONDS=180" in deployment
+    api_deploy, mcp_deploy = cloudbuild.split('id: "deploy-mcp"', maxsplit=1)
+    assert "LLM_MODEL=openai/gpt-4o-mini" in api_deploy
+    assert "LLM_TIMEOUT_SECONDS=180" in api_deploy
+    assert "LLM_MODEL" not in mcp_deploy
+    assert "LLM_TIMEOUT_SECONDS" not in mcp_deploy
 
 
 def test_env_example_declares_concrete_local_prompt_path():
