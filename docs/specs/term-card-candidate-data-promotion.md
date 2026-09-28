@@ -43,7 +43,7 @@
 - **초보자 UX**: 검수 완료 UX 8개를 index의 `active_term_feedback`으로 기록한다. 키는 활성 카드 ID와 정확히 일치하고, `plain_meaning_ko`, `selection_reason_template_ko`, `pinterest_search_notice_ko`, `reference_checkpoints_ko`, `common_confusion_ko`, `clarifying_question_ko`, `review_status`를 모두 유지한다.
 - **카탈로그·문서 갱신**: index의 `dataset_version`은 `0.8-json-runtime-catalog-reviewed`, `card_count`는 82, pose·view 카테고리 수는 58·11로 바꾼다. `SOURCE_PROVENANCE.md`와 `skills/SKILL.md`의 활성 카드 수·승격 기록도 82개에 맞춘다.
 - **실험 이력**: 실험 근거·검증 한계·외부 원시 데이터 미저장 원칙과 8개 카드의 승격 결과는 `SOURCE_PROVENANCE.md`에만 기록한다. 임시 후보 감사 JSON은 index에 넣거나 보존하지 않는다.
-- **검증 한계**: backend와 MCP가 아직 카탈로그 loader를 구현하지 않았으므로, 이번 변경은 JSON 데이터 계약의 정적 검증까지만 수행한다.
+- **검증 한계**: 현재 backend 카탈로그 loader와 MCP `get_active_term_card` 도구는 구현됐지만, 이 데이터 승격 변경 자체는 JSON 데이터 계약의 정적 검증까지만 수행한다. backend·MCP의 실제 호출 검증은 별도 대상이다.
 
 ## AC (Given-When-Then)
 

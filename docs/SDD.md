@@ -43,7 +43,7 @@ LLM·PinterestCrawlerProvider·worker의 회복과 최종 실패 경계는 [api-
 
 ## 5. 데이터·보안·관측
 
-세션·job 영속 구조와 Pin 결과의 보관·widget 재조회는 [session-job-persistence.md](./specs/session-job-persistence.md)와 [pinterest-widget-crawler.md](./specs/pinterest-widget-crawler.md)가 단일 기준이다. `PinterestCrawlerProvider`는 서버에서만 실행하고 활성 카드의 `query_fragments`만 검색 URL에 사용한다. widget의 이미지 바이트·`thumbnail_url`과 부가 Pin 필드는 저장·LLM 입력·trace·로그에 사용하지 않는다. Langfuse trace에는 사용자 원문, 세션 ID 해시와 비밀이 아닌 운영 필드를 남기되 일반 애플리케이션 로그와 LLM 원본 응답에는 남기지 않는다. 세션 쿠키 토큰 원문과 그 해시는 trace·로그에 남기지 않는다.
+세션·job 영속 구조와 Pin 결과의 보관·widget 재조회는 [session-job-persistence.md](./specs/session-job-persistence.md)와 [pinterest-widget-crawler.md](./specs/pinterest-widget-crawler.md)가 단일 기준이다. `PinterestCrawlerProvider` 구현 시 서버에서만 실행하고 활성 카드의 `query_fragments`만 카드 유래 입력으로 사용한다. 결정론 URL 빌더는 기존 조각의 `drawing` 포함 여부를 검사하지 않고 결합한 검색어 끝에 고정 접미사 `drawing`을 무조건 한 번 추가해야 한다. widget의 이미지 바이트·`thumbnail_url`과 부가 Pin 필드는 저장·LLM 입력·trace·로그에 사용하지 않는다. Langfuse trace에는 사용자 원문, 세션 ID 해시와 비밀이 아닌 운영 필드를 남기되 일반 애플리케이션 로그와 LLM 원본 응답에는 남기지 않는다. 세션 쿠키 토큰 원문과 그 해시는 trace·로그에 남기지 않는다.
 
 ## 6. 검증
 

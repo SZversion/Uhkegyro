@@ -11,7 +11,7 @@
 
 ## What
 
-신뢰 원본은 시작 검증을 통과해 메모리에 로드된 TERM_CARD JSON 카탈로그와 서버 결정론 코드다. LLM 출력은 후보일 뿐이며 resolver가 역할·활성·조건을 다시 검증한다. 서버 `PinterestCrawlerProvider`는 검증된 `query_fragments`만 공개 검색에 사용한다. 검색 결과의 Pin ID·`pin_url`·widget `thumbnail_url`은 표시용 untrusted data이며 카드·검색어·프롬프트를 바꾸지 않는다.
+신뢰 원본은 시작 검증을 통과해 메모리에 로드된 TERM_CARD JSON 카탈로그와 서버 결정론 코드다. LLM 출력은 후보일 뿐이며 resolver가 역할·활성·조건을 다시 검증한다. `PinterestCrawlerProvider` 구현 시 서버는 검증된 `query_fragments`만 카드 유래 입력으로 사용하고, 결정론 URL 빌더는 기존 조각의 `drawing` 포함 여부를 검사하거나 제거하지 않고 최종 검색어 끝의 고정 접미사 `drawing`을 무조건 한 번 추가해야 한다. 검색 결과의 Pin ID·`pin_url`·widget `thumbnail_url`은 표시용 untrusted data이며 카드·검색어·프롬프트를 바꾸지 않는다.
 
 ## How
 
