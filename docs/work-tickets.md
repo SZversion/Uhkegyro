@@ -72,7 +72,7 @@
 - Spec: `docs/specs/session-job-persistence.md`
 - 작업: session 생성·조회·활동 갱신·토큰 hash 조회·만료 정리.
 - AC (Given-When-Then): GIVEN 세션 요청이 있을 때 WHEN 저장소가 처리하면 THEN 토큰 원문 없이 hash만 저장하고 `last_activity_at`을 갱신한다.
-- 의존성: PR-01
+- 의존성: PR-38
 - 파일 범위: session repository와 repository 테스트만 수정한다.
 - 예상 변경량: 250줄 이하
 
@@ -82,7 +82,7 @@
 - Spec: `docs/specs/session-job-persistence.md`
 - 작업: Job 저장·조회·상태 갱신·동일 키 재사용·충돌 판정.
 - AC (Given-When-Then): GIVEN 같은 세션에서 요청이 재전송될 때 WHEN 키와 원문이 같으면 THEN 기존 Job을 반환하고 원문이 다르면 충돌시킨다.
-- 의존성: PR-01, PR-02
+- 의존성: PR-38, PR-39
 - 파일 범위: Job repository, idempotency 모델, repository 테스트만 수정한다.
 - 예상 변경량: 300줄 이하
 
@@ -92,7 +92,7 @@
 - Spec: `docs/specs/api-contract.md`, `docs/specs/session-job-persistence.md`
 - 작업: `POST /api/agent`, `GET /api/jobs/{job_id}`를 PostgreSQL Repository에 연결한다.
 - AC (Given-When-Then): GIVEN 유효한 Agent 요청이 있을 때 WHEN API가 저장소를 호출하면 THEN 쿠키 소유권·404 위장·90일 갱신·queued 응답을 유지한다.
-- 의존성: PR-02, PR-03
+- 의존성: PR-39, PR-40
 - 파일 범위: `backend/routes/agent.py`와 route 테스트만 수정한다.
 - 예상 변경량: 250줄 이하
 
@@ -102,7 +102,7 @@
 - Spec: `docs/specs/session-job-persistence.md`
 - 작업: 3개월 비활성 session과 연결 Job을 정리한다.
 - AC (Given-When-Then): GIVEN 만료된 session이 있을 때 WHEN cleanup을 실행하면 THEN 연결 Job과 원문도 함께 삭제된다.
-- 의존성: PR-02, PR-03
+- 의존성: PR-39, PR-40
 - 파일 범위: retention task와 cleanup 테스트만 수정한다.
 - 예상 변경량: 180줄 이하
 
@@ -114,7 +114,7 @@
 - Spec: `docs/specs/postgres-job-worker.md`
 - 작업: queued Job claim, attempt 증가, lease 기록.
 - AC (Given-When-Then): GIVEN 같은 queued Job에 동시 claim이 발생할 때 WHEN 두 worker가 실행되면 THEN 하나만 claim한다.
-- 의존성: PR-03
+- 의존성: PR-40
 - 파일 범위: claim repository 메서드와 동시성 테스트만 수정한다.
 - 예상 변경량: 300줄 이하
 
@@ -124,7 +124,7 @@
 - Spec: `docs/specs/postgres-job-worker.md`, `docs/specs/api-contract.md`
 - 작업: validating/searching/rendering과 completed/failed 전이를 구현한다.
 - AC (Given-When-Then): GIVEN 현재 상태와 허용되지 않은 다음 상태가 주어질 때 WHEN 전이를 시도하면 THEN 거부하고 종결 payload는 계약대로 저장한다.
-- 의존성: PR-06
+- 의존성: PR-43
 - 파일 범위: 상태 전이 함수와 상태 전이 테스트만 수정한다.
 - 예상 변경량: 250줄 이하
 
@@ -134,7 +134,7 @@
 - Spec: `docs/specs/postgres-job-worker.md`
 - 작업: `next_retry_at`, 최대 3회 재시도, lease 만료 복구.
 - AC (Given-When-Then): GIVEN 오류가 발생할 때 WHEN worker가 오류를 분류하면 THEN 재시도 가능 오류만 예약하고 최대 3회에서 종료한다.
-- 의존성: PR-06, PR-07
+- 의존성: PR-43, PR-44
 - 파일 범위: retry/recovery worker와 retry 테스트만 수정한다.
 - 예상 변경량: 300줄 이하
 
@@ -144,7 +144,7 @@
 - Spec: `docs/specs/api-contract.md`, `docs/specs/prompt-interpreter-v0.md`
 - 작업: 저장 Job을 LLM adapter → resolver → 응답 조립으로 실행한다.
 - AC: success, clarification, partial, terminal failure를 계약대로 저장한다.
-- 의존성: PR-04, PR-06, PR-07, PR-08
+- 의존성: PR-41, PR-43, PR-44, PR-45
 
 ### Pinterest
 
@@ -164,7 +164,7 @@
 - Spec: `docs/specs/pinterest-widget-crawler.md`
 - 작업: 서버 Playwright 공개 검색과 Pin ID·URL 추출.
 - AC (Given-When-Then): GIVEN 서버 검색이 실행될 때 WHEN provider가 요청을 만들면 THEN Pinterest API v5와 브라우저 직접 호출을 사용하지 않는다.
-- 의존성: PR-10
+- 의존성: PR-47
 - 파일 범위: 서버 검색 adapter와 fixture parser 테스트만 수정한다.
 - 예상 변경량: 350줄 이하
 
@@ -174,7 +174,7 @@
 - Spec: `docs/specs/pinterest-widget-crawler.md`
 - 작업: widget 조회, deleted 처리, 역할별 8개 제한, 원순서 보존.
 - AC (Given-When-Then): GIVEN widget 응답에 thumbnail이 있을 때 WHEN 결과를 반환하면 THEN 현재 응답에만 포함하고 저장·trace·로그에는 남기지 않는다.
-- 의존성: PR-10, PR-11
+- 의존성: PR-47, PR-48
 - 파일 범위: widget adapter, 결과 조립기, 개인정보 비저장 테스트만 수정한다.
 - 예상 변경량: 350줄 이하
 
@@ -184,7 +184,7 @@
 - Spec: `docs/specs/api-contract.md`, `docs/specs/pinterest-widget-crawler.md`
 - 작업: 검색 provider 호출과 reason code 조립.
 - AC: `PIN_RESULTS_EMPTY`와 `PIN_SEARCH_UNAVAILABLE`을 구분한다.
-- 의존성: PR-09, PR-12
+- 의존성: PR-46, PR-49
 
 ### 관측·보안
 
@@ -194,7 +194,7 @@
 - Spec: `docs/specs/observability-and-prompt-versioning.md`
 - 작업: job/session/attempt/model/prompt version을 trace에 기록한다.
 - AC: 세션 토큰 원문·thumbnail URL·secret이 trace에 없다.
-- 의존성: PR-09
+- 의존성: PR-46
 
 #### PR-52 · 실패 코드·사용자 메시지 매핑
 
@@ -202,7 +202,7 @@
 - Spec: `docs/specs/api-contract.md`
 - 작업: LLM·검색·DB·worker 예외를 공개 FailureCode로 매핑한다.
 - AC: 내부 오류 원문과 secret이 `user_message`에 노출되지 않는다.
-- 의존성: PR-09, PR-13
+- 의존성: PR-46, PR-50
 
 #### PR-53 · 외부 MCP client 증거
 
@@ -233,7 +233,7 @@
 - Spec: `docs/specs/nextjs-agent-ui.md`
 - 작업: 1~500자 입력, Idempotency-Key, 동일 origin `/api` 호출.
 - AC: 유효성 오류가 API 호출 전에 표시된다.
-- 의존성: PR-17, `docs/specs/nextjs-agent-ui.md`
+- 의존성: PR-54, `docs/specs/nextjs-agent-ui.md`
 
 #### PR-56 · UI Job polling
 
@@ -241,7 +241,7 @@
 - Spec: `docs/specs/nextjs-agent-ui.md`
 - 작업: queued/running/completed/failed 표시와 polling 종료.
 - AC: 종결 상태에서 polling을 중단한다.
-- 의존성: PR-17, PR-18
+- 의존성: PR-54, PR-55
 
 #### PR-57 · UI 결과·질문·Pin 링크
 
@@ -249,7 +249,7 @@
 - Spec: `docs/specs/nextjs-agent-ui.md`
 - 작업: 용어 설명, 질문, 부분 결과, 원본 Pin 링크와 thumbnail 표시.
 - AC: thumbnail URL을 저장값처럼 다루지 않는다.
-- 의존성: PR-17, PR-19, PR-13
+- 의존성: PR-54, PR-56, PR-50
 
 ### 평가·출시
 
@@ -259,7 +259,7 @@
 - Spec: `docs/specs/contract-evaluation-variants.md`
 - 작업: 원문 30건·변형 70건 실행과 계약 위반 집계.
 - AC (Given-When-Then): GIVEN 동일 평가셋이 있을 때 WHEN 평가 실행기를 실행하면 THEN 성공률과 실패 유형을 동일한 형식으로 산출한다.
-- 의존성: PR-09, PR-13, PR-15
+- 의존성: PR-46, PR-50, PR-52
 - 파일 범위: `evals/run_evals.py`와 평가 실행 테스트만 추가한다.
 - 예상 변경량: 350줄 이하
 
@@ -269,7 +269,7 @@
 - Spec: `docs/specs/observability-and-prompt-versioning.md`
 - 작업: p50/p95 지연, 요청당 비용, retry 비율을 측정한다.
 - AC (Given-When-Then): GIVEN 평가 실행 결과가 있을 때 WHEN 측정 명령을 다시 실행하면 THEN 동일 평가셋 기준의 지연·비용 결과를 재현한다.
-- 의존성: PR-21, PR-14
+- 의존성: PR-58, PR-51
 - 파일 범위: 측정 스크립트와 측정 결과 schema 테스트만 추가한다.
 - 예상 변경량: 300줄 이하
 
@@ -279,7 +279,7 @@
 - 작업: 평가·관측·비용·실패 사례·출시 판정을 기록한다.
 - AC: 모든 기준을 통과/미통과로 명시한다.
 - Spec: `docs/SCAFFOLD.md`, `docs/specs/observability-and-prompt-versioning.md`
-- 의존성: PR-21, PR-22
+- 의존성: PR-58, PR-59
 
 #### PR-61 · 배포·데모 증거
 
@@ -287,7 +287,7 @@
 - 작업: Cloud Run API, UI URL, MCP client, 정상·실패 데모 증거를 기록한다.
 - AC: 실제 날짜·URL·모델·prompt version만 기록한다.
 - Spec: `DEPLOYMENT.md`, `docs/specs/mcp-contract.md`
-- 의존성: PR-16, PR-20, PR-23
+- 의존성: PR-53, PR-57, PR-60
 
 ## 의존 순서
 
@@ -305,7 +305,7 @@ PR-38 → PR-39 → PR-40 → PR-41 → PR-42
         PR-58 → PR-59 → PR-60 → PR-61
 ```
 
-PR-14와 PR-17은 계약이 확정되면 병렬로 시작할 수 있다. UI 구현은 PR-17 Spec이 먼저 merge된 뒤 시작한다.
+PR-51과 PR-54는 계약이 확정되면 병렬로 시작할 수 있다. UI 구현은 PR-54 Spec이 먼저 merge된 뒤 시작한다.
 
 
 ## PR 완료 체크리스트
