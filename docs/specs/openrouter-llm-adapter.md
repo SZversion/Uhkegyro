@@ -28,6 +28,8 @@ adapter 입력은 사용자 원문과 활성 TERM_CARD 후보 경계다. 출력�
 | `rate_limited` (429) | 2회 | 같은 입력·모델로 새 요청 | 유효한 `Retry-After`를 밀리초로 변환해 `min(max(value, 1,000), 30,000)`; 없거나 해석 불가하면 1,000ms·2,000ms | `LLM_RATE_LIMITED` | 일반 실패 문구 |
 | `incomplete_or_unclassified_upstream` | 2회 | 미완료 응답 또는 SDK·네트워크에서 온 분류 불가 upstream 예외를 같은 입력·모델로 새 요청 | 1차 실패 뒤 1,000ms, 2차 실패 뒤 2,000ms | `LLM_UPSTREAM_UNAVAILABLE` | 일반 실패 문구 |
 
+- Adapter 예외는 worker가 기록할 `error_type`을 제공한다. timeout은 `timeout`, 429는 `rate_limited`, HTTP 5xx는 `upstream_5xx`, 미완료 응답·분류 불가 upstream 오류는 `incomplete_or_unclassified_upstream`, Pydantic 출력 검증 오류는 `pydantic_validation_error`다.
+- `Retry-After`는 delay-seconds와 HTTP-date 형식을 모두 받는다. HTTP-date는 현재 UTC 시각까지의 delay로 변환하고 1,000~30,000ms로 clamp한다. 이미 지난 날짜나 해석할 수 없는 값은 유효하지 않은 값으로 보고 worker의 attempt별 기본 backoff(1,000ms·2,000ms)를 사용한다.
 - 우리 코드가 던진 예외는 `incomplete_or_unclassified_upstream`으로 바꾸지 않는다. `INTERNAL_CODE_ERROR`로 즉시 failed 처리하며 자동 재시도하지 않는다.
 - API 키는 trace·로그에 기록하지 않는다. 사용자 원문은 Langfuse trace에만 기록하며 LLM 원본 응답은 저장하지 않는다.
 - resolver가 adapter 출력을 JSON 카탈로그와 대조해 활성 term·역할·조건을 검증한다.
@@ -38,4 +40,7 @@ adapter 입력은 사용자 원문과 활성 TERM_CARD 후보 경계다. 출력�
 - GIVEN: 180초 timeout, WHEN: worker가 처리, THEN: 첫 실패 뒤 `next_retry_at`은 1,000ms 후이며 해당 attempt는 `LLM_TIMEOUT`으로 회복 처리한다.
 - GIVEN: 계약 밖 term ID가 포함된 구조화 출력, WHEN: resolver가 검증, THEN: 검증 오류를 포함한 구조화 출력 재요청을 최대 두 번 더 하고 세 번째도 실패하면 `LLM_INVALID_STRUCTURED_OUTPUT`으로 처리한다.
 - GIVEN: OpenRouter가 `Retry-After: 60`과 429를 반환, WHEN: worker가 다음 시도를 예약, THEN: SDK 내부 재시도 없이 `error_type=rate_limited`, `backoff_ms=30,000`, `failure_code=null`을 기록한다.
+- GIVEN: OpenRouter가 미래 HTTP-date 형식 `Retry-After`를 반환, WHEN: adapter가 delay를 변환, THEN: 현재 시각과의 차이를 millisecond로 바꾸고 1,000~30,000ms 범위로 clamp한다.
+- GIVEN: OpenRouter가 이미 지난 HTTP-date `Retry-After`를 반환, WHEN: adapter가 delay를 변환, THEN: `retry_after_ms=null`을 worker에 전달해 attempt 기본 backoff를 사용하게 한다.
+- GIVEN: LLM 호출이 timeout, 429, HTTP 5xx, 미완료 응답 또는 Pydantic 검증 실패로 끝남, WHEN: adapter가 예외를 worker에 전달, THEN: 각각 `timeout`, `rate_limited`, `upstream_5xx`, `incomplete_or_unclassified_upstream`, `pydantic_validation_error`를 제공한다.
 - GIVEN: 정상 구조화 출력, WHEN: resolver가 처리, THEN: adapter는 최종 상태나 검색 URL을 결정하지 않는다.

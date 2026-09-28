@@ -19,6 +19,8 @@ from __future__ import annotations
 import json
 import logging
 import time
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -42,23 +44,43 @@ class LLMError(Exception):
     """LLM 호출 실패를 안정된 failure_code로 분류한다 (api-contract.md §37)."""
 
     failure_code: FailureCode
+    error_type: str
     retryable: bool = True
 
 
 class LLMTimeout(LLMError):
     failure_code = FailureCode.LLM_TIMEOUT
+    error_type = "timeout"
 
 
 class LLMRateLimited(LLMError):
     failure_code = FailureCode.LLM_RATE_LIMITED
+    error_type = "rate_limited"
+
+    def __init__(self, message: str, *, retry_after_ms: int | None = None) -> None:
+        super().__init__(message)
+        self.retry_after_ms = retry_after_ms
 
 
 class LLMUpstreamUnavailable(LLMError):
     failure_code = FailureCode.LLM_UPSTREAM_UNAVAILABLE
+    error_type = "incomplete_or_unclassified_upstream"
+
+    def __init__(self, message: str, *, error_type: str | None = None) -> None:
+        super().__init__(message)
+        if error_type is not None:
+            self.error_type = error_type
 
 
 class LLMInvalidStructuredOutput(LLMError):
     failure_code = FailureCode.LLM_INVALID_STRUCTURED_OUTPUT
+    error_type = "pydantic_validation_error"
+
+
+class LLMIncompleteResponse(LLMUpstreamUnavailable):
+    """완료되지 않은 upstream 응답은 다음 job attempt에서 다시 요청한다."""
+
+    error_type = "incomplete_or_unclassified_upstream"
 
 
 class PromptConfigurationError(LLMError):
@@ -157,14 +179,27 @@ class LLMInterpretationAdapter:
         except openai.APITimeoutError as exc:
             raise LLMTimeout(f"OpenRouter 요청 시간 초과: {exc}") from exc
         except openai.RateLimitError as exc:
-            raise LLMRateLimited(f"OpenRouter rate limit: {exc}") from exc
+            raise LLMRateLimited(
+                "OpenRouter rate limit",
+                retry_after_ms=_retry_after_ms(exc),
+            ) from exc
         except openai.APIConnectionError as exc:
             raise LLMUpstreamUnavailable(f"OpenRouter 연결 실패: {exc}") from exc
         except openai.APIStatusError as exc:
             status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
             if status and int(status) == 429:
-                raise LLMRateLimited(f"OpenRouter rate limit: {exc}") from exc
-            raise LLMUpstreamUnavailable(f"OpenRouter HTTP {status}: {exc}") from exc
+                raise LLMRateLimited(
+                    "OpenRouter rate limit",
+                    retry_after_ms=_retry_after_ms(exc),
+                ) from exc
+            raise LLMUpstreamUnavailable(
+                f"OpenRouter HTTP {status}: {exc}",
+                error_type=(
+                    "upstream_5xx"
+                    if status and 500 <= int(status) <= 599
+                    else "incomplete_or_unclassified_upstream"
+                ),
+            ) from exc
         except httpx.TimeoutException as exc:
             raise LLMTimeout(f"OpenRouter 요청 시간 초과: {exc}") from exc
         except httpx.HTTPError as exc:
@@ -363,11 +398,46 @@ def format_active_cards_json(snapshot: CatalogSnapshot) -> str:
 
 
 def _extract_content(response: Any) -> str:
-    message = getattr(response, "choices", None) and getattr(response.choices[0], "message", None)
+    choices = getattr(response, "choices", None)
+    if not choices:
+        raise LLMIncompleteResponse("OpenRouter 응답에 choice가 없다")
+    if getattr(choices[0], "finish_reason", "stop") != "stop":
+        raise LLMIncompleteResponse("OpenRouter 응답이 완료되지 않았다")
+    message = getattr(choices[0], "message", None)
     content = getattr(message, "content", None)
     if not content or not str(content).strip():
-        raise LLMInvalidStructuredOutput("완료 응답이 내용이 비어 있다")
+        raise LLMIncompleteResponse("OpenRouter 응답 내용이 비어 있다")
     return str(content)
+
+
+def _retry_after_ms(
+    exc: openai.APIStatusError,
+    *,
+    now: datetime | None = None,
+) -> int | None:
+    """Retry-After 초 단위 또는 HTTP-date 값을 millisecond로 바꾼다.
+
+    이미 지난 날짜와 해석 불가한 값은 None을 반환해 worker의 기본 backoff를 사용하게 한다.
+    """
+    raw = getattr(getattr(exc, "response", None), "headers", {}).get("retry-after")
+    if raw is None:
+        return None
+    try:
+        seconds = float(raw)
+    except (TypeError, ValueError):
+        try:
+            retry_at = parsedate_to_datetime(str(raw))
+        except (TypeError, ValueError, OverflowError):
+            return None
+        if retry_at.tzinfo is None:
+            retry_at = retry_at.replace(tzinfo=timezone.utc)
+        current_time = now or datetime.now(timezone.utc)
+        if current_time.tzinfo is None:
+            current_time = current_time.replace(tzinfo=timezone.utc)
+        seconds = (retry_at - current_time).total_seconds()
+    if not 0 <= seconds < float("inf"):
+        return None
+    return min(max(round(seconds * 1000), 1000), 30000)
 
 
 def _extract_usage(response: Any) -> dict[str, int]:

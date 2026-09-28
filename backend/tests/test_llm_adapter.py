@@ -4,6 +4,8 @@
 """
 import asyncio
 import contextlib
+from datetime import datetime, timedelta, timezone
+from email.utils import format_datetime
 import json
 import os
 import sys
@@ -404,15 +406,35 @@ def test_interpret_schema_violation_raises_structured_output_error():
     bad = '{"interpretation_state": "select_terms", "selections": [], "clarifying_question": null}'
     completions = _FakeCompletions(responses=[_FakeResponse(bad)])
     adapter = _adapter(completions)
-    with pytest.raises(llm.LLMInvalidStructuredOutput):
+    with pytest.raises(llm.LLMInvalidStructuredOutput) as exc:
         _run(adapter.interpret("반동", job_id="r1", session_id="session-1", attempt=1, max_attempts=3))
+    assert exc.value.error_type == "pydantic_validation_error"
 
 
-def test_interpret_empty_content_raises_structured_output_error():
+def test_interpret_empty_content_is_incomplete_upstream_response():
     completions = _FakeCompletions(responses=[_FakeResponse("")])
     adapter = _adapter(completions)
-    with pytest.raises(llm.LLMInvalidStructuredOutput):
+    with pytest.raises(llm.LLMIncompleteResponse) as exc:
         _run(adapter.interpret("반동", job_id="r1", session_id="session-1", attempt=1, max_attempts=3))
+    assert exc.value.error_type == "incomplete_or_unclassified_upstream"
+
+
+def test_interpret_empty_choices_are_incomplete_upstream_response():
+    response = _FakeResponse(SELECT_JSON)
+    response.choices = []
+    adapter = _adapter(_FakeCompletions(responses=[response]))
+    with pytest.raises(llm.LLMIncompleteResponse) as exc:
+        _run(adapter.interpret("반동", job_id="r1", session_id="s1", attempt=1, max_attempts=3))
+    assert exc.value.error_type == "incomplete_or_unclassified_upstream"
+
+
+def test_interpret_unfinished_choice_is_incomplete_upstream_response():
+    response = _FakeResponse(SELECT_JSON)
+    response.choices[0].finish_reason = "length"
+    adapter = _adapter(_FakeCompletions(responses=[response]))
+    with pytest.raises(llm.LLMIncompleteResponse) as exc:
+        _run(adapter.interpret("반동", job_id="r1", session_id="s1", attempt=1, max_attempts=3))
+    assert exc.value.error_type == "incomplete_or_unclassified_upstream"
 
 
 # --- 오류 분류 (LLM_* retryable) ---------------------------------------------
@@ -428,6 +450,7 @@ def test_interpret_timeout_raises_llm_timeout():
     with pytest.raises(llm.LLMTimeout) as exc:
         _run(adapter.interpret("반동", job_id="r1", session_id="session-1", attempt=1, max_attempts=3))
     assert exc.value.failure_code is FailureCode.LLM_TIMEOUT
+    assert exc.value.error_type == "timeout"
     assert exc.value.retryable
 
 
@@ -440,7 +463,43 @@ def test_interpret_rate_limited_raises_llm_rate_limited():
     with pytest.raises(llm.LLMRateLimited) as exc:
         _run(adapter.interpret("반동", job_id="r1", session_id="session-1", attempt=1, max_attempts=3))
     assert exc.value.failure_code is FailureCode.LLM_RATE_LIMITED
+    assert exc.value.error_type == "rate_limited"
     assert exc.value.retryable
+
+
+@pytest.mark.parametrize("header, expected", [("60", 30000), ("0.5", 1000), ("bad", None)])
+def test_rate_limit_retry_after_is_clamped_for_worker(header, expected):
+    error = openai.RateLimitError(
+        "rate",
+        response=httpx.Response(status_code=429, headers={"Retry-After": header}, request=_REQ),
+        body=None,
+    )
+    adapter = _adapter(_FakeCompletions(error=error))
+    with pytest.raises(llm.LLMRateLimited) as exc:
+        _run(adapter.interpret("반동", job_id="r1", session_id="s1", attempt=1, max_attempts=3))
+    assert exc.value.retry_after_ms == expected
+
+
+def test_retry_after_http_date_is_converted_to_milliseconds():
+    now = datetime(2026, 9, 28, 0, 0, 0, tzinfo=timezone.utc)
+    header = format_datetime(now + timedelta(seconds=12), usegmt=True)
+    error = openai.RateLimitError(
+        "rate",
+        response=httpx.Response(status_code=429, headers={"Retry-After": header}, request=_REQ),
+        body=None,
+    )
+    assert llm._retry_after_ms(error, now=now) == 12000
+
+
+def test_expired_retry_after_http_date_falls_back_to_worker_backoff():
+    now = datetime(2026, 9, 28, 0, 0, 0, tzinfo=timezone.utc)
+    header = format_datetime(now - timedelta(seconds=1), usegmt=True)
+    error = openai.RateLimitError(
+        "rate",
+        response=httpx.Response(status_code=429, headers={"Retry-After": header}, request=_REQ),
+        body=None,
+    )
+    assert llm._retry_after_ms(error, now=now) is None
 
 
 def test_interpret_upstream_5xx_raises_llm_upstream_unavailable():
@@ -452,6 +511,7 @@ def test_interpret_upstream_5xx_raises_llm_upstream_unavailable():
     with pytest.raises(llm.LLMUpstreamUnavailable) as exc:
         _run(adapter.interpret("반동", job_id="r1", session_id="session-1", attempt=1, max_attempts=3))
     assert exc.value.failure_code is FailureCode.LLM_UPSTREAM_UNAVAILABLE
+    assert exc.value.error_type == "upstream_5xx"
     assert exc.value.retryable
 
 
@@ -459,8 +519,9 @@ def test_interpret_connection_error_raises_llm_upstream_unavailable():
     error = openai.APIConnectionError(request=_REQ)
     completions = _FakeCompletions(error=error)
     adapter = _adapter(completions)
-    with pytest.raises(llm.LLMUpstreamUnavailable):
+    with pytest.raises(llm.LLMUpstreamUnavailable) as exc:
         _run(adapter.interpret("반동", job_id="r1", session_id="session-1", attempt=1, max_attempts=3))
+    assert exc.value.error_type == "incomplete_or_unclassified_upstream"
 
 
 @pytest.mark.parametrize(
