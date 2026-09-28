@@ -1,7 +1,9 @@
 # 이 저장소에 미리 들어 있는 것
 
-처음 열면 낯선 폴더가 여럿 보일 겁니다. **전부 비어 있는 뼈대**이고, 여러분이 채우는 자리입니다.
+처음 열면 낯선 폴더가 여럿 보일 겁니다. 이 문서는 **강의용 초기 배치 안내**이며, 현재 구현 상태의 단일 기준은 아닙니다.
 "어디에 둬야 하나"를 고민하는 데 시간을 쓰지 말라고 미리 잡아 두었습니다.
+
+현재 구현·상태는 `README.md`와 `docs/specs/`를 우선합니다. 특히 이 저장소의 실제 MCP 구현은 `backend/mcp/server.py`이고, `mcp_server/server.py`는 초기 FastMCP 골조로 런타임·Docker 이미지에서 사용하지 않습니다.
 
 쓰지 않는 것은 **지워도 됩니다.** 폴더를 남겨두는 것 자체로 점수를 받지는 않습니다.
 
@@ -13,9 +15,10 @@
 backend/              FastAPI 서버              ← 필수 2
   main.py               진입점 (/health 있음)
   services/llm.py       LLM 호출을 모으는 자리   ← 중요
+  mcp/server.py          실제 FastMCP `get_active_term_card` 도구
   requirements.txt
 skills/SKILL.md       도메인 지식·판단 기준      ← 필수 5
-mcp_server/server.py  MCP 서버                  ← 필수 5
+mcp_server/server.py  강의용 초기 FastMCP 골조 (런타임 미사용)
 evals/                평가셋 30건               ← 필수 4
   dataset.jsonl         형식 예시 3건
   README.md             만드는 법
@@ -75,9 +78,9 @@ routers/extract.py
 
 검색해서 그때그때 넣는 방식(RAG)은 3차에서 다룹니다. 2차에서는 **적어 넣습니다.**
 
-### `mcp_server/server.py`
+### `mcp_server/server.py` (초기 골조)
 
-필수 조건 5의 나머지 절반. 2주차 17강에서 만든 `FastMCP` 그대로입니다.
+2주차 17강에서 만든 `FastMCP` 초기 예시입니다. 이 프로젝트의 실제 구현·배포 진입점은 `backend/mcp/server.py`, `backend/mcp/main.py`입니다. 아래 코드는 현재 구현 상태를 나타내지 않습니다.
 
 ```python
 @mcp.tool()

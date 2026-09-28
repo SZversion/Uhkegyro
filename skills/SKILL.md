@@ -22,7 +22,7 @@ LLM은 입력의 의미를 해석하고 허용된 `term_id` 후보와 근거를 
 | `layout` | 화면 안에서 요소를 배치하는 방식 | 신체 자세나 시점의 대체 용어가 아니다. |
 | `confidence_gate` | 카드를 선택하기 위해 입력에서 확인되어야 하는 최소 단서 | 단서가 부족하면 용어와 링크를 추측하지 않는다. |
 | `requires_all_of` / `requires_any_of` | 세부 카드가 전제하는 부모 `term_id`의 카탈로그 의존 관계 | 각 배열은 부모 ID 연결을 선언한다. LLM은 부모를 같은 역할의 추가 selection으로 반환하지 않으며, resolver가 그래프의 존재·활성 상태·순환을 확인한다. |
-| `query_fragments` | 코드가 Pinterest 검색 입력을 만들 때 조합하는 표준 전문용어 조각 | 쉬운 설명이나 일상어를 검색어에 임의로 덧붙이지 않는다. |
+| `query_fragments` | 코드가 Pinterest 검색 입력을 만들 때 조합하는 표준 전문용어 조각 | 구현 시 결정론 URL 빌더는 기존 조각의 `drawing` 포함 여부를 검사하지 않고 최종 검색어 끝에 고정 접미사 `drawing`을 무조건 한 번 추가해야 한다. 따라서 현재 `pose_gesture` 카드의 최종 검색어는 `gesture drawing action line reference drawing`이다. |
 | 후속 사용자 메시지 | 질문 뒤에도 활성 카드로 안전하게 해석할 수 없는 경우의 다음 입력 | 현재 공개 API와 LLM 출력에는 `pending_human_review`를 쓰지 않는다. 새 메시지는 새 job이며, 계속 단서가 부족하면 `needs_clarification`을 유지한다. |
 
 ## 판단 기준
@@ -33,7 +33,7 @@ LLM은 입력의 의미를 해석하고 허용된 `term_id` 후보와 근거를 
 4. 한 카드의 `term_id`는 역할이 맞고, `confidence_gate`, `requires_all_of`, `requires_any_of`를 모두 만족할 때만 선택한다. 현재 카탈로그의 활성 카드 밖 term ID와 `detail`, `intent`, `style` 역할은 선택·표시하지 않는다.
 5. 단서가 부족하거나 서로 충돌하면 전문 용어·Pinterest 링크를 만들지 말고, `needs_clarification`과 사용자가 답할 수 있는 쉬운 추가 질문 하나를 반환한다. 다음 사용자 응답은 새 job이며, 여전히 단서가 부족하면 같은 상태로 질문을 반복한다.
 6. 응답에는 선택한 용어의 쉬운 뜻, 입력에서 확인한 근거, 관찰할 지점, 혼동하기 쉬운 점을 카드 데이터에 따라 제공한다. 대안 용어는 설명·추가 질문용이며 자동 검색 역할이 아니다.
-7. Pinterest 검색 입력은 선택된 활성 카드의 `query_fragments`만 사용한다. 서버 `PinterestCrawlerProvider`가 공개 검색에서 Pin ID·`pin_url`을 수집하고 모든 ID를 widget endpoint로 조회해 현재 응답용 `thumbnail_url`을 얻는다. 검색 결과의 존재·품질·저작권·사용 적합성은 보장하지 않으며, 사용자가 외부 원본에서 직접 확인해야 한다.
+7. Pinterest 검색 입력의 카드 유래 부분은 선택된 활성 카드의 `query_fragments`만 사용한다. `PinterestCrawlerProvider` 구현 시 결정론 URL 빌더는 기존 조각의 `drawing` 포함 여부를 검사하거나 제거하지 않고, 결합한 검색어 끝에 고정 접미사 `drawing`을 무조건 한 번 추가해야 한다. 따라서 현재 `pose_gesture` 카드의 최종 검색어는 `gesture drawing action line reference drawing`이다. 구현된 provider는 공개 검색에서 Pin ID·`pin_url`을 수집하고 모든 ID를 widget endpoint로 조회해 현재 응답용 `thumbnail_url`을 얻는다. 검색 결과의 존재·품질·저작권·사용 적합성은 보장하지 않으며, 사용자가 외부 원본에서 직접 확인해야 한다.
 8. 외부 어휘 조회·Getty 데이터·외부 후보는 사용하지 않는다. 팀이 검수한 TERM_CARD JSON 카탈로그의 활성 카드 외에는 새 `term_id`가 되거나 LLM 입력에 자동 주입되어서는 안 된다.
 
 ## 예외와 함정
