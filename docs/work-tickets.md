@@ -57,7 +57,7 @@
 
 #### PR-01 · DB 설정과 migration 기반
 
-- 브랜치: `YTH<다음번호>/feature/postgres-migration-foundation`
+- 브랜치: `feature/postgres-migration-foundation`
 - Spec: `docs/specs/session-job-persistence.md`
 - 작업: DB 설정, migration 실행 기반, 연결 수명 관리만 추가한다.
 - 제외: Repository, route 교체, worker.
@@ -68,7 +68,7 @@
 
 #### PR-02 · Session Repository
 
-- 브랜치: `YTH<다음번호>/feature/session-repository`
+- 브랜치: `feature/session-repository`
 - Spec: `docs/specs/session-job-persistence.md`
 - 작업: session 생성·조회·활동 갱신·토큰 hash 조회·만료 정리.
 - AC (Given-When-Then): GIVEN 세션 요청이 있을 때 WHEN 저장소가 처리하면 THEN 토큰 원문 없이 hash만 저장하고 `last_activity_at`을 갱신한다.
@@ -78,7 +78,7 @@
 
 #### PR-03 · Job Repository와 idempotency
 
-- 브랜치: `YTH<다음번호>/feature/job-repository-idempotency`
+- 브랜치: `feature/job-repository-idempotency`
 - Spec: `docs/specs/session-job-persistence.md`
 - 작업: Job 저장·조회·상태 갱신·동일 키 재사용·충돌 판정.
 - AC (Given-When-Then): GIVEN 같은 세션에서 요청이 재전송될 때 WHEN 키와 원문이 같으면 THEN 기존 Job을 반환하고 원문이 다르면 충돌시킨다.
@@ -88,7 +88,7 @@
 
 #### PR-04 · API 저장소 교체
 
-- 브랜치: `YTH<다음번호>/feature/postgres-agent-routes`
+- 브랜치: `feature/postgres-agent-routes`
 - Spec: `docs/specs/api-contract.md`, `docs/specs/session-job-persistence.md`
 - 작업: `POST /api/agent`, `GET /api/jobs/{job_id}`를 PostgreSQL Repository에 연결한다.
 - AC (Given-When-Then): GIVEN 유효한 Agent 요청이 있을 때 WHEN API가 저장소를 호출하면 THEN 쿠키 소유권·404 위장·90일 갱신·queued 응답을 유지한다.
@@ -98,7 +98,7 @@
 
 #### PR-05 · 세션 retention cleanup
 
-- 브랜치: `YTH<다음번호>/feature/session-retention-cleanup`
+- 브랜치: `feature/session-retention-cleanup`
 - Spec: `docs/specs/session-job-persistence.md`
 - 작업: 3개월 비활성 session과 연결 Job을 정리한다.
 - AC (Given-When-Then): GIVEN 만료된 session이 있을 때 WHEN cleanup을 실행하면 THEN 연결 Job과 원문도 함께 삭제된다.
@@ -110,7 +110,7 @@
 
 #### PR-06 · Job claim transaction
 
-- 브랜치: `YTH<다음번호>/feature/job-claim-transaction`
+- 브랜치: `feature/job-claim-transaction`
 - Spec: `docs/specs/postgres-job-worker.md`
 - 작업: queued Job claim, attempt 증가, lease 기록.
 - AC (Given-When-Then): GIVEN 같은 queued Job에 동시 claim이 발생할 때 WHEN 두 worker가 실행되면 THEN 하나만 claim한다.
@@ -120,7 +120,7 @@
 
 #### PR-07 · Worker 상태 전이
 
-- 브랜치: `YTH<다음번호>/feature/job-state-machine`
+- 브랜치: `feature/job-state-machine`
 - Spec: `docs/specs/postgres-job-worker.md`, `docs/specs/api-contract.md`
 - 작업: validating/searching/rendering과 completed/failed 전이를 구현한다.
 - AC (Given-When-Then): GIVEN 현재 상태와 허용되지 않은 다음 상태가 주어질 때 WHEN 전이를 시도하면 THEN 거부하고 종결 payload는 계약대로 저장한다.
@@ -130,7 +130,7 @@
 
 #### PR-08 · 자동 재시도와 lease recovery
 
-- 브랜치: `YTH<다음번호>/feature/job-retry-recovery`
+- 브랜치: `feature/job-retry-recovery`
 - Spec: `docs/specs/postgres-job-worker.md`
 - 작업: `next_retry_at`, 최대 3회 재시도, lease 만료 복구.
 - AC (Given-When-Then): GIVEN 오류가 발생할 때 WHEN worker가 오류를 분류하면 THEN 재시도 가능 오류만 예약하고 최대 3회에서 종료한다.
@@ -140,7 +140,7 @@
 
 #### PR-09 · Worker Agent pipeline 연결
 
-- 브랜치: `YTH<다음번호>/feature/worker-agent-pipeline`
+- 브랜치: `feature/worker-agent-pipeline`
 - Spec: `docs/specs/api-contract.md`, `docs/specs/prompt-interpreter-v0.md`
 - 작업: 저장 Job을 LLM adapter → resolver → 응답 조립으로 실행한다.
 - AC: success, clarification, partial, terminal failure를 계약대로 저장한다.
@@ -150,7 +150,7 @@
 
 #### PR-10 · Provider 계약과 fake provider
 
-- 브랜치: `OSC<다음번호>/feature/pinterest-provider-contract`
+- 브랜치: `feature/pinterest-provider-contract`
 - Spec: `docs/specs/pinterest-widget-crawler.md`
 - 작업: provider 인터페이스, 결과 타입, fake provider와 계약 테스트.
 - AC (Given-When-Then): GIVEN fake provider 결과가 있을 때 WHEN 결과를 조립하면 THEN `pin_id`, `pin_url`, `status`를 만족한다.
@@ -160,7 +160,7 @@
 
 #### PR-11 · 서버 공개 검색 수집
 
-- 브랜치: `OSC<다음번호>/feature/pinterest-public-search`
+- 브랜치: `feature/pinterest-public-search`
 - Spec: `docs/specs/pinterest-widget-crawler.md`
 - 작업: 서버 Playwright 공개 검색과 Pin ID·URL 추출.
 - AC (Given-When-Then): GIVEN 서버 검색이 실행될 때 WHEN provider가 요청을 만들면 THEN Pinterest API v5와 브라우저 직접 호출을 사용하지 않는다.
@@ -170,7 +170,7 @@
 
 #### PR-12 · Widget 결과 조립
 
-- 브랜치: `OSC<다음번호>/feature/pinterest-widget-results`
+- 브랜치: `feature/pinterest-widget-results`
 - Spec: `docs/specs/pinterest-widget-crawler.md`
 - 작업: widget 조회, deleted 처리, 역할별 8개 제한, 원순서 보존.
 - AC (Given-When-Then): GIVEN widget 응답에 thumbnail이 있을 때 WHEN 결과를 반환하면 THEN 현재 응답에만 포함하고 저장·trace·로그에는 남기지 않는다.
@@ -180,7 +180,7 @@
 
 #### PR-13 · Worker 검색 단계 연결
 
-- 브랜치: `OSC<다음번호>/feature/worker-pinterest-search`
+- 브랜치: `feature/worker-pinterest-search`
 - Spec: `docs/specs/api-contract.md`, `docs/specs/pinterest-widget-crawler.md`
 - 작업: 검색 provider 호출과 reason code 조립.
 - AC: `PIN_RESULTS_EMPTY`와 `PIN_SEARCH_UNAVAILABLE`을 구분한다.
@@ -190,7 +190,7 @@
 
 #### PR-14 · Trace 필수 필드
 
-- 브랜치: `KHS<다음번호>/feature/trace-required-fields`
+- 브랜치: `feature/trace-required-fields`
 - Spec: `docs/specs/observability-and-prompt-versioning.md`
 - 작업: job/session/attempt/model/prompt version을 trace에 기록한다.
 - AC: 세션 토큰 원문·thumbnail URL·secret이 trace에 없다.
@@ -198,7 +198,7 @@
 
 #### PR-15 · 실패 코드·사용자 메시지 매핑
 
-- 브랜치: `KHS<다음번호>/feature/failure-code-mapping`
+- 브랜치: `feature/failure-code-mapping`
 - Spec: `docs/specs/api-contract.md`
 - 작업: LLM·검색·DB·worker 예외를 공개 FailureCode로 매핑한다.
 - AC: 내부 오류 원문과 secret이 `user_message`에 노출되지 않는다.
@@ -206,7 +206,7 @@
 
 #### PR-16 · 외부 MCP client 증거
 
-- 브랜치: `KHS<다음번호>/test/mcp-client-evidence`
+- 브랜치: `test/mcp-client-evidence`
 - Spec: `docs/specs/mcp-contract.md`
 - 작업: 외부 MCP client 호출 절차와 결과 증거를 기록한다.
 - AC: 접근 제어와 도구 응답을 재현할 수 있다.
@@ -218,7 +218,7 @@
 
 #### PR-17 · Next.js UI Spec
 
-- 브랜치: `KHS<다음번호>/docs/nextjs-agent-ui-spec`
+- 브랜치: `docs/nextjs-agent-ui-spec`
 - 작업: UI 전용 Spec을 만들고 Why, Goal, What, How, AC를 완성한다.
 - 범위: 입력, polling, 완료, clarification, partial, failure 상태.
 - 의존성: `docs/specs/api-contract.md`
@@ -229,7 +229,7 @@
 
 #### PR-18 · UI 입력과 요청 제출
 
-- 브랜치: `KHS<다음번호>/feature/nextjs-agent-input`
+- 브랜치: `feature/nextjs-agent-input`
 - Spec: `docs/specs/nextjs-agent-ui.md`
 - 작업: 1~500자 입력, Idempotency-Key, 동일 origin `/api` 호출.
 - AC: 유효성 오류가 API 호출 전에 표시된다.
@@ -237,7 +237,7 @@
 
 #### PR-19 · UI Job polling
 
-- 브랜치: `KHS<다음번호>/feature/nextjs-job-polling`
+- 브랜치: `feature/nextjs-job-polling`
 - Spec: `docs/specs/nextjs-agent-ui.md`
 - 작업: queued/running/completed/failed 표시와 polling 종료.
 - AC: 종결 상태에서 polling을 중단한다.
@@ -245,7 +245,7 @@
 
 #### PR-20 · UI 결과·질문·Pin 링크
 
-- 브랜치: `KHS<다음번호>/feature/nextjs-agent-results`
+- 브랜치: `feature/nextjs-agent-results`
 - Spec: `docs/specs/nextjs-agent-ui.md`
 - 작업: 용어 설명, 질문, 부분 결과, 원본 Pin 링크와 thumbnail 표시.
 - AC: thumbnail URL을 저장값처럼 다루지 않는다.
@@ -255,7 +255,7 @@
 
 #### PR-21 · 계약 평가 실행기
 
-- 브랜치: `YTH<다음번호>/test/contract-evaluation-runner`
+- 브랜치: `test/contract-evaluation-runner`
 - Spec: `docs/specs/contract-evaluation-variants.md`
 - 작업: 원문 30건·변형 70건 실행과 계약 위반 집계.
 - AC (Given-When-Then): GIVEN 동일 평가셋이 있을 때 WHEN 평가 실행기를 실행하면 THEN 성공률과 실패 유형을 동일한 형식으로 산출한다.
@@ -265,7 +265,7 @@
 
 #### PR-22 · 성능·비용 측정
 
-- 브랜치: `KHS<다음번호>/test/performance-cost-measurement`
+- 브랜치: `test/performance-cost-measurement`
 - Spec: `docs/specs/observability-and-prompt-versioning.md`
 - 작업: p50/p95 지연, 요청당 비용, retry 비율을 측정한다.
 - AC (Given-When-Then): GIVEN 평가 실행 결과가 있을 때 WHEN 측정 명령을 다시 실행하면 THEN 동일 평가셋 기준의 지연·비용 결과를 재현한다.
@@ -275,7 +275,7 @@
 
 #### PR-23 · EVAL_REPORT와 출시 게이트
 
-- 브랜치: `KHS<다음번호>/docs/release-gate-report`
+- 브랜치: `docs/release-gate-report`
 - 작업: 평가·관측·비용·실패 사례·출시 판정을 기록한다.
 - AC: 모든 기준을 통과/미통과로 명시한다.
 - Spec: `docs/SCAFFOLD.md`, `docs/specs/observability-and-prompt-versioning.md`
@@ -283,7 +283,7 @@
 
 #### PR-24 · 배포·데모 증거
 
-- 브랜치: `KHS<다음번호>/test/deployment-demo-evidence`
+- 브랜치: `test/deployment-demo-evidence`
 - 작업: Cloud Run API, UI URL, MCP client, 정상·실패 데모 증거를 기록한다.
 - AC: 실제 날짜·URL·모델·prompt version만 기록한다.
 - Spec: `DEPLOYMENT.md`, `docs/specs/mcp-contract.md`
