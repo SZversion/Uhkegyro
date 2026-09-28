@@ -16,6 +16,26 @@ import pytest
 from backend.schemas.enums import FailureCode, InterpretationState
 from backend.services import llm
 from backend.schemas.models import InterpretationOutput
+from backend.shared.config import Settings, get_settings
+
+PROMPT_ENV_VAR = "INTERPRETER_PROMPT_PATH"
+REPO_ROOT = Path(__file__).resolve().parent.parent.parent
+REPO_PROMPT_FILE = REPO_ROOT / "prompts" / "uhkegryo-interpreter-v0.md"
+
+
+def _real_settings() -> Settings:
+    """저장소 `.env`와 무관하게 실제 Settings를 로드한다 (설정 로딩 자체를 검증)."""
+    return Settings(_env_file=None)
+
+
+def _write_prompt(path: Path, marker: str) -> Path:
+    path.write_text(
+        f"## System message\n```text\n{marker}\n```\n\n"
+        "## User message template\n```text\n"
+        "{{request_text}}\n{{active_cards_json}}\n```\n",
+        encoding="utf-8",
+    )
+    return path
 
 SELECT_JSON = """{
   "interpretation_state": "select_terms",
@@ -108,7 +128,7 @@ def _run(coro):
 
 
 def test_load_interpreter_prompt_reads_repo_file():
-    system_message, template = llm.load_interpreter_prompt(llm.default_prompt_path())
+    system_message, template = llm.load_interpreter_prompt(REPO_PROMPT_FILE)
     assert "You are the structured interpreter for UH Keguryeo." in system_message
     assert "{{request_text}}" in template
     assert "{{active_cards_json}}" in template
@@ -261,38 +281,93 @@ def test_llm_errors_are_retryable(cls):
     assert cls.retryable is True
 
 
-# --- 리뷰 반영: env var · max_retries · 배포 경로 ---------------------------------
+# --- 리뷰 반영: INTERPRETER_PROMPT_PATH는 env → 실제 Settings → 어댑터 경로까지 ----
+# 폴백 없음. 미설정·경로 없음·읽기 불가면 모두 PromptConfigurationError로 실패해야 한다.
 
 
-def test_default_prompt_path_uses_env_var(tmp_path):
-    prompt_file = tmp_path / "my-prompt.md"
-    prompt_file.write_text("## System message\n```text\nHi\n```\n\n## User message template\n```text\n{{request_text}}\n```\n", encoding="utf-8")
+def test_settings_reads_interpreter_prompt_path_from_env(tmp_path):
+    prompt_file = _write_prompt(tmp_path / "env-prompt.md", "ENV SYSTEM MARKER")
+    with patch.dict(os.environ, {PROMPT_ENV_VAR: str(prompt_file)}):
+        settings = _real_settings()
+    assert settings.interpreter_prompt_path == str(prompt_file)
 
-    class S:
-        interpreter_prompt_path = str(prompt_file)
 
-    p = llm.default_prompt_path(S())
+def test_settings_interpreter_prompt_path_defaults_to_empty():
+    with patch.dict(os.environ, {PROMPT_ENV_VAR: ""}):
+        settings = _real_settings()
+    assert settings.interpreter_prompt_path == ""
+
+
+def test_default_prompt_path_uses_env_var_via_real_settings(tmp_path):
+    prompt_file = _write_prompt(tmp_path / "my-prompt.md", "Hi")
+    with patch.dict(os.environ, {PROMPT_ENV_VAR: str(prompt_file)}):
+        settings = _real_settings()
+        p = llm.default_prompt_path(settings)
+        system_message, template = llm.load_interpreter_prompt(p)
     assert p == prompt_file
-    system_message, template = llm.load_interpreter_prompt(p)
     assert "Hi" in system_message
     assert "{{request_text}}" in template
 
 
-def test_default_prompt_path_falls_back_to_repo_when_env_empty():
-    with patch.dict(os.environ, {"INTERPRETER_PROMPT_PATH": ""}):
-        p = llm.default_prompt_path()
-    assert p.name == "uhkegryo-interpreter-v0.md"
-    assert p.exists()
+def test_default_prompt_path_without_arg_still_reads_env_var(tmp_path):
+    """인자를 넘기지 않아도 get_settings()가 env var를 실제로 읽는지 확인."""
+    prompt_file = _write_prompt(tmp_path / "no-arg-prompt.md", "NO ARG MARKER")
+    with patch.dict(os.environ, {PROMPT_ENV_VAR: str(prompt_file)}):
+        get_settings.cache_clear()
+        try:
+            p = llm.default_prompt_path()
+        finally:
+            get_settings.cache_clear()
+    assert p == prompt_file
 
 
-def test_default_prompt_path_raises_on_missing_configured_file():
-    class S:
-        interpreter_prompt_path = "/nonexistent/prompt.md"
+def test_default_prompt_path_raises_when_env_not_configured():
+    with patch.dict(os.environ, {PROMPT_ENV_VAR: ""}):
+        settings = _real_settings()
+        with pytest.raises(llm.PromptConfigurationError) as exc:
+            llm.default_prompt_path(settings)
+    assert PROMPT_ENV_VAR in str(exc.value)
 
-    p = llm.default_prompt_path(S())
-    assert p.name == "prompt.md"
-    with pytest.raises(FileNotFoundError):
-        llm.load_interpreter_prompt(p)
+
+def test_default_prompt_path_raises_when_configured_file_missing():
+    with patch.dict(os.environ, {PROMPT_ENV_VAR: "/nonexistent/prompt.md"}):
+        settings = _real_settings()
+        with pytest.raises(llm.PromptConfigurationError):
+            llm.default_prompt_path(settings)
+
+
+def test_default_prompt_path_raises_when_configured_path_is_directory(tmp_path):
+    with patch.dict(os.environ, {PROMPT_ENV_VAR: str(tmp_path)}):
+        settings = _real_settings()
+        with pytest.raises(llm.PromptConfigurationError):
+            llm.default_prompt_path(settings)
+
+
+def test_prompt_configuration_error_is_not_retryable():
+    assert llm.PromptConfigurationError.failure_code is FailureCode.CONFIGURATION_ERROR
+    assert llm.PromptConfigurationError.retryable is False
+
+
+def test_adapter_initialization_raises_when_env_not_configured():
+    with patch.dict(os.environ, {PROMPT_ENV_VAR: ""}):
+        settings = _real_settings()
+        with pytest.raises(llm.PromptConfigurationError):
+            llm.LLMInterpretationAdapter(client=_FakeClient(_FakeCompletions()), settings=settings)
+
+
+def test_adapter_uses_prompt_file_configured_by_env(tmp_path):
+    """env var → 실제 Settings → 어댑터가 해당 파일을 system message로 쓰는 경로."""
+    prompt_file = _write_prompt(tmp_path / "adapter-prompt.md", "ADAPTER ENV MARKER")
+    completions = _FakeCompletions(responses=[_FakeResponse(SELECT_JSON)])
+    with patch.dict(os.environ, {PROMPT_ENV_VAR: str(prompt_file)}):
+        settings = _real_settings()
+        adapter = llm.LLMInterpretationAdapter(
+            client=_FakeClient(completions), settings=settings
+        )
+    _run(adapter.interpret("반동", request_id="r1"))
+    sent = completions.calls[0]["messages"][0]["content"]
+    assert "ADAPTER ENV MARKER" in sent
+    assert sent.strip() == "ADAPTER ENV MARKER"
 
 
 def test_openai_client_has_max_retries_zero():
@@ -305,14 +380,23 @@ def test_openai_client_has_max_retries_zero():
     assert call_kwargs.get("max_retries") == 0
 
 
+def test_env_example_declares_concrete_local_prompt_path():
+    """.env.example에 주석이 아니라 실제 설정값이 있어야 한다."""
+    env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
+    assignments = [
+        line.split("=", 1)[1].strip()
+        for line in env_example.splitlines()
+        if line.strip().startswith(f"{PROMPT_ENV_VAR}=")
+    ]
+    assert assignments == ["./prompts/uhkegryo-interpreter-v0.md"]
+
+
 def test_docker_deploy_path_consistency():
-    repo_root = Path(__file__).resolve().parent.parent.parent
-    prompt_source = repo_root / "prompts" / "uhkegryo-interpreter-v0.md"
-    assert prompt_source.exists()
-    dockerfile = (repo_root / "Dockerfile").read_text(encoding="utf-8")
+    assert REPO_PROMPT_FILE.exists()
+    dockerfile = (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
     assert "COPY prompts/uhkegryo-interpreter-v0.md /app/prompts/uhkegryo-interpreter-v0.md" in dockerfile
-    cloudbuild = (repo_root / "cloudbuild.yaml").read_text(encoding="utf-8")
+    cloudbuild = (REPO_ROOT / "cloudbuild.yaml").read_text(encoding="utf-8")
     assert "INTERPRETER_PROMPT_PATH=/app/prompts/uhkegryo-interpreter-v0.md" in cloudbuild
-    env_example = (repo_root / ".env.example").read_text(encoding="utf-8")
-    assert "INTERPRETER_PROMPT_PATH" in env_example
+    env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
+    assert f"{PROMPT_ENV_VAR}=" in env_example
     assert "./prompts/uhkegryo-interpreter-v0.md" in env_example

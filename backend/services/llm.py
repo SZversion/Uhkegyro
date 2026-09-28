@@ -3,7 +3,8 @@
 LLM 호출은 이 파일 하나로 모은다. 라우터·worker·MCP는 openai를 직접 import하지 않는다.
 
 책임:
-- `prompts/uhkegryo-interpreter-v0.md`의 System message와 User message template 조립
+- `INTERPRETER_PROMPT_PATH`가 가리키는 프롬프트 파일의 System message와
+  User message template 조립 (경로 미설정·불가 시 `PromptConfigurationError`로 초기화 실패)
 - OpenRouter(OpenAI 호환) 구조화 출력(JSON object) 단발 호출
 - 출력을 Pydantic(`InterpretationOutput`)으로 재검증해 resolver·provider에 전달하지 않을 불량을 차단
 - 오류를 안정된 `FailureCode`로 분류(모두 재시도 가능한 LLM_* 코드)
@@ -60,6 +61,17 @@ class LLMInvalidStructuredOutput(LLMError):
     failure_code = FailureCode.LLM_INVALID_STRUCTURED_OUTPUT
 
 
+class PromptConfigurationError(LLMError):
+    """프롬프트 경로 설정 누락·불가. 재시도 대상이 아니다.
+
+    LLMError 계층에 두어 오류 분류(failure_code)를 기존과 같은 방식으로 읽게 한다.
+    `LLM_*` 코드가 아니라 `CONFIGURATION_ERROR`로 매핑되고 재시도하지 않는다.
+    """
+
+    failure_code = FailureCode.CONFIGURATION_ERROR
+    retryable = False
+
+
 class AgentInterpretationAdapter(Protocol):
     """T18 worker가 사용하는 해석 어댑터 계약."""
 
@@ -78,6 +90,9 @@ class LLMInterpretationAdapter:
 
     SDK 자체 재시도(max_retries)는 쓰지 않는다. 재시도는 api-contract.md §44에 따라
     worker가 attempt 단위로 관리한다. `client`는 테스트 seam으로, 별도 지정 시 그대로 사용한다.
+
+    프롬프트 경로는 `INTERPRETER_PROMPT_PATH`만 사용하고 저장소 고정 경로로 폴백하지 않는다.
+    미설정·경로 없음·읽기 불가면 `PromptConfigurationError`로 여기서 실패한다.
     """
 
     def __init__(
@@ -93,8 +108,8 @@ class LLMInterpretationAdapter:
 
         self.settings = settings or get_settings()
         if system_message is None or user_template is None:
-            path = prompt_path or self._resolve_prompt_path()
-            system_message, user_template = load_interpreter_prompt(path)
+            path = prompt_path if prompt_path is not None else self._resolve_prompt_path()
+            system_message, user_template = load_interpreter_prompt(_require_prompt_file(path))
         self._system_message = system_message
         self._user_template = user_template
         if client is None:
@@ -215,17 +230,40 @@ class LLMInterpretationAdapter:
 
 
 def default_prompt_path(settings: Any | None = None) -> Path:
-    """INTERPRETER_PROMPT_PATH(env) 설정 시 해당 경로를 엄격히 사용.
+    """INTERPRETER_PROMPT_PATH(env) 경로를 그대로 사용해 프롬프트 파일을 가리킨다.
 
-    설정 없거나 빈 문자열이면 로컬 레포의 프롬프트 파일로 폴백한다.
-    설정된 경로가 누락·읽기 불가하면 FileNotFoundError·IOError를 전파한다.
+    저장소 고정 경로로 폴백하지 않는다. 요청 기준에 따라 아래는 모두
+    `PromptConfigurationError`로 명확히 실패한다.
+    - `INTERPRETER_PROMPT_PATH` 미설정 또는 빈 값
+    - 설정값이 파일이 아니거나 존재하지 않음
+    - 설정값이 읽을 수 없는 경로
+
+    어댑터 초기화 시점에 실패해 프롬프트가 없는 상태로 LLM을 호출하지 않는다.
     """
-    if settings is not None:
-        configured = str(settings.interpreter_prompt_path).strip()
-        if configured:
-            return Path(configured)
-    repo_root = Path(__file__).resolve().parent.parent.parent
-    return repo_root / "prompts" / PROMPT_FILE_NAME
+    from backend.shared.config import get_settings
+
+    if settings is None:
+        settings = get_settings()
+
+    configured = str(getattr(settings, "interpreter_prompt_path", "") or "").strip()
+    if not configured:
+        raise PromptConfigurationError(
+            "INTERPRETER_PROMPT_PATH 환경변수가 설정되지 않았다. "
+            "저장소 고정 경로로 폴백하지 않는다. "
+            f".env 또는 배포 환경 변수에 prompts/{PROMPT_FILE_NAME} 경로를 명시해야 한다."
+        )
+
+    path = Path(configured)
+    return _require_prompt_file(path)
+
+
+def _require_prompt_file(path: Path) -> Path:
+    """프롬프트 경로가 실제 읽을 수 있는 파일인지 확인한다."""
+    if not path.is_file():
+        raise PromptConfigurationError(
+            f"프롬프트 경로가 파일이 아니거나 존재하지 않는다: {path}"
+        )
+    return path
 
 
 def load_interpreter_prompt(prompt_path: Path) -> tuple[str, str]:
@@ -233,7 +271,12 @@ def load_interpreter_prompt(prompt_path: Path) -> tuple[str, str]:
 
     Langfuse Prompt 등록이 완료되기 전(T33)까지 저장소 파일을 런타임 prompt로 읽는다.
     """
-    text = prompt_path.read_text(encoding="utf-8")
+    try:
+        text = prompt_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise PromptConfigurationError(
+            f"INTERPRETER_PROMPT_PATH 파일을 읽을 수 없다: {prompt_path}"
+        ) from exc
     system_message = _extract_fenced_block(text, SYSTEM_HEADING)
     user_template = _extract_fenced_block(text, USER_TEMPLATE_HEADING)
     return system_message, user_template
