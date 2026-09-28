@@ -16,7 +16,6 @@ LLM 호출은 이 파일 하나로 모은다. 라우터·worker·MCP는 openai�
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import time
@@ -240,7 +239,6 @@ class LLMInterpretationAdapter:
                 logger.debug("Langfuse observation 생략: worker trace context 없음")
                 return
 
-            session_id_hash = hashlib.sha256(session_id.encode("utf-8")).hexdigest()
             with langfuse.start_as_current_observation(
                 as_type="generation",
                 name=self.prompt_version,
@@ -249,7 +247,7 @@ class LLMInterpretationAdapter:
                 input={"request_text": request_text},
                 metadata={
                     "job_id": job_id,
-                    "session_id": session_id_hash,
+                    "session_id": session_id,
                     "attempt": attempt,
                     "max_attempts": max_attempts,
                 },

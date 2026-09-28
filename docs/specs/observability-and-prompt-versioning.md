@@ -14,7 +14,7 @@
 
 기본 해석 프롬프트 이름은 `uhkegryo-interpreter-v{n}`이고 production label을 사용한다. 모델 또는 프롬프트 변경 시 버전을 증가시킨다. `prompts/uhkegryo-interpreter-v0.md`는 v0의 저장소 검토 원본이며, 원격 Langfuse Prompt 등록 전후에 내용과 버전을 대조한다.
 
-각 job은 worker가 소유하는 Langfuse trace 하나를 사용한다. worker는 LLM adapter에 `job_id`, 원본 `session_id`, `attempt`, `max_attempts`를 전달하고 활성 trace context 안에서 adapter를 호출한다. adapter는 새 root trace를 만들지 않고 현재 worker trace 아래에 generation observation을 추가한다. trace에는 사용자 `request_text` 원문, `job_id`, session ID 해시, 모델, `prompt_version`, `attempt`, `max_attempts`, 단계별 지연, 최종 `agent_status`, `failure_code`, 검색 결과 상태를 기록한다. LLM 출력은 원문 설명 대신 `interpretation_state`·`clarification_type`·선택된 역할·term ID·Pydantic 검증 결과로 기록한다. 호출별 input/output/total token 수와 비용을 기록하고, 평가 실행은 같은 모델·Prompt 버전별 p50/p95 지연과 요청당 비용을 집계한다.
+각 job은 worker가 소유하는 Langfuse trace 하나를 사용한다. worker는 LLM adapter에 `job_id` UUID 원문, `session_id` UUID 원문, `attempt`, `max_attempts`를 전달하고 활성 trace context 안에서 adapter를 호출한다. adapter는 새 root trace를 만들지 않고 현재 worker trace 아래에 generation observation을 추가한다. trace에는 사용자 `request_text` 원문, `job_id` UUID 원문, `session_id` UUID 원문, 모델, `prompt_version`, `attempt`, `max_attempts`, 단계별 지연, 최종 `agent_status`, `failure_code`, 검색 결과 상태를 기록한다. LLM 출력은 원문 설명 대신 `interpretation_state`·`clarification_type`·선택된 역할·term ID·Pydantic 검증 결과로 기록한다. 호출별 input/output/total token 수와 비용을 기록하고, 평가 실행은 같은 모델·Prompt 버전별 p50/p95 지연과 요청당 비용을 집계한다.
 
 ## How
 
@@ -23,7 +23,7 @@
 - 최종 `failed`에는 API와 같은 안정된 failure code를 기록한다. 운영 로그에는 안전한 오류 요약을 추가할 수 있으나 UI에 노출하지 않는다.
 - 검색 재시도 소진 뒤 유효 카드가 있으면 `completed + partial_result`, `PIN_SEARCH_UNAVAILABLE`을 기록한다.
 - `needs_clarification`은 실패가 아니며 새 사용자 메시지의 새 job과 연결한다.
-- API 키, 세션 토큰, `anonymous_user_id` 원문, 원본 session ID, 이미지 바이트, 썸네일 URL, Pin 메타데이터는 기록하지 않는다. 사용자 요청 원문은 Langfuse trace에만 기록하고 일반 애플리케이션 로그에는 해시·글자 수만 남긴다.
+- 세션 쿠키 토큰 원문·해시, API key, `anonymous_user_id` 원문, 이미지 바이트, 썸네일 URL, Pin 메타데이터는 기록하지 않는다. 사용자 요청 원문은 Langfuse trace에만 기록하고 일반 애플리케이션 로그에는 해시·글자 수만 남긴다. 원본 `session_id` UUID는 Langfuse trace에 기록하되 일반 애플리케이션 로그에는 기록하지 않는다.
 - Langfuse Prompt 원격 버전은 `uhkegryo-interpreter-v{n}` 이름과 version label로 관리한다. `production` label은 30건 baseline과 회귀 확인 전에는 바꾸지 않는다.
 
 ## AC

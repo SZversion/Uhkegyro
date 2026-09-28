@@ -4,7 +4,6 @@
 """
 import asyncio
 import contextlib
-import hashlib
 import json
 import os
 import sys
@@ -324,8 +323,7 @@ def test_langfuse_metadata_keeps_job_id(monkeypatch):
     recorded, _ = _langfuse_generation_kwargs(monkeypatch)
     metadata = recorded["generation"]["metadata"]
     assert metadata["job_id"] == "job-42"
-    assert metadata["session_id"] == hashlib.sha256(b"session-42").hexdigest()
-    assert len(metadata["session_id"]) == 64
+    assert metadata["session_id"] == "session-42"
     assert metadata["attempt"] == 2
     assert metadata["max_attempts"] == 3
     assert recorded["generation"]["model"] == "openai/gpt-4o-mini"
