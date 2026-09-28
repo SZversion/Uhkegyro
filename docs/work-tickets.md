@@ -55,7 +55,7 @@
 
 ### 데이터 저장
 
-#### PR-01 · DB 설정과 migration 기반
+#### PR-38 · DB 설정과 migration 기반
 
 - 브랜치: `feature/postgres-migration-foundation`
 - Spec: `docs/specs/session-job-persistence.md`
@@ -66,7 +66,7 @@
 - 파일 범위: `backend/shared/config.py`, migration 디렉터리, DB 설정 테스트만 수정한다.
 - 예상 변경량: 150줄 이하
 
-#### PR-02 · Session Repository
+#### PR-39 · Session Repository
 
 - 브랜치: `feature/session-repository`
 - Spec: `docs/specs/session-job-persistence.md`
@@ -76,7 +76,7 @@
 - 파일 범위: session repository와 repository 테스트만 수정한다.
 - 예상 변경량: 250줄 이하
 
-#### PR-03 · Job Repository와 idempotency
+#### PR-40 · Job Repository와 idempotency
 
 - 브랜치: `feature/job-repository-idempotency`
 - Spec: `docs/specs/session-job-persistence.md`
@@ -86,7 +86,7 @@
 - 파일 범위: Job repository, idempotency 모델, repository 테스트만 수정한다.
 - 예상 변경량: 300줄 이하
 
-#### PR-04 · API 저장소 교체
+#### PR-41 · API 저장소 교체
 
 - 브랜치: `feature/postgres-agent-routes`
 - Spec: `docs/specs/api-contract.md`, `docs/specs/session-job-persistence.md`
@@ -96,7 +96,7 @@
 - 파일 범위: `backend/routes/agent.py`와 route 테스트만 수정한다.
 - 예상 변경량: 250줄 이하
 
-#### PR-05 · 세션 retention cleanup
+#### PR-42 · 세션 retention cleanup
 
 - 브랜치: `feature/session-retention-cleanup`
 - Spec: `docs/specs/session-job-persistence.md`
@@ -108,7 +108,7 @@
 
 ### Worker
 
-#### PR-06 · Job claim transaction
+#### PR-43 · Job claim transaction
 
 - 브랜치: `feature/job-claim-transaction`
 - Spec: `docs/specs/postgres-job-worker.md`
@@ -118,7 +118,7 @@
 - 파일 범위: claim repository 메서드와 동시성 테스트만 수정한다.
 - 예상 변경량: 300줄 이하
 
-#### PR-07 · Worker 상태 전이
+#### PR-44 · Worker 상태 전이
 
 - 브랜치: `feature/job-state-machine`
 - Spec: `docs/specs/postgres-job-worker.md`, `docs/specs/api-contract.md`
@@ -128,7 +128,7 @@
 - 파일 범위: 상태 전이 함수와 상태 전이 테스트만 수정한다.
 - 예상 변경량: 250줄 이하
 
-#### PR-08 · 자동 재시도와 lease recovery
+#### PR-45 · 자동 재시도와 lease recovery
 
 - 브랜치: `feature/job-retry-recovery`
 - Spec: `docs/specs/postgres-job-worker.md`
@@ -138,7 +138,7 @@
 - 파일 범위: retry/recovery worker와 retry 테스트만 수정한다.
 - 예상 변경량: 300줄 이하
 
-#### PR-09 · Worker Agent pipeline 연결
+#### PR-46 · Worker Agent pipeline 연결
 
 - 브랜치: `feature/worker-agent-pipeline`
 - Spec: `docs/specs/api-contract.md`, `docs/specs/prompt-interpreter-v0.md`
@@ -148,7 +148,7 @@
 
 ### Pinterest
 
-#### PR-10 · Provider 계약과 fake provider
+#### PR-47 · Provider 계약과 fake provider
 
 - 브랜치: `feature/pinterest-provider-contract`
 - Spec: `docs/specs/pinterest-widget-crawler.md`
@@ -158,7 +158,7 @@
 - 파일 범위: provider protocol, 결과 타입, fake provider 테스트만 수정한다.
 - 예상 변경량: 220줄 이하
 
-#### PR-11 · 서버 공개 검색 수집
+#### PR-48 · 서버 공개 검색 수집
 
 - 브랜치: `feature/pinterest-public-search`
 - Spec: `docs/specs/pinterest-widget-crawler.md`
@@ -168,7 +168,7 @@
 - 파일 범위: 서버 검색 adapter와 fixture parser 테스트만 수정한다.
 - 예상 변경량: 350줄 이하
 
-#### PR-12 · Widget 결과 조립
+#### PR-49 · Widget 결과 조립
 
 - 브랜치: `feature/pinterest-widget-results`
 - Spec: `docs/specs/pinterest-widget-crawler.md`
@@ -178,7 +178,7 @@
 - 파일 범위: widget adapter, 결과 조립기, 개인정보 비저장 테스트만 수정한다.
 - 예상 변경량: 350줄 이하
 
-#### PR-13 · Worker 검색 단계 연결
+#### PR-50 · Worker 검색 단계 연결
 
 - 브랜치: `feature/worker-pinterest-search`
 - Spec: `docs/specs/api-contract.md`, `docs/specs/pinterest-widget-crawler.md`
@@ -188,7 +188,7 @@
 
 ### 관측·보안
 
-#### PR-14 · Trace 필수 필드
+#### PR-51 · Trace 필수 필드
 
 - 브랜치: `feature/trace-required-fields`
 - Spec: `docs/specs/observability-and-prompt-versioning.md`
@@ -196,7 +196,7 @@
 - AC: 세션 토큰 원문·thumbnail URL·secret이 trace에 없다.
 - 의존성: PR-09
 
-#### PR-15 · 실패 코드·사용자 메시지 매핑
+#### PR-52 · 실패 코드·사용자 메시지 매핑
 
 - 브랜치: `feature/failure-code-mapping`
 - Spec: `docs/specs/api-contract.md`
@@ -204,7 +204,7 @@
 - AC: 내부 오류 원문과 secret이 `user_message`에 노출되지 않는다.
 - 의존성: PR-09, PR-13
 
-#### PR-16 · 외부 MCP client 증거
+#### PR-53 · 외부 MCP client 증거
 
 - 브랜치: `test/mcp-client-evidence`
 - Spec: `docs/specs/mcp-contract.md`
@@ -216,7 +216,7 @@
 
 ### UI
 
-#### PR-17 · Next.js UI Spec
+#### PR-54 · Next.js UI Spec
 
 - 브랜치: `docs/nextjs-agent-ui-spec`
 - 작업: UI 전용 Spec을 만들고 Why, Goal, What, How, AC를 완성한다.
@@ -227,7 +227,7 @@
 - 파일 범위: `docs/specs/nextjs-agent-ui.md`만 생성한다.
 - 예상 변경량: 250줄 이하
 
-#### PR-18 · UI 입력과 요청 제출
+#### PR-55 · UI 입력과 요청 제출
 
 - 브랜치: `feature/nextjs-agent-input`
 - Spec: `docs/specs/nextjs-agent-ui.md`
@@ -235,7 +235,7 @@
 - AC: 유효성 오류가 API 호출 전에 표시된다.
 - 의존성: PR-17, `docs/specs/nextjs-agent-ui.md`
 
-#### PR-19 · UI Job polling
+#### PR-56 · UI Job polling
 
 - 브랜치: `feature/nextjs-job-polling`
 - Spec: `docs/specs/nextjs-agent-ui.md`
@@ -243,7 +243,7 @@
 - AC: 종결 상태에서 polling을 중단한다.
 - 의존성: PR-17, PR-18
 
-#### PR-20 · UI 결과·질문·Pin 링크
+#### PR-57 · UI 결과·질문·Pin 링크
 
 - 브랜치: `feature/nextjs-agent-results`
 - Spec: `docs/specs/nextjs-agent-ui.md`
@@ -253,7 +253,7 @@
 
 ### 평가·출시
 
-#### PR-21 · 계약 평가 실행기
+#### PR-58 · 계약 평가 실행기
 
 - 브랜치: `test/contract-evaluation-runner`
 - Spec: `docs/specs/contract-evaluation-variants.md`
@@ -263,7 +263,7 @@
 - 파일 범위: `evals/run_evals.py`와 평가 실행 테스트만 추가한다.
 - 예상 변경량: 350줄 이하
 
-#### PR-22 · 성능·비용 측정
+#### PR-59 · 성능·비용 측정
 
 - 브랜치: `test/performance-cost-measurement`
 - Spec: `docs/specs/observability-and-prompt-versioning.md`
@@ -273,7 +273,7 @@
 - 파일 범위: 측정 스크립트와 측정 결과 schema 테스트만 추가한다.
 - 예상 변경량: 300줄 이하
 
-#### PR-23 · EVAL_REPORT와 출시 게이트
+#### PR-60 · EVAL_REPORT와 출시 게이트
 
 - 브랜치: `docs/release-gate-report`
 - 작업: 평가·관측·비용·실패 사례·출시 판정을 기록한다.
@@ -281,7 +281,7 @@
 - Spec: `docs/SCAFFOLD.md`, `docs/specs/observability-and-prompt-versioning.md`
 - 의존성: PR-21, PR-22
 
-#### PR-24 · 배포·데모 증거
+#### PR-61 · 배포·데모 증거
 
 - 브랜치: `test/deployment-demo-evidence`
 - 작업: Cloud Run API, UI URL, MCP client, 정상·실패 데모 증거를 기록한다.
