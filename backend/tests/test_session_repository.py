@@ -7,17 +7,22 @@ from backend.shared.auth import hash_session_token
 
 
 class FakePool:
-    def __init__(self, row=None, execute_result="DELETE 0"):
+    def __init__(self, row=None, execute_result="DELETE 0", error=None):
         self.row = row
         self.execute_result = execute_result
+        self.error = error
         self.calls = []
 
     async def fetchrow(self, query, *args):
         self.calls.append((query, args))
+        if self.error is not None:
+            raise self.error
         return self.row
 
     async def execute(self, query, *args):
         self.calls.append((query, args))
+        if self.error is not None:
+            raise self.error
         return self.execute_result
 
 
@@ -28,6 +33,7 @@ def test_create_session_stores_only_hash_and_returns_uuid():
     result = _run(repository.create_session("opaque-token"))
 
     assert result == "0d6fe2df-55e4-4ea2-a8fc-44b133a19f3d"
+    assert result != "opaque-token"
     query, args = pool.calls[0]
     assert "INSERT INTO sessions" in query
     assert args[1] == hash_session_token("opaque-token")
@@ -70,6 +76,21 @@ def test_empty_token_fails_before_database_call(method):
     with pytest.raises(ValueError):
         _run(getattr(repository, method)(""))
     assert pool.calls == []
+
+
+@pytest.mark.parametrize(
+    ("method", "args"),
+    [
+        ("create_session", ("opaque-token",)),
+        ("resolve_session", ("opaque-token",)),
+        ("delete_expired_sessions", ()),
+    ],
+)
+def test_database_errors_are_propagated(method, args):
+    pool = FakePool(error=RuntimeError("database unavailable"))
+
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        _run(getattr(SessionRepository(pool), method)(*args))
 
 
 def _run(awaitable):

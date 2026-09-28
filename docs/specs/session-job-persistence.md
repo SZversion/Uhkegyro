@@ -22,7 +22,8 @@ DB의 `attempt=0`은 아직 실행되지 않은 job을 뜻한다. worker가 clai
 
 ## How
 
-- 배포 환경의 `DATABASE_URL`은 Secret Manager에서 주입한 Neon `postgresql+asyncpg://...?...sslmode=require` 연결 문자열이다. 로컬 개발은 같은 형식의 `.env` 값만 사용한다.
+- `DATABASE_URL`은 `asyncpg`가 받는 `postgresql://...?...sslmode=require` 형식이다. 로컬 개발은 `.env`에 같은 형식으로 설정한다.
+- migration은 파일명을 `schema_migrations.version`에 기록하고, 파일명 순서대로 아직 적용되지 않은 파일만 실행한다. 각 SQL 실행과 `applied_at` 기록은 하나의 transaction으로 처리한다. migration은 애플리케이션 startup에서 자동 실행하지 않는다.
 - 원문 쿠키 토큰의 SHA-256 hash로 `sessions.session_token_hash`를 조회한다. 쿠키 원문을 DB에 저장하지 않는다.
 - 유효 세션의 API 활동마다 `last_activity_at`과 쿠키 `Max-Age=90일`을 갱신한다.
 - 1일마다 `last_activity_at`이 3개월보다 오래된 session 행을 삭제한다. FK cascade로 연결 job과 그 `request_text`도 함께 삭제한다. users, messages, search_results, Pin 전용 테이블은 만들지 않는다.

@@ -50,7 +50,7 @@ def get_settings() -> Settings:
     # SQLite 사용 시 경고 (운영 환경 부적합)
     if s.database_url.startswith("sqlite"):
         warnings.warn(
-            "SQLite는 운영 환경용이 아닙니다. Neon PostgreSQL(postgresql+asyncpg://) 사용 권장.",
+            "SQLite는 운영 환경용이 아닙니다. PostgreSQL(postgresql://) 사용 권장.",
             RuntimeWarning,
             stacklevel=2,
         )

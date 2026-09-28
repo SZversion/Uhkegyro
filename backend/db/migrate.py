@@ -9,5 +9,26 @@ def migration_sql() -> str:
 
 
 async def migrate(connection) -> None:
+    await connection.execute(
+        """
+        CREATE TABLE IF NOT EXISTS schema_migrations (
+            version TEXT PRIMARY KEY,
+            applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+        """
+    )
+
     for migration in sorted(MIGRATIONS_DIR.glob("*.sql")):
-        await connection.execute(migration.read_text(encoding="utf-8"))
+        async with connection.transaction():
+            applied = await connection.fetchval(
+                "SELECT version FROM schema_migrations WHERE version = $1",
+                migration.name,
+            )
+            if applied is not None:
+                continue
+
+            await connection.execute(migration.read_text(encoding="utf-8"))
+            await connection.execute(
+                "INSERT INTO schema_migrations (version) VALUES ($1)",
+                migration.name,
+            )
