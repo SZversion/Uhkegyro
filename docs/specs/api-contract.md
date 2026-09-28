@@ -20,7 +20,9 @@
 
 `POST /api/jobs/{job_id}/retry`는 없다. 사용자의 후속 메시지는 새 job이다.
 
-`AgentRequest`는 공백만으로 이루어지지 않은 `request_text` 1~500자만 가진다. 허용하지 않은 추가 필드는 거부한다. `POST /api/agent`는 유효한 기존 세션 쿠키가 있으면 재사용하고, 없으면 서버가 새 익명 세션을 발급해 동일 응답에 HttpOnly cookie로 설정한다. 브라우저는 `role`, `term_id`, 검색어, Pin URL, 세션 토큰, `anonymous_user_id`를 전송하지 않는다. 요청은 UUID `Idempotency-Key` 헤더가 필요하며, 10분 안에 같은 세션·키·원문을 재전송하면 기존 job을 반환한다.
+HTTP 오류 본문은 종결 실패의 `Failure`와 같은 형태인 `{failure_code, user_message, retryable:false}`를 쓴다. 다만 코드는 job 종결 실패용 13종(`FailureCode`)과 요청 단계 거절용 4종(`ApiErrorCode` = `INVALID_REQUEST_TEXT`, `IDEMPOTENCY_KEY_CONFLICT`, `SESSION_REQUIRED`, `JOB_NOT_FOUND`)으로 분리한다. `INVALID_REQUEST_TEXT`는 본문 형식 위반, 공백만 있는 `request_text`, 1~500자 범위 이탈, 허용하지 않은 추가 필드, 그리고 없거나 UUID 형식이 아닌 `Idempotency-Key`를 함께 다룬다. `user_message`는 사용자에게 보여 줄 문구이며 내부 오류 원문과 비밀값을 담지 않는다.
+
+`AgentRequest`는 공백만으로 이루어지지 않은 `request_text` 1~500자만 가진다. 허용하지 않은 추가 필드는 거부한다. `POST /api/agent`는 유효한 기존 세션 쿠키가 있으면 재사용하고, 없으면 서버가 새 익명 세션을 발급해 동일 응답에 HttpOnly cookie로 설정한다. 브라우저는 `role`, `term_id`, 검색어, Pin URL, 세션 토큰, `anonymous_user_id`를 전송하지 않는다. 요청은 UUID `Idempotency-Key` 헤더가 필요하며, 10분 안에 같은 세션·키·원문을 재전송하면 기존 job을 반환한다. 유효 세션의 API 활동마다 세션 쿠키는 `Max-Age=90일`로 갱신되고 토큰 값은 바뀌지 않는다(`session-job-persistence.md`).
 
 `JobEnvelope`는 `job_id`, `session_id`, `job_status`, `attempt`, `max_attempts`, `poll_after_ms`, `result`, `failure`를 가진다. DB 신규 job은 `attempt=0`으로 저장하지만 API는 queued 상태를 포함해 `attempt=1..max_attempts`만 노출한다. 따라서 claim 전 queued job은 `attempt=1`로 응답하고, worker가 claim하면 DB 값을 1로 증가시켜 첫 실행을 시작한다. 재시도는 `2`, `3`으로 증가하며 `3`을 초과해 실행하지 않는다. `job_status`는 `queued | running | validating | searching | rendering | completed | failed`이고 `completed`, `failed`만 종결 상태다. 진행 상태는 `result=null`, `failure=null`, `poll_after_ms=1000`이다. `completed`는 `result` 필수, `failure=null`, `poll_after_ms=null`이다. `failed`는 `result=null`, `failure` 필수, `poll_after_ms=null`이다.
 
@@ -110,3 +112,11 @@
 - GIVEN: 활성 카드에 해당 피드백이 없다.
 - WHEN: `TermResult`를 조립한다.
 - THEN: `source_answer_draft`, `look_for`를 fallback으로 사용하고 LLM이 문구를 생성하지 않는다.
+
+**AC-08 · HTTP 오류 본문**
+
+- GIVEN: 형식이 잘못된 본문 또는 없거나 UUID가 아닌 `Idempotency-Key`, WHEN: `POST /api/agent`를 호출한다, THEN: `422`와 `{failure_code:"invalid_request_text", user_message, retryable:false}`를 반환한다.
+- GIVEN: 10분 안에 같은 세션·키·다른 원문, WHEN: `POST /api/agent`를 호출한다, THEN: `409`와 `{failure_code:"idempotency_key_conflict", user_message, retryable:false}`를 반환한다.
+- GIVEN: 세션 쿠키 없이 `GET /api/jobs/{job_id}`를 호출한다, THEN: `401`과 `{failure_code:"session_required", user_message, retryable:false}`를 반환한다.
+- GIVEN: job이 없거나 현재 세션이 소유자가 아니다, WHEN: `GET /api/jobs/{job_id}`를 호출한다, THEN: `404`과 `{failure_code:"job_not_found", user_message, retryable:false}`를 반환한다.
+- AND THEN: 모든 오류 본문은 `failure_code`·`user_message`·`retryable` 세 필드만 갖고, `user_message`에 내부 오류 원문이나 비밀값을 담지 않는다.
