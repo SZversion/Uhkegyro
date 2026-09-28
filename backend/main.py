@@ -9,6 +9,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from backend.routes.agent import ApiContractError, router as agent_router
 from backend.services.catalog_repository import CatalogLoadError, load_catalog
 from backend.shared.config import get_settings, resolve_term_cards_dir
 
@@ -34,12 +36,27 @@ app.add_middleware(
 )
 
 
+@app.exception_handler(ApiContractError)
+async def handle_api_contract_error(request: FastAPI, exc: ApiContractError) -> JSONResponse:
+    """계약이 정한 오류 본문(`ApiError`)을 그대로 내보낸다.
+
+    기본 FastAPI 오류는 `{"detail": ...}`이라 프론트가 두 모양을 다뤄야 한다.
+    """
+    return JSONResponse(status_code=exc.status_code, content=exc.error.model_dump())
+
+
+app.include_router(agent_router)
+
+
 @app.get("/health")
 def health() -> dict:
     """채점자와 배포 환경이 서비스 상태를 확인하는 곳."""
     return {"status": "ok"}
 
 
-# TODO: 도메인 엔드포인트를 여기에 추가하세요.
-#   - 요청·응답은 Pydantic 모델로 정의합니다 (필수 조건 3: 출력 계약)
+# 남은 도메인 엔드포인트:
+#   - T19 영속화(`backend/services/session_store.py`의 인메모리 구현을 Neon
+#     PostgreSQL로 교체)와 worker의 lease·재시도 전이가 남았다.
+#   - PinterestCrawlerProvider와 해석 파이프라인(LLM 어댑터 → resolver →
+#     assembler)은 이 라우터의 `submit_agent`가 만든 job을 처리하는 위치에 붙는다.
 #   - 요청 ID·사용 모델·토큰 수·지연 시간을 로그에 남깁니다 (축 ③ 구조화 로그)
