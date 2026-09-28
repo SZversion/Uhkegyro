@@ -408,11 +408,19 @@ def test_interpret_schema_violation_raises_structured_output_error():
         _run(adapter.interpret("반동", job_id="r1", session_id="session-1", attempt=1, max_attempts=3))
 
 
-def test_interpret_empty_content_raises_structured_output_error():
+def test_interpret_empty_content_is_incomplete_upstream_response():
     completions = _FakeCompletions(responses=[_FakeResponse("")])
     adapter = _adapter(completions)
-    with pytest.raises(llm.LLMInvalidStructuredOutput):
+    with pytest.raises(llm.LLMIncompleteResponse):
         _run(adapter.interpret("반동", job_id="r1", session_id="session-1", attempt=1, max_attempts=3))
+
+
+def test_interpret_unfinished_choice_is_incomplete_upstream_response():
+    response = _FakeResponse(SELECT_JSON)
+    response.choices[0].finish_reason = "length"
+    adapter = _adapter(_FakeCompletions(responses=[response]))
+    with pytest.raises(llm.LLMIncompleteResponse):
+        _run(adapter.interpret("반동", job_id="r1", session_id="s1", attempt=1, max_attempts=3))
 
 
 # --- 오류 분류 (LLM_* retryable) ---------------------------------------------
@@ -441,6 +449,19 @@ def test_interpret_rate_limited_raises_llm_rate_limited():
         _run(adapter.interpret("반동", job_id="r1", session_id="session-1", attempt=1, max_attempts=3))
     assert exc.value.failure_code is FailureCode.LLM_RATE_LIMITED
     assert exc.value.retryable
+
+
+@pytest.mark.parametrize("header, expected", [("60", 30000), ("0.5", 1000), ("bad", None)])
+def test_rate_limit_retry_after_is_clamped_for_worker(header, expected):
+    error = openai.RateLimitError(
+        "rate",
+        response=httpx.Response(status_code=429, headers={"Retry-After": header}, request=_REQ),
+        body=None,
+    )
+    adapter = _adapter(_FakeCompletions(error=error))
+    with pytest.raises(llm.LLMRateLimited) as exc:
+        _run(adapter.interpret("반동", job_id="r1", session_id="s1", attempt=1, max_attempts=3))
+    assert exc.value.retry_after_ms == expected
 
 
 def test_interpret_upstream_5xx_raises_llm_upstream_unavailable():

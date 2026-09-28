@@ -52,6 +52,10 @@ class LLMTimeout(LLMError):
 class LLMRateLimited(LLMError):
     failure_code = FailureCode.LLM_RATE_LIMITED
 
+    def __init__(self, message: str, *, retry_after_ms: int | None = None) -> None:
+        super().__init__(message)
+        self.retry_after_ms = retry_after_ms
+
 
 class LLMUpstreamUnavailable(LLMError):
     failure_code = FailureCode.LLM_UPSTREAM_UNAVAILABLE
@@ -59,6 +63,10 @@ class LLMUpstreamUnavailable(LLMError):
 
 class LLMInvalidStructuredOutput(LLMError):
     failure_code = FailureCode.LLM_INVALID_STRUCTURED_OUTPUT
+
+
+class LLMIncompleteResponse(LLMUpstreamUnavailable):
+    """완료되지 않은 upstream 응답은 다음 job attempt에서 다시 요청한다."""
 
 
 class PromptConfigurationError(LLMError):
@@ -157,13 +165,19 @@ class LLMInterpretationAdapter:
         except openai.APITimeoutError as exc:
             raise LLMTimeout(f"OpenRouter 요청 시간 초과: {exc}") from exc
         except openai.RateLimitError as exc:
-            raise LLMRateLimited(f"OpenRouter rate limit: {exc}") from exc
+            raise LLMRateLimited(
+                "OpenRouter rate limit",
+                retry_after_ms=_retry_after_ms(exc),
+            ) from exc
         except openai.APIConnectionError as exc:
             raise LLMUpstreamUnavailable(f"OpenRouter 연결 실패: {exc}") from exc
         except openai.APIStatusError as exc:
             status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
             if status and int(status) == 429:
-                raise LLMRateLimited(f"OpenRouter rate limit: {exc}") from exc
+                raise LLMRateLimited(
+                    "OpenRouter rate limit",
+                    retry_after_ms=_retry_after_ms(exc),
+                ) from exc
             raise LLMUpstreamUnavailable(f"OpenRouter HTTP {status}: {exc}") from exc
         except httpx.TimeoutException as exc:
             raise LLMTimeout(f"OpenRouter 요청 시간 초과: {exc}") from exc
@@ -363,11 +377,28 @@ def format_active_cards_json(snapshot: CatalogSnapshot) -> str:
 
 
 def _extract_content(response: Any) -> str:
-    message = getattr(response, "choices", None) and getattr(response.choices[0], "message", None)
+    choices = getattr(response, "choices", None)
+    if not choices:
+        raise LLMIncompleteResponse("OpenRouter 응답에 choice가 없다")
+    if getattr(choices[0], "finish_reason", "stop") != "stop":
+        raise LLMIncompleteResponse("OpenRouter 응답이 완료되지 않았다")
+    message = getattr(choices[0], "message", None)
     content = getattr(message, "content", None)
     if not content or not str(content).strip():
-        raise LLMInvalidStructuredOutput("완료 응답이 내용이 비어 있다")
+        raise LLMIncompleteResponse("OpenRouter 응답 내용이 비어 있다")
     return str(content)
+
+
+def _retry_after_ms(exc: openai.APIStatusError) -> int | None:
+    """Retry-After 초 단위 값을 worker가 예약에 쓸 밀리초로 변환한다."""
+    raw = getattr(getattr(exc, "response", None), "headers", {}).get("retry-after")
+    try:
+        seconds = float(raw)
+        if not 0 <= seconds < float("inf"):
+            return None
+        return min(max(round(seconds * 1000), 1000), 30000)
+    except (TypeError, ValueError):
+        return None
 
 
 def _extract_usage(response: Any) -> dict[str, int]:
