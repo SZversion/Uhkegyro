@@ -292,17 +292,17 @@
 ## 의존 순서
 
 ```text
-PR-01 → PR-02 → PR-03 → PR-04 → PR-05
+PR-38 → PR-39 → PR-40 → PR-41 → PR-42
                          ↓
-        PR-06 → PR-07 → PR-08 → PR-09
+        PR-43 → PR-44 → PR-45 → PR-46
                                    ↓
-        PR-10 → PR-11 → PR-12 → PR-13
+        PR-47 → PR-48 → PR-49 → PR-50
                                    ↓
-        PR-14 → PR-15 → PR-16
+        PR-51 → PR-52 → PR-53
                                    ↓
-        PR-17 → PR-18 → PR-19 → PR-20
+        PR-54 → PR-55 → PR-56 → PR-57
                                    ↓
-        PR-21 → PR-22 → PR-23 → PR-24
+        PR-58 → PR-59 → PR-60 → PR-61
 ```
 
 PR-14와 PR-17은 계약이 확정되면 병렬로 시작할 수 있다. UI 구현은 PR-17 Spec이 먼저 merge된 뒤 시작한다.
