@@ -73,11 +73,24 @@ class FailureCode(StrEnum):
     INTERNAL_CODE_ERROR = "INTERNAL_CODE_ERROR"
 
 
+class ApiErrorCode(StrEnum):
+    """HTTP 응답 자체가 실패할 때의 코드 4종.
+
+    `FailureCode`는 job이 종결 실패했을 때 `Failure.failure_code`로 노출되는 값이고,
+    여기는 요청이 종결 job에 도달하기 전에 거부된 경우다. `api-contract.md`의
+    18~19행이 정의하는 오류 표가 이 네임스페이스에 해당한다.
+    """
+
+    INVALID_REQUEST_TEXT = "invalid_request_text"
+    IDEMPOTENCY_KEY_CONFLICT = "idempotency_key_conflict"
+    SESSION_REQUIRED = "session_required"
+    JOB_NOT_FOUND = "job_not_found"
+
+
 class PinStatus(StrEnum):
-    """Pin 상태 3종."""
+    """Pin 상태 2종."""
 
     AVAILABLE = "available"
-    THUMBNAIL_UNAVAILABLE = "thumbnail_unavailable"
     DELETED = "deleted"
 
 

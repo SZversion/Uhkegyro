@@ -1,7 +1,9 @@
 # 이 저장소에 미리 들어 있는 것
 
-처음 열면 낯선 폴더가 여럿 보일 겁니다. **전부 비어 있는 뼈대**이고, 여러분이 채우는 자리입니다.
+처음 열면 낯선 폴더가 여럿 보일 겁니다. 이 문서는 **강의용 초기 배치 안내**이며, 현재 구현 상태의 단일 기준은 아닙니다.
 "어디에 둬야 하나"를 고민하는 데 시간을 쓰지 말라고 미리 잡아 두었습니다.
+
+현재 구현·상태는 `README.md`와 `docs/specs/`를 우선합니다. 특히 이 저장소의 실제 MCP 구현은 `backend/mcp/server.py`이고, `mcp_server/server.py`는 초기 FastMCP 골조로 런타임·Docker 이미지에서 사용하지 않습니다.
 
 쓰지 않는 것은 **지워도 됩니다.** 폴더를 남겨두는 것 자체로 점수를 받지는 않습니다.
 
@@ -13,9 +15,10 @@
 backend/              FastAPI 서버              ← 필수 2
   main.py               진입점 (/health 있음)
   services/llm.py       LLM 호출을 모으는 자리   ← 중요
+  mcp/server.py          실제 FastMCP `get_active_term_card` 도구
   requirements.txt
 skills/SKILL.md       도메인 지식·판단 기준      ← 필수 5
-mcp_server/server.py  MCP 서버                  ← 필수 5
+mcp_server/server.py  강의용 초기 FastMCP 골조 (런타임 미사용)
 evals/                평가셋 30건               ← 필수 4
   dataset.jsonl         형식 예시 3건
   README.md             만드는 법
@@ -41,7 +44,7 @@ def health() -> dict:
 
 채점자와 배포 환경이 서비스가 살아 있는지 확인하는 곳이라 **지우지 마세요.** 도메인 엔드포인트는 여기에 추가하면 됩니다.
 
-요청·응답은 Pydantic 모델로 정의하세요(필수 3). 그리고 로그에 **요청 ID·사용 모델·토큰 수·지연 시간**을 남기면 축 ③에서 봅니다.
+요청·응답은 Pydantic 모델로 정의하세요(필수 3). 그리고 로그에 **job ID·사용 모델·토큰 수·지연 시간**을 남기면 축 ③에서 봅니다.
 
 ### `backend/services/llm.py` ← 가장 중요합니다
 
@@ -50,14 +53,14 @@ def health() -> dict:
 ```
 ✗ 흩어진 구조                    ✓ 모인 구조
 routers/summary.py               services/llm.py   ← 여기만
-  → openai.chat.completions        routers/*.py    ← 이 함수만 부른다
+  → OpenRouter adapter             routers/*.py    ← 이 함수만 부른다
 routers/extract.py
-  → openai.chat.completions
+  → 직접 provider SDK 호출
 ```
 
 이유가 있습니다. **3차 프로젝트에서 이 자리에 RAG 그래프가 들어옵니다.** 호출부를 한곳에 모아두면 그때 이 파일 내부만 갈아끼우면 되고, 흩뿌려두면 전부 뜯어야 합니다. 지금 5분 들이면 그때 며칠을 법니다.
 
-이 파일이 책임지는 것: 출력 계약 검증(Pydantic) · 실패 시 재시도와 폴백 · Langfuse 트레이스.
+이 파일이 책임지는 것: OpenRouter 호출·출력 계약 검증(Pydantic)·Langfuse 트레이스. job 재시도·lease·폴백은 worker가 책임진다.
 
 ### `skills/SKILL.md`
 
@@ -75,9 +78,9 @@ routers/extract.py
 
 검색해서 그때그때 넣는 방식(RAG)은 3차에서 다룹니다. 2차에서는 **적어 넣습니다.**
 
-### `mcp_server/server.py`
+### `mcp_server/server.py` (초기 골조)
 
-필수 조건 5의 나머지 절반. 2주차 17강에서 만든 `FastMCP` 그대로입니다.
+2주차 17강에서 만든 `FastMCP` 초기 예시입니다. 이 프로젝트의 실제 구현·배포 진입점은 `backend/mcp/server.py`, `backend/mcp/main.py`입니다. 아래 코드는 현재 구현 상태를 나타내지 않습니다.
 
 ```python
 @mcp.tool()

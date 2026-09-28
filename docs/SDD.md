@@ -26,24 +26,24 @@ FastMCP startup -> JSON catalog validation -> immutable active-card memory
 | LLM adapter | 카드 후보·근거·모호성 신호 생성 | 자유 term ID·검색 URL·최종 상태 결정 |
 | FastMCP TERM_CARD tool | 시작 검증을 통과한 JSON 메모리에서 활성 카드 한 건을 구조화 조회 | 외부 어휘 병합·새 카드 생성·검색 실행 |
 | Card resolver | MCP가 반환한 카드의 역할·활성·조건을 재검증 | 외부 어휘 병합 |
-| Search provider | 검증된 검색 조각으로 Pin 결과 반환 | 크롤링·이미지 저장 |
+| PinterestCrawlerProvider | 서버 Playwright로 활성 카드의 검증된 검색 조각을 공개 Pinterest 검색에 사용하고, 수집한 Pin ID를 widget endpoint로 조회해 Pin 결과 반환 | API v5 사용, 브라우저 직접 호출, 이미지·썸네일 URL 저장 |
 | Response assembler | 상태·카드 피드백·Pin 결과 조립 | 오류 원문·비밀값 노출 |
 
 ## 3. 비동기 job과 실패
 
-메시지 제출은 `202`와 queued job을 반환한다. job은 `queued → running → validating → searching → rendering → completed` 또는 `failed`로 전이하며 종결 뒤 바뀌지 않는다.
+메시지 제출은 `202`와 queued job을 반환한다. 첫 실행은 `queued → running → validating → searching → rendering → completed|failed`로 전이한다. 회복 가능한 오류는 실행 중 상태에서 `queued`로 되돌아가 다음 attempt를 시작하며, `completed`·`failed`는 종결 뒤 바뀌지 않는다.
 
-LLM timeout/429/일시적 5xx·구조화 출력 오류, 검색 provider timeout/429/일시적 5xx, worker 중단은 최초 실행 포함 최대 3회 자동 재시도한다. 설정·migration·결정적 코드 오류는 즉시 `failed`와 운영 알림으로 끝낸다.
+LLM·PinterestCrawlerProvider·worker의 회복과 최종 실패 경계는 [api-contract.md](./specs/api-contract.md)를 따른다. worker의 polling·lease·동시성·세션별 순차 실행은 [postgres-job-worker.md](./specs/postgres-job-worker.md), LLM provider·model·timeout은 [openrouter-llm-adapter.md](./specs/openrouter-llm-adapter.md)가 단일 기준이다.
 
-유효 카드가 있으면 검색 provider 실패가 소진돼도 `completed + partial_result`로 조립한다. 실패 역할은 빈 pins와 `PIN_SEARCH_UNAVAILABLE` reason code를 가진다. 0건은 `PIN_RESULTS_EMPTY`이며 재시도하지 않는다. 단서 부족은 `completed + needs_clarification`이며 후속 메시지가 새 job을 만든다.
+유효 카드가 있으면 PinterestCrawlerProvider의 검색 실패가 소진돼도 `completed + partial_result`로 조립한다. 실패 역할은 빈 pins와 `PIN_SEARCH_UNAVAILABLE` reason code를 가진다. 수집한 Pin의 widget·원본 접근 실패 또는 이미지 URL 부재는 `deleted` 상태와 접근 불가 안내로 제공한다. 0건은 `PIN_RESULTS_EMPTY`이며 재시도하지 않는다. 단서 부족은 `completed + needs_clarification`이며 후속 메시지가 새 job을 만든다.
 
 ## 4. API·프론트 경계
 
-정확한 endpoint, Pydantic 모델, 상태 enum, failure code는 [api-contract.md](./specs/api-contract.md)가 단일 기준이다. UI는 Next.js이며 `NEXT_PUBLIC_API_BASE_URL=/api`, `credentials:"include"`, HttpOnly same-origin 세션 쿠키를 사용한다. 브라우저의 `/api/*` 요청은 Next.js rewrite를 거쳐 내부 FastAPI로 전달하며, FastAPI origin 직접 호출·cross-origin credential cookie·Vite proxy는 사용하지 않는다. 요청·응답 변환이 필요해질 때만 Next.js Route Handler BFF를 추가한다. `/mcp`는 브라우저가 직접 호출하지 않는 Streamable HTTP 도구 endpoint이며, 계약은 [mcp-contract.md](./specs/mcp-contract.md)가 단일 기준이다. `pinit.js`, 사용자 retry endpoint는 사용하지 않는다.
+정확한 endpoint, Pydantic 모델, 상태 enum, failure code는 [api-contract.md](./specs/api-contract.md)가 단일 기준이다. UI는 Next.js이며 `NEXT_PUBLIC_API_BASE_URL=/api`, `credentials:"include"`, 활동마다 90일로 갱신되는 HttpOnly same-origin 세션 쿠키를 사용한다. 브라우저의 `/api/*` 요청은 Next.js rewrite를 거쳐 내부 FastAPI로 전달하며, FastAPI origin 직접 호출·cross-origin credential cookie·Vite proxy는 사용하지 않는다. 요청·응답 변환이 필요해질 때만 Next.js Route Handler BFF를 추가한다. `/mcp`는 브라우저가 직접 호출하지 않는 Streamable HTTP 도구 endpoint이며, 계약은 [mcp-contract.md](./specs/mcp-contract.md)가 단일 기준이다. `pinit.js`, 사용자 retry endpoint는 사용하지 않는다.
 
 ## 5. 데이터·보안·관측
 
-세션·chat·job 이력 저장소는 TERM_CARD 카탈로그와 분리한다. Pin URL·상태·이미지 바이트·썸네일 URL·Pin 메타데이터·LLM 원문 응답은 저장하지 않는다. trace에는 요청 원문 해시, 세션 ID 해시와 비밀이 아닌 안전한 운영 필드만 남긴다. 세션 쿠키 토큰 원문과 그 해시는 trace·로그에 남기지 않는다.
+세션·job 영속 구조와 Pin 결과의 보관·widget 재조회는 [session-job-persistence.md](./specs/session-job-persistence.md)와 [pinterest-widget-crawler.md](./specs/pinterest-widget-crawler.md)가 단일 기준이다. `PinterestCrawlerProvider` 구현 시 서버에서만 실행하고 활성 카드의 `query_fragments`만 카드 유래 입력으로 사용한다. 결정론 URL 빌더는 기존 조각의 `drawing` 포함 여부를 검사하지 않고 결합한 검색어 끝에 고정 접미사 `drawing`을 무조건 한 번 추가해야 한다. widget의 이미지 바이트·`thumbnail_url`과 부가 Pin 필드는 저장·LLM 입력·trace·로그에 사용하지 않는다. Langfuse trace에는 사용자 원문, `job_id` UUID 원문, `session_id` UUID 원문과 비밀이 아닌 운영 필드를 남기되 일반 애플리케이션 로그와 LLM 원본 응답에는 남기지 않는다. 세션 쿠키 토큰 원문·해시, API key, `anonymous_user_id` 원문은 trace·로그에 남기지 않는다. trace는 job당 하나이며 worker가 생명주기를 관리하고 adapter와 각 처리 단계가 observation/span을 추가한다.
 
 ## 6. 검증
 

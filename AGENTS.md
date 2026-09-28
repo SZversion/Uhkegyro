@@ -40,6 +40,12 @@ Agents must never approve, merge, enable auto-merge, dismiss reviews, alter bran
 
 Agents must not add features that are not defined in the Spec. Do not expand the scope because something seems convenient to add.
 
+## Change Scope and Pull Request Size
+
+- A single pull request must not contain more than 400 lines of code changes.
+- Agents must modify only the files and behavior explicitly required by the assigned task. Do not make unrelated fixes, refactors, formatting changes, dependency updates, or documentation changes.
+- If the requested work would exceed the 400-line limit, stop and split it into separate pull requests with clear, independently reviewable scopes.
+
 ## Definition of Done
 
 Do not report work as complete until tests based on the acceptance criteria pass.

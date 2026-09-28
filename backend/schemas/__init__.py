@@ -2,6 +2,7 @@
 
 from backend.schemas.enums import (
     AgentStatus,
+    ApiErrorCode,
     ClarificationType,
     FailureCode,
     InterpretationState,
@@ -13,6 +14,7 @@ from backend.schemas.enums import (
 from backend.schemas.models import (
     AgentRequest,
     AgentResult,
+    ApiError,
     Failure,
     InterpretationOutput,
     InterpretationSelection,
@@ -28,6 +30,8 @@ __all__ = [
     "AgentRequest",
     "AgentResult",
     "AgentStatus",
+    "ApiError",
+    "ApiErrorCode",
     "ClarificationType",
     "Failure",
     "FailureCode",

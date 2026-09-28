@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from backend.schemas.enums import (
     AgentStatus,
+    ApiErrorCode,
     ClarificationType,
     FailureCode,
     InterpretationState,
@@ -40,7 +41,6 @@ class AgentRequest(BaseModel):
 class SubmissionResponse(BaseModel):
     """POST /api/agent 202 응답 본문 (HttpOnly cookie는 별도로 설정)."""
 
-    message_id: str
     job_id: str
     job_status: Literal[JobStatus.QUEUED] = JobStatus.QUEUED
     poll_after_ms: int = PROGRESS_POLL_AFTER_MS
@@ -51,9 +51,16 @@ class PinResult(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    pin_id: str
     pin_url: str
     thumbnail_url: str | None = None
     status: PinStatus
+
+    @model_validator(mode="after")
+    def _deleted_pin_has_no_thumbnail(self) -> "PinResult":
+        if self.status is PinStatus.DELETED and self.thumbnail_url is not None:
+            raise ValueError("deleted Pin은 thumbnail_url=null이어야 한다")
+        return self
 
 
 class TermResult(BaseModel):
@@ -191,6 +198,21 @@ class Failure(BaseModel):
     retryable: Literal[False] = False
 
 
+class ApiError(BaseModel):
+    """HTTP 오류 응답 본문 — `Failure`와 같은 형태, 코드 네임스페이스만 다르다.
+
+    `Failure.failure_code`는 job 종결 실패 전용 13종이고, 요청 단계에서 거부되는
+    코드는 `ApiErrorCode` 4종이다. 본문 형태를 통일해 프론트가 한 가지 모양으로
+    오류를 다루게 한다.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    failure_code: ApiErrorCode
+    user_message: str
+    retryable: Literal[False] = False
+
+
 class JobEnvelope(BaseModel):
     """GET /api/jobs/{job_id} 응답.
 
@@ -203,7 +225,6 @@ class JobEnvelope(BaseModel):
 
     job_id: str
     session_id: str
-    request_id: str
     job_status: JobStatus
     attempt: Annotated[int, Field(ge=1)]
     max_attempts: Annotated[int, Field(ge=1, le=RETRY_COUNT_MAX)]

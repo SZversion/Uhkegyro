@@ -2,8 +2,8 @@
 
 > 전문 용어가 낯선 초보자가 텍스트로 묘사한 캐주얼 캐릭터의 **체형/소체, 포즈, 구도**를 기초 드로잉 용어와 역할별 Pinterest 탐색 계획으로 바꾸는 Agent입니다.
 
-> **현재 상태: 기반 골조 구현 중**
-> 현재 API는 `GET /health`만 동작합니다. LLM 기반 해석, Agent 메시지 API, MCP 도구, Langfuse, UI 및 배포는 아직 구현·측정하지 않았습니다. 아래의 목표 구조와 계획 항목은 완료 기능으로 해석하면 안 됩니다.
+> **현재 상태: `GET /health`와 인메모리 mock Agent API까지 구현됨**
+> `POST /api/agent`는 세션 쿠키와 queued job을 만들고, `GET /api/jobs/{job_id}`는 동일 세션의 job을 조회합니다. DB 영속화·실제 worker·LLM 해석과 resolver 연동·Pinterest 검색·Langfuse·UI·Agent API 배포는 아직 구현·측정하지 않았습니다. 별도 MCP 서비스의 `get_active_term_card` FastMCP 도구와 TERM_CARD 시작 검증은 구현됐지만, 외부 MCP client 호출 증거는 아직 없습니다. 아래의 목표 구조와 계획 항목은 완료 기능으로 해석하면 안 됩니다.
 
 ## 한눈에 보기
 
@@ -13,7 +13,7 @@
 | 반복 문제 | 원하는 체형·포즈·구도를 일상어로만 검색해 넓은 결과를 반복 탐색한다. |
 | 해결 방식 | 일상어를 구조화한 뒤, 용어 설명과 역할별 외부 탐색 링크를 함께 제공한다. |
 | 팀 | UH케그려 (4조) |
-| 현재 실행 가능 범위 | Docker Compose 기반 FastAPI `GET /health` 골조 |
+| 현재 실행 가능 범위 | Docker Compose 기반 FastAPI `GET /health`와 인메모리 mock Agent API, 카탈로그 시작 검증, MCP 도구 |
 
 ## 팀원
 
@@ -34,8 +34,8 @@
 1. 사용자가 만들고 싶은 캐릭터를 일상어로 입력합니다.
 2. Agent가 체형/소체, 포즈, 시점, 원근, 배치를 구분해 해석합니다.
 3. 각 조건을 쉬운 말과 드로잉 용어로 설명하고, 확신하지 못한 조건은 질문 또는 한계로 표시합니다.
-4. Agent가 선택한 역할별로 Pinterest 검색 결과 상위 8개의 원본 Pin 링크와 원격 썸네일 URL을 가져와 섹션별 미리보기로 제공합니다.
-5. UI는 검색 provider가 반환한 원격 썸네일을 원본 Pin 링크로 표시합니다. 서비스는 이미지 파일·썸네일 URL·Pin 메타데이터를 저장하지 않습니다.
+4. 서버 Playwright가 선택한 역할별 `query_fragments`로 공개 Pinterest 검색을 수행해 상위 8개의 원본 Pin 링크를 찾고, 각 Pin ID를 widget endpoint로 조회해 원격 썸네일 URL을 현재 응답에만 넣습니다.
+5. UI는 서버가 반환한 원격 썸네일을 원본 Pin 링크로 표시합니다. 서비스는 이미지 파일·썸네일 URL·Pin 본문 등 부가 메타데이터를 저장하지 않습니다.
 6. 사용자는 하나의 ‘정답 이미지’가 아니라 역할별 레퍼런스를 조합해 러프를 시작합니다.
 
 ### 입력과 목표 출력 예시
@@ -54,14 +54,14 @@
 - 1~500자 텍스트 설명의 구조화 해석
 - 체형/소체, 포즈, 구도(`view`, `perspective`, `layout`)의 역할 분리
 - 전문 용어의 초보자용 설명과 불확실성 표시
-- 선택된 역할별 Pinterest 원격 썸네일 미리보기와 원본 Pin 링크(기본 최대 8개, 설정으로 변경 가능)
-- Pin URL·상태의 세션 저장과 썸네일 URL의 응답 전용 사용
+- 선택된 역할별 Pinterest 원격 썸네일 미리보기와 원본 Pin 링크(역할별 최대 8개)
+- 세션 이력에 포함된 Pin ID·URL·상태 유지와 썸네일 URL·이미지의 비저장
 - 팀 검수 TERM_CARD JSON 카탈로그의 용어·설명·검색 조각
 
 ### 제공하지 않을 것
 
 - 이미지 생성, 편집, 업로드 이미지 분석, 특정 작가 화풍 복제
-- Pinterest 이미지 파일·썸네일·메타데이터의 수집, 저장, 재게시 또는 스크래핑
+- Pinterest 이미지 파일·썸네일·메타데이터의 저장, 재게시 또는 브라우저 직접 크롤링
 - 단일 이미지가 모든 조건에 맞는다고 보장하는 추천
 - 문서를 청크로 검색해 답변에 주입하는 RAG
 
@@ -71,13 +71,13 @@
 
 ```text
 사용자 UI
-  -> POST /api/agent (미구현, 서버 세션 쿠키 발급·재사용, 202 + job_id)
-  -> GET /api/jobs/{job_id} polling (미구현, completed/failed까지)
+  -> POST /api/agent (인메모리 mock 구현, 서버 세션 쿠키 발급·재사용, 202 + job_id)
+  -> GET /api/jobs/{job_id} polling (인메모리 mock 구현, 현재 queued 조회)
 Job executor / recovery (미구현)
   -> LLM: 일상어를 허용된 term_id와 역할로 구조화
   -> 결정론 코드: Pydantic 검증, 역할 순서, 허용 ID, URL 인코딩
   -> FastMCP: TERM_CARD JSON 카탈로그의 활성 카드 정보를 구조화 조회
-  -> PinterestSearchProvider tool: 역할별 최대 8개 {pin_url, thumbnail_url, status} 반환
+  -> PinterestCrawlerProvider: 서버 Playwright 공개 검색 크롤링 -> Pin ID widget 조회 -> 역할별 최대 8개 {pin_id, pin_url, thumbnail_url, status} 반환
   -> UI: 원격 썸네일을 원본 Pin 링크로 표시
 ```
 
@@ -97,21 +97,24 @@ LLM은 링크를 임의로 만들거나 데이터 출처를 지어내지 않습�
 | TERM_CARD JSON 카탈로그 | `index.json`과 다섯 역할 JSON으로 이루어진 팀 검수 런타임 단일 원본 | term ID, 설명, query fragment, 검수 상태 |
 | Pinterest | 사용자가 원본을 직접 확인할 외부 탐색 대상 | 원본 Pin 링크와 응답 전용 원격 썸네일 미리보기 |
 
-Pinterest 이미지 바이트를 저장·재게시하지 않습니다. 검색 도구가 반환한 `pin_url`과 상태만 세션에 저장하고, `thumbnail_url`은 현재 응답을 표시할 때만 사용합니다. UI는 원격 썸네일을 원본 Pin 링크로 표시하며, 썸네일 URL이 없으면 링크만 제공합니다. 검색 제공자의 API·비즈니스 계정 요건은 확인 후 확정합니다. Pin 삭제·썸네일 부재·검색 오류는 provider가 반환한 상태로 구분합니다. 용어 선택·설명·검색 조각은 구현 후 팀이 작성·검수한 TERM_CARD JSON 카탈로그만 사용합니다. 카탈로그는 시작 시 검증해 메모리에 로드하며 요청 중 파일을 다시 읽거나 DB에 적재하지 않습니다. Getty는 용어 조사 시 참고한 자료일 뿐, 서비스 데이터·사용자 화면·LLM 입력·런타임 조회에 포함하지 않습니다. 자체 카드와 권리 검토 기준은 팀 승인을 거쳐야 하며, 승인되지 않은 데이터를 완료된 카탈로그로 주장하지 않습니다.
+PinterestCrawlerProvider와 widget 기반 Pin 미리보기·보관 경계는 [Pinterest 기능 Spec](docs/specs/pinterest-widget-crawler.md)을 단일 기준으로 사용합니다. 용어 선택·설명·검색 조각은 구현 후 팀이 작성·검수한 TERM_CARD JSON 카탈로그만 사용합니다. 카탈로그는 시작 시 검증해 메모리에 로드하며 요청 중 파일을 다시 읽거나 DB에 적재하지 않습니다. Getty는 용어 조사 시 참고한 자료일 뿐, 서비스 데이터·사용자 화면·LLM 입력·런타임 조회에 포함하지 않습니다. 자체 카드와 권리 검토 기준은 팀 승인을 거쳐야 하며, 승인되지 않은 데이터를 완료된 카탈로그로 주장하지 않습니다.
 
 ## API와 MCP 상태
 
 | 항목 | 현재 상태 | 최종 목표 |
 | --- | --- | --- |
 | `GET /health` | 구현됨. `{"status":"ok"}` 반환 | Cloud Run 상태 확인 |
-| `POST /api/agent` | 명세 확정·미구현 | 가이드 제출용 Agent API. 서버 세션 쿠키를 발급·재사용하고 `202`와 비동기 `job_id` 반환 |
-| `GET /api/jobs/{job_id}` | 명세 확정·미구현 | 소유 job의 실제 상태·완료 결과·실패·재시도 가능 여부 반환 |
+| `POST /api/agent` | 인메모리 mock 구현됨. 세션 쿠키 발급·재사용, `202 + job_id` 반환 | 가이드 제출용 Agent API. 서버 세션 쿠키를 발급·재사용하고 `202`와 비동기 `job_id` 반환 |
+| `GET /api/jobs/{job_id}` | 인메모리 mock 구현됨. 동일 세션의 job만 조회 | 소유 job의 실제 상태·완료 결과·실패·재시도 가능 여부 반환 |
+| DB 영속화·실제 worker | 미구현 | job 저장과 상태 전이 |
+| LLM 해석·resolver 연동 | 미구현 | 실제 job 처리 경로 |
+| Pinterest 검색 실행 | 미구현 | 역할별 검색 결과 |
 | `/docs` | FastAPI 기본 문서에서 확인 가능 | 요청·응답 모델 및 오류 응답 확인 |
-| `/mcp` | 미구현. `example_tool` 골조만 존재 | `get_active_term_card(term_id)` FastMCP Streamable HTTP endpoint와 도구 호출 증거 |
-| TERM_CARD JSON 카탈로그 | 문서화·미구현 | 시작 검증 뒤 역할별 활성 카드를 메모리에서 조회 |
-| MCP 접근 제어 | 미구현 | 토큰 또는 허용 클라이언트 정책을 문서화하고 적용 |
+| `/mcp` | 구현됨. `backend/mcp/server.py`의 `get_active_term_card(term_id)` FastMCP 도구. 외부 클라이언트 호출 증거는 미기록 | Streamable HTTP endpoint와 도구 호출 증거 |
+| TERM_CARD JSON 카탈로그 | 구현됨. API·MCP 시작 시 검증 후 역할별 활성 카드를 메모리에 로드 | 요청 중 재읽기·DB 적재 없이 활성 카드를 조회 |
+| MCP 접근 제어 | Cloud Run IAM 배포 설정 구현됨. 실제 배포·호출 증거는 미기록 | 내부 호출자만 `roles/run.invoker`로 접근하는지 검증 |
 
-`/mcp`를 공개 데모 API처럼 무제한 노출하지 않습니다. 구현 시 연결 방법, 도구 목록, 실제 호출 결과, 접근 제어 방식을 이 README에 추가합니다.
+`/mcp`를 공개 데모 API처럼 무제한 노출하지 않습니다. 실제 배포 전 Cloud Run IAM, 연결 방법, 도구 목록과 외부 클라이언트 호출 결과를 함께 검증·기록합니다.
 
 ## 로컬 실행
 
@@ -208,7 +211,7 @@ git push -u origin feat/<작업내용>
 | --- | --- |
 | 사용자 UI URL | 미배포 |
 | Cloud Run Agent API URL | 미배포 |
-| MCP 연결·도구 호출 화면 | 미구현 |
+| 외부 MCP client 연결·도구 호출 증거 화면 | 미구현 |
 | Langfuse 대시보드 스크린샷 | 미측정 |
 | 정상·실패 경로 데모 영상 | 미제작 |
 
