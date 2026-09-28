@@ -1,4 +1,4 @@
-"""T14 기본 해석 LLM 어댑터 테스트.
+﻿"""T14 기본 해석 LLM 어댑터 테스트.
 
 진짜 API 호출 없이 가짜 transport로 오류 분류 전 경로와 prompt 조립·출력 검증 계약을 확인한다.
 """
@@ -167,7 +167,7 @@ def test_format_active_cards_json_keeps_only_contract_fields(snapshot_factory, c
 def test_interpret_select_terms_valid():
     completions = _FakeCompletions(responses=[_FakeResponse(SELECT_JSON)])
     adapter = _adapter(completions)
-    result = _run(adapter.interpret("반동 자세를 찾아요", request_id="r1", active_cards_json="{}"))
+    result = _run(adapter.interpret("반동 자세를 찾아요", job_id="r1", active_cards_json="{}"))
     assert isinstance(result, InterpretationOutput)
     assert result.interpretation_state is InterpretationState.SELECT_TERMS
     assert len(result.selections) == 1
@@ -178,7 +178,7 @@ def test_interpret_select_terms_valid():
 def test_interpret_needs_clarification_valid():
     completions = _FakeCompletions(responses=[_FakeResponse(CLARIFY_JSON)])
     adapter = _adapter(completions)
-    result = _run(adapter.interpret("자연스러운 자세", request_id="r1"))
+    result = _run(adapter.interpret("자연스러운 자세", job_id="r1"))
     assert result.interpretation_state is InterpretationState.NEEDS_CLARIFICATION
     assert result.clarifying_question
     assert result.clarification_type is not None
@@ -187,7 +187,7 @@ def test_interpret_needs_clarification_valid():
 def test_interpret_passes_system_and_user_messages():
     completions = _FakeCompletions(responses=[_FakeResponse(SELECT_JSON)])
     adapter = _adapter(completions)
-    _run(adapter.interpret("반동", request_id="r1", active_cards_json='{"active_cards": []}'))
+    _run(adapter.interpret("반동", job_id="r1", active_cards_json='{"active_cards": []}'))
     assert len(completions.calls) == 1
     call = completions.calls[0]
     assert call["model"] == "openai/gpt-4o-mini"
@@ -207,7 +207,7 @@ def test_interpret_invalid_json_raises_structured_output_error():
     completions = _FakeCompletions(responses=[_FakeResponse("이건 JSON이 아닙니다")])
     adapter = _adapter(completions)
     with pytest.raises(llm.LLMInvalidStructuredOutput):
-        _run(adapter.interpret("반동", request_id="r1"))
+        _run(adapter.interpret("반동", job_id="r1"))
 
 
 def test_interpret_schema_violation_raises_structured_output_error():
@@ -215,14 +215,14 @@ def test_interpret_schema_violation_raises_structured_output_error():
     completions = _FakeCompletions(responses=[_FakeResponse(bad)])
     adapter = _adapter(completions)
     with pytest.raises(llm.LLMInvalidStructuredOutput):
-        _run(adapter.interpret("반동", request_id="r1"))
+        _run(adapter.interpret("반동", job_id="r1"))
 
 
 def test_interpret_empty_content_raises_structured_output_error():
     completions = _FakeCompletions(responses=[_FakeResponse("")])
     adapter = _adapter(completions)
     with pytest.raises(llm.LLMInvalidStructuredOutput):
-        _run(adapter.interpret("반동", request_id="r1"))
+        _run(adapter.interpret("반동", job_id="r1"))
 
 
 # --- 오류 분류 (LLM_* retryable) ---------------------------------------------
@@ -236,7 +236,7 @@ def test_interpret_timeout_raises_llm_timeout():
     completions = _FakeCompletions(error=error)
     adapter = _adapter(completions)
     with pytest.raises(llm.LLMTimeout) as exc:
-        _run(adapter.interpret("반동", request_id="r1"))
+        _run(adapter.interpret("반동", job_id="r1"))
     assert exc.value.failure_code is FailureCode.LLM_TIMEOUT
     assert exc.value.retryable
 
@@ -248,7 +248,7 @@ def test_interpret_rate_limited_raises_llm_rate_limited():
     completions = _FakeCompletions(error=error)
     adapter = _adapter(completions)
     with pytest.raises(llm.LLMRateLimited) as exc:
-        _run(adapter.interpret("반동", request_id="r1"))
+        _run(adapter.interpret("반동", job_id="r1"))
     assert exc.value.failure_code is FailureCode.LLM_RATE_LIMITED
     assert exc.value.retryable
 
@@ -260,7 +260,7 @@ def test_interpret_upstream_5xx_raises_llm_upstream_unavailable():
     completions = _FakeCompletions(error=error)
     adapter = _adapter(completions)
     with pytest.raises(llm.LLMUpstreamUnavailable) as exc:
-        _run(adapter.interpret("반동", request_id="r1"))
+        _run(adapter.interpret("반동", job_id="r1"))
     assert exc.value.failure_code is FailureCode.LLM_UPSTREAM_UNAVAILABLE
     assert exc.value.retryable
 
@@ -270,7 +270,7 @@ def test_interpret_connection_error_raises_llm_upstream_unavailable():
     completions = _FakeCompletions(error=error)
     adapter = _adapter(completions)
     with pytest.raises(llm.LLMUpstreamUnavailable):
-        _run(adapter.interpret("반동", request_id="r1"))
+        _run(adapter.interpret("반동", job_id="r1"))
 
 
 @pytest.mark.parametrize(
@@ -364,7 +364,7 @@ def test_adapter_uses_prompt_file_configured_by_env(tmp_path):
         adapter = llm.LLMInterpretationAdapter(
             client=_FakeClient(completions), settings=settings
         )
-    _run(adapter.interpret("반동", request_id="r1"))
+    _run(adapter.interpret("반동", job_id="r1"))
     sent = completions.calls[0]["messages"][0]["content"]
     assert "ADAPTER ENV MARKER" in sent
     assert sent.strip() == "ADAPTER ENV MARKER"

@@ -79,7 +79,7 @@ class AgentInterpretationAdapter(Protocol):
         self,
         request_text: str,
         *,
-        request_id: str,
+        job_id: str,
         active_cards_json: str = "",
     ) -> InterpretationOutput:
         ...
@@ -132,7 +132,7 @@ class LLMInterpretationAdapter:
         self,
         request_text: str,
         *,
-        request_id: str,
+        job_id: str,
         active_cards_json: str = "",
     ) -> InterpretationOutput:
         user_message = render_user_message(self._user_template, request_text, active_cards_json)
@@ -180,7 +180,7 @@ class LLMInterpretationAdapter:
             json.dumps(
                 {
                     "event": "llm.interpret.ok",
-                    "request_id": request_id,
+                    "job_id": job_id,
                     "model": self.settings.openrouter_model,
                     "prompt_version": self.prompt_version,
                     "latency_ms": latency_ms,
@@ -191,7 +191,7 @@ class LLMInterpretationAdapter:
             )
         )
         self._observe_langfuse(
-            request_id=request_id,
+            job_id=job_id,
             usage=usage,
             output=summary,
             input_chars=len(request_text),
@@ -201,7 +201,7 @@ class LLMInterpretationAdapter:
     def _observe_langfuse(
         self,
         *,
-        request_id: str,
+        job_id: str,
         usage: dict[str, int],
         output: dict[str, Any],
         input_chars: int,
@@ -221,12 +221,12 @@ class LLMInterpretationAdapter:
                 model=self.settings.openrouter_model,
                 input={"request_text_chars": input_chars},
                 output=output,
-                metadata={"request_id": request_id},
+                metadata={"job_id": job_id},
             )
             if usage:
                 generation.usage = usage
         except Exception:
-            logger.debug("Langfuse trace 미전송(무시): request_id=%s", request_id, exc_info=True)
+            logger.debug("Langfuse trace 미전송(무시): job_id=%s", job_id, exc_info=True)
 
 
 def default_prompt_path(settings: Any | None = None) -> Path:
