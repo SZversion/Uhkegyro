@@ -23,6 +23,8 @@ Pinterest API v5, `GET /v5/pins/{pin_id}`, 브라우저의 직접 크롤링, 이
 
 ## How
 
+- Provider 계약 단계(PR-47)는 `PinterestProvider.search(role, query_fragments)` 비동기 메서드로 고정한다. `role`은 `Role`, `query_fragments`는 활성 카드에서 온 읽기 전용 `tuple[str, ...]`이며 결과는 기존 `RoleSearchOutcome`이다. 검색 결과의 Pin 타입은 기존 `PinResult`를 재사용한다.
+- `FakePinterestProvider`는 역할별로 미리 주입한 `RoleSearchOutcome`의 복사본을 반환한다. 미설정 역할은 `KeyError`로 실패해 테스트 데이터 누락을 숨기지 않는다. 이 단계는 Pinterest·widget HTTP, Playwright, 검색 URL 생성, DB·trace·로그 저장을 수행하지 않는다.
 - crawler는 서버에서만 실행하며 Next.js UI·일반 브라우저는 Pinterest 또는 widget endpoint를 직접 호출하지 않는다.
 - 공개 검색 요청 timeout은 15초, widget 요청 timeout은 10초다.
 - 구현 시 검색 URL은 선택된 `query_fragments`를 결합한 뒤, 결정론 코드가 기존 조각의 `drawing` 포함 여부를 검사하거나 제거하지 않고 고정 접미사 `drawing`을 최종 검색어 끝에 무조건 한 번 추가해 URL 인코딩해야 한다. 따라서 현재 `pose_gesture` 카드의 최종 검색어는 `gesture drawing action line reference drawing`이다. LLM·사용자 입력·카드 밖 문자열은 추가하지 않는다.
@@ -33,6 +35,13 @@ Pinterest API v5, `GET /v5/pins/{pin_id}`, 브라우저의 직접 크롤링, 이
 - `thumbnail_url`은 응답을 조립한 뒤 저장 전에 제거한다. 이미지 바이트·Pin 본문·작성자·보드·설명 등 widget의 나머지 응답 필드는 반환·저장·LLM 입력에 사용하지 않는다.
 
 ## AC
+
+**AC-00 · Provider 계약과 fake 결과**
+
+- GIVEN: 역할별 fake 결과에 `pin_id`, `pin_url`, `status`가 있는 `PinResult`가 주입됐다.
+- WHEN: 같은 역할과 활성 카드 검색 조각으로 provider를 호출하고 결과를 조립한다.
+- THEN: 해당 역할의 Pin 필드와 상태가 계약대로 전달되며 외부 호출은 없다.
+- AND THEN: 반환 결과를 변경해도 다음 fake 호출의 결과는 변하지 않는다.
 
 **AC-01 · Widget 기반 미리보기**
 
