@@ -9,7 +9,7 @@
 | 등록 label | `production`은 팀 검토와 실제 실행 검증 뒤에만 부여 |
 | 입력 변수 | `request_text`, `active_cards_json` |
 
-이 파일은 Langfuse에 등록할 검토 원본이다. 목표 런타임은 Langfuse Prompt의 확정 버전을 사용하며, 저장소 파일을 직접 prompt로 읽지 않는다. 현재 T33(Langfuse Prompt 등록·실제 환경 검증)는 미착수이므로, 실행 중인 LLM 런타임이나 등록된 원격 Prompt는 아직 없다.
+이 파일은 Langfuse에 등록할 검토 원본이다. 목표 런타임은 Langfuse Prompt의 확정 버전을 사용한다. T33(Langfuse Prompt 등록·실제 환경 검증) 전까지 adapter는 `INTERPRETER_PROMPT_PATH`로 이 저장소 파일을 직접 읽고, T33 검증 후 승인된 원격 Prompt로 전환한다. 현재 main에는 실행 중인 LLM 런타임이나 등록된 원격 Prompt가 없다.
 
 ## Target runtime composition
 

@@ -25,7 +25,7 @@ Pinterest API v5, `GET /v5/pins/{pin_id}`, 브라우저의 직접 크롤링, 이
 
 - crawler는 서버에서만 실행하며 Next.js UI·일반 브라우저는 Pinterest 또는 widget endpoint를 직접 호출하지 않는다.
 - 공개 검색 요청 timeout은 15초, widget 요청 timeout은 10초다.
-- 구현 시 검색 URL은 선택된 `query_fragments`를 결합한 뒤, 결정론 코드가 기존 조각의 `drawing` 포함 여부를 검사하거나 제거하지 않고 고정 접미사 `drawing`을 최종 검색어 끝에 무조건 한 번 추가해 URL 인코딩해야 한다. 따라서 단일 조각 `gesture drawing`의 최종 검색어는 `gesture drawing drawing`이다. LLM·사용자 입력·카드 밖 문자열은 추가하지 않는다.
+- 구현 시 검색 URL은 선택된 `query_fragments`를 결합한 뒤, 결정론 코드가 기존 조각의 `drawing` 포함 여부를 검사하거나 제거하지 않고 고정 접미사 `drawing`을 최종 검색어 끝에 무조건 한 번 추가해 URL 인코딩해야 한다. 따라서 현재 `pose_gesture` 카드의 최종 검색어는 `gesture drawing action line reference drawing`이다. LLM·사용자 입력·카드 밖 문자열은 추가하지 않는다.
 - Pin ID와 `pin_url`이 모두 확인된 공개 결과만 후보로 사용한다. 중복 Pin ID는 역할 안에서 하나만 유지한다.
 - 결과가 없으면 `pins=[]`, `reason_codes=["PIN_RESULTS_EMPTY"]`를 반환한다.
 - 수집한 Pin의 widget 요청 실패, 차단, timeout, 형식 오류 또는 이미지 URL 부재는 `status="deleted"`로 제공한다. 검색 자체가 실패해 Pin을 수집하지 못한 경우만 `PIN_SEARCH_UNAVAILABLE`로 분류한다.

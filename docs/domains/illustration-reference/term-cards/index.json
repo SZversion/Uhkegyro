@@ -24,7 +24,7 @@
       "layout"
     ],
     "promotion_rule": "현재 5개 역할 파일의 82개 카드는 오세창 검수를 거쳐 모두 runtime_eligible=true로 승인되었습니다. 이후 새 카드는 오세창 검수와 query_fragments, look_for, confidence_gate, requires 조건의 확정, API 계약·Skill·평가셋 검토 뒤에만 추가합니다.",
-    "query_rule": "구현 시 코드는 선택된 카드의 query_fragments만 결합하고, 기존 조각의 drawing 포함 여부를 검사하거나 제거하지 않은 채 최종 검색어 끝에 고정 접미사 drawing을 무조건 한 번 추가해야 합니다. 따라서 단일 조각 gesture drawing은 gesture drawing drawing이 됩니다. 일상어 설명을 검색어에 그대로 덧붙이지 않고, 카드에 있는 표준 전문용어 조각만 사용합니다. requires_all_of는 모두, requires_any_of는 하나 이상 충족해야 합니다."
+    "query_rule": "구현 시 코드는 선택된 카드의 query_fragments만 결합하고, 기존 조각의 drawing 포함 여부를 검사하거나 제거하지 않은 채 최종 검색어 끝에 고정 접미사 drawing을 무조건 한 번 추가해야 합니다. 따라서 현재 pose_gesture 카드의 gesture drawing과 action line reference 조각을 결합한 최종 검색어는 gesture drawing action line reference drawing입니다. 일상어 설명을 검색어에 그대로 덧붙이지 않고, 카드에 있는 표준 전문용어 조각만 사용합니다. requires_all_of는 모두, requires_any_of는 하나 이상 충족해야 합니다."
   },
   "pinterest_search_contract": {
     "principle": "Pinterest 검색은 짧고 검증 가능한 표준 전문용어를 사용하고, 초보자용 풀이는 검색어가 아닌 화면 피드백으로 분리합니다.",
@@ -216,7 +216,7 @@
     "pose_gesture": {
       "plain_meaning_ko": "손동작이 아니라, 인물의 움직임과 힘의 방향을 한 줄로 빠르게 잡는 동세 또는 액션 라인입니다.",
       "selection_reason_template_ko": "입력에 움직임의 방향, 힘, 빠른 러프의 흐름이 나타날 때 '동세/액션 라인'으로 해석합니다.",
-      "pinterest_search_notice_ko": "Pinterest에서는 'gesture drawing'과 'action line reference'라는 표준 검색 조각으로 찾습니다.",
+      "pinterest_search_notice_ko": "Pinterest에서는 'gesture drawing action line reference drawing' 검색어로 찾습니다.",
       "reference_checkpoints_ko": [
         "머리부터 몸통을 지나는 가장 긴 움직임 선",
         "팔·다리가 그 흐름을 강화하는 방향"

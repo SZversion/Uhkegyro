@@ -21,7 +21,7 @@
 | OpenRouter LLM adapter | ⬜ 미착수 (`main` 기준) | model configuration·structured output | `openrouter-llm-adapter.md`, `api-contract.md` |
 | failure code·관측 | ⬜ 미착수 | worker/trace | `api-contract.md`, 관측 Spec |
 | Next.js UI | ⬜ 미착수 | frontend | `api-contract.md` |
-| PinterestCrawlerProvider | ⬜ 미착수. URL 빌더는 카드 조각의 기존 `drawing` 포함 여부와 관계없이 결합 뒤 고정 접미사 `drawing`을 무조건 한 번 추가해야 함 | 서버 Playwright 공개 검색·Pin ID widget 조회 | `pinterest-widget-crawler.md`, `api-contract.md` |
+| PinterestCrawlerProvider | ⬜ 미착수. 구현 시 `backend/services/search_url_builder.py`는 카드 조각의 기존 `drawing` 포함 여부와 관계없이 결합 뒤 고정 접미사 `drawing`을 무조건 한 번 추가해야 하며, `backend/tests/test_search_url_builder.py`의 기대 URL과 접미사 회귀 테스트를 함께 갱신해야 함 | 서버 Playwright 공개 검색·Pin ID widget 조회 | `pinterest-widget-crawler.md`, `api-contract.md` |
 
 ## 출시·협업 추적
 
