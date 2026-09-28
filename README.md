@@ -3,7 +3,7 @@
 > 전문 용어가 낯선 초보자가 텍스트로 묘사한 캐주얼 캐릭터의 **체형/소체, 포즈, 구도**를 기초 드로잉 용어와 역할별 Pinterest 탐색 계획으로 바꾸는 Agent입니다.
 
 > **현재 상태: `GET /health`와 인메모리 mock Agent API까지 구현됨**
-> `POST /api/agent`는 세션 쿠키와 queued job을 만들고, `GET /api/jobs/{job_id}`는 동일 세션의 job을 조회합니다. DB 영속화·실제 worker·LLM 해석과 resolver 연동·Pinterest 검색·Langfuse·UI·Agent API 배포는 아직 구현·측정하지 않았습니다. 별도 MCP 서비스의 `get_active_term_card` FastMCP 도구와 TERM_CARD 시작 검증은 구현됐지만, 외부 MCP client 호출 증거는 아직 없습니다. 아래의 목표 구조와 계획 항목은 완료 기능으로 해석하면 안 됩니다.
+> `POST /api/agent`는 세션 쿠키와 queued job을 만들고, `GET /api/jobs/{job_id}`는 동일 세션의 job을 조회합니다. DB 영속화·실제 worker·LLM 해석과 resolver 연동·Pinterest 검색·UI·Agent API 배포는 아직 구현·측정하지 않았습니다. Langfuse adapter의 일부 관측 코드는 구현됐지만, worker trace 운영 검증·원격 Prompt 등록·Dataset 연결·대시보드 측정은 미완료입니다. 별도 MCP 서비스의 `get_active_term_card` FastMCP 도구와 TERM_CARD 시작 검증은 구현됐지만, 외부 MCP client 호출 증거는 아직 없습니다. 아래의 목표 구조와 계획 항목은 완료 기능으로 해석하면 안 됩니다.
 
 ## 한눈에 보기
 
@@ -146,7 +146,7 @@ docker compose up --build
 docker compose down
 ```
 
-> 아직 전체 MVP를 10분 안에 재현하는 실측은 수행하지 않았습니다. LLM·MCP·Langfuse·UI 구현 후, 새 환경에서 위 절차를 검증하고 결과를 갱신합니다.
+> 아직 전체 MVP를 10분 안에 재현하는 실측은 수행하지 않았습니다. Langfuse adapter의 일부 관측 코드는 구현됐지만, worker trace 운영 검증·원격 Prompt 등록·Dataset 연결·대시보드 측정과 UI 구현 후 새 환경에서 위 절차를 검증하고 결과를 갱신합니다.
 
 ## 환경 변수와 보안
 
