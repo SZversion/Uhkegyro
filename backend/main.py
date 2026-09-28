@@ -10,7 +10,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from backend.routes.agent import ApiContractError, router as agent_router, set_session_cookie
+from backend.routes.agent import ApiContractError, router as agent_router
+from backend.shared.auth import set_session_cookie
 from backend.services.catalog_repository import CatalogLoadError, load_catalog
 from backend.shared.config import get_settings, resolve_term_cards_dir
 
@@ -45,7 +46,7 @@ async def handle_api_contract_error(request: FastAPI, exc: ApiContractError) -> 
     """
     response = JSONResponse(status_code=exc.status_code, content=exc.error.model_dump())
     if exc.session_token:
-        set_session_cookie(response, exc.session_token)
+        set_session_cookie(response, exc.session_token, settings)
     return response
 
 

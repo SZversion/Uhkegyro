@@ -8,12 +8,15 @@ from __future__ import annotations
 
 import json
 import uuid
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
 
 from backend.main import app
-from backend.services.session_store import SESSION_COOKIE_NAME, reset_session_store
+from backend.routes import agent as agent_route
+from backend.shared.auth import SESSION_COOKIE_NAME, hash_session_token
+from backend.services.session_store import get_session_store, reset_session_store
 
 
 @pytest.fixture
@@ -47,6 +50,13 @@ def test_new_session_gets_httponly_cookie_and_202(client: TestClient) -> None:
     assert SESSION_COOKIE_NAME in cookie_header
     assert "HttpOnly" in cookie_header
     assert "Max-Age=7776000" in cookie_header  # 90일
+
+
+def test_production_response_uses_secure_cookie(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(agent_route, "get_settings", lambda: SimpleNamespace(environment="production"))
+    result = submit(client, "서 있는 자세")
+    assert result["status"] == 202
+    assert "Secure" in result["headers"]["set-cookie"]
 
 
 def test_existing_cookie_is_reused(client: TestClient) -> None:
@@ -192,6 +202,7 @@ def test_same_request_within_10min_returns_same_job(client: TestClient) -> None:
     assert first["status"] == 202
     assert second["status"] == 202
     assert first["body"]["job_id"] == second["body"]["job_id"]
+    assert second["body"]["job_status"] == "queued"
 
 
 def test_same_key_different_text_is_409(client: TestClient) -> None:
@@ -212,23 +223,26 @@ def test_different_key_creates_new_job(client: TestClient) -> None:
     assert first["body"]["job_id"] != second["body"]["job_id"]
 
 
-# --- AC-06 · polling 종료 --------------------------------------------------
+# --- AC-06 · queued polling ------------------------------------------------
 
 
-def test_job_read_returns_completed_envelope(client: TestClient) -> None:
-    """AC-06: 종결 상태는 poll_after_ms=null이고 result를 갖는다."""
+def test_job_read_returns_queued_envelope(client: TestClient) -> None:
     created = submit(client, "다리를 옆으로 벌린 자세")
     response = client.get(f"/api/jobs/{created['body']['job_id']}")
 
     assert response.status_code == 200
     envelope = response.json()
-    assert envelope["job_status"] == "completed"
-    assert envelope["poll_after_ms"] is None
+    assert envelope["job_status"] == "queued"
+    assert envelope["poll_after_ms"] == 1000
     assert envelope["failure"] is None
-    assert envelope["result"]["agent_status"] == "needs_clarification"
-    assert envelope["result"]["clarifying_question"]
-    assert envelope["result"]["reason_codes"] == ["INSUFFICIENT_VISUAL_EVIDENCE"]
-    assert 1 <= envelope["attempt"] <= envelope["max_attempts"]
+    assert envelope["result"] is None
+    assert envelope["attempt"] == 1  # 계약상 API는 claim 전에도 1을 노출
+    assert envelope["max_attempts"] == 3
+    stored = get_session_store()._jobs[created["body"]["job_id"]]
+    assert stored.attempt == 0
+    token = client.cookies.get(SESSION_COOKIE_NAME)
+    assert token not in get_session_store()._sessions
+    assert hash_session_token(token) in get_session_store()._sessions
 
 
 def test_job_read_without_cookie_is_401(client: TestClient) -> None:

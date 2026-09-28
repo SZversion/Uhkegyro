@@ -1,7 +1,7 @@
 """세션·job 저장 계층 — 현재는 인메모리 구현이다.
 
-**교체 지점.** KHS의 `PR #33`(anonymous session boundary)이 세션 토큰 발급·저장
-규칙을 확정하면 이 모듈만 Neon PostgreSQL + `asyncpg` 구현으로 갈아끼운다.
+**교체 지점.** 세션 토큰·쿠키는 `backend/shared/auth.py`를 단일 기준으로 사용한다.
+영속화 단계에서는 이 모듈을 Neon PostgreSQL + `asyncpg` 구현으로 교체한다.
 라우터(`backend/routes/agent.py`)와 스키마(`backend/schemas/`)는 이 모듈의 내부
 구조에 의존하지 않으므로 계약은 바뀌지 않는다. `session-job-persistence.md`가
 이 계층의 단일 기준이다.
@@ -22,37 +22,27 @@
 - session별 advisory lock을 통한 idempotency 직렬화(`:27`).
 - worker의 lease·재시도 전이(`postgres-job-worker.md`).
 
-여기서 만들어진 job은 mock 결과로 즉시 종결된다. `attempt`는 worker가 한 번 집어
-갔다고 보고 1부터 시작한다. `session-job-persistence.md:15`의 `attempt=0`은 아직
-worker가 집어가지 않은 DB 행의 초기값이고, `JobEnvelope.attempt`가 요구하는 1 이상
-은 worker가 집은 뒤의 값이라 두 층이 맞는다.
+여기서 만든 job은 worker가 아직 집지 않았으므로 queued, attempt=0으로 남는다.
+공개 `JobEnvelope.attempt`는 계약에 따라 claim 전에도 1로 표시한다.
 """
 from __future__ import annotations
 
 import hashlib
-import secrets
 import threading
 import time
 import uuid
 from dataclasses import dataclass
 from typing import Callable
 
-from backend.schemas.enums import AgentStatus, JobStatus, ReasonCode
+from backend.schemas.enums import JobStatus
+from backend.shared.auth import create_session_token, hash_session_token
 from backend.schemas.models import (
     PROGRESS_POLL_AFTER_MS,
     RETRY_COUNT_MAX,
-    AgentResult,
     JobEnvelope,
 )
 
-SESSION_COOKIE_NAME = "session_id"
-SESSION_MAX_AGE_SECONDS = 90 * 24 * 60 * 60
 IDEMPOTENCY_TTL_SECONDS = 10 * 60
-
-#: mock 종결 결과. T14 LLM 어댑터 → T17 resolver → assembler 경로가 이 자리를
-#: 대체하며, 그때 `AgentResult`는 `success`와 `reference_plan`을 갖게 된다.
-MOCK_CLARIFYING_QUESTION = "구도와 시점을 함께 정하시나요, 한쪽만 정하시나요?"
-MOCK_USER_MESSAGE = "구도나 시점이 아직 모호합니다. 어느 쪽을 먼저 정할지 알려주시면 용어를 골라드리겠습니다."
 
 
 class IdempotencyConflict(Exception):
@@ -68,7 +58,7 @@ class SessionRequired(Exception):
 
 
 def hash_opaque(value: str) -> str:
-    """쿠키 토큰과 idempotency 키는 해시해서만 보관한다."""
+    """요청 원문과 idempotency 키를 해시해서 보관한다."""
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
 
@@ -90,24 +80,7 @@ class _Job:
     attempt: int
     max_attempts: int
     status: JobStatus
-    result: AgentResult | None = None
-
-
-def build_mock_result() -> AgentResult:
-    """mock 종결 결과.
-
-    `needs_clarification`을 고른 이유: `success`는 `reference_plan`을 강제하고
-    `partial_result`는 `PIN_*` reason code를 강제하므로 둘 다 카탈로그나 검색
-    provider가 필요하다. 이 슬라이스의 목표는 요청·응답 계약이므로, 카탈로그 없이
-    성립하고 reason code 규칙까지 지킨 `needs_clarification`을 쓴다.
-    """
-    return AgentResult(
-        agent_status=AgentStatus.NEEDS_CLARIFICATION,
-        reason_codes=[ReasonCode.INSUFFICIENT_VISUAL_EVIDENCE],
-        reference_plan=None,
-        clarifying_question=MOCK_CLARIFYING_QUESTION,
-        user_message=MOCK_USER_MESSAGE,
-    )
+    result: None = None
 
 
 class InMemorySessionStore:
@@ -125,10 +98,10 @@ class InMemorySessionStore:
 
         원문 토큰은 여기서만 존재하고, 저장소 안에는 해시만 남는다.
         """
-        token = secrets.token_urlsafe(32)
+        token = create_session_token()
         session = _Session(
             session_id=str(uuid.uuid4()),
-            token_hash=hash_opaque(token),
+            token_hash=hash_session_token(token),
             last_activity_at=self._clock(),
         )
         with self._lock:
@@ -143,7 +116,7 @@ class InMemorySessionStore:
         if not token:
             raise SessionRequired
         with self._lock:
-            session = self._sessions.get(hash_opaque(token))
+            session = self._sessions.get(hash_session_token(token))
             if session is None:
                 raise SessionRequired
             session.last_activity_at = self._clock()
@@ -181,10 +154,9 @@ class InMemorySessionStore:
                 request_text_hash=text_hash,
                 idempotency_key_hash=key_hash,
                 idempotency_expires_at=now + IDEMPOTENCY_TTL_SECONDS,
-                attempt=1,
+                attempt=0,
                 max_attempts=RETRY_COUNT_MAX,
-                status=JobStatus.COMPLETED,
-                result=build_mock_result(),
+                status=JobStatus.QUEUED,
             )
             self._jobs[job.job_id] = job
             self._idempotency[index] = job.job_id
@@ -206,7 +178,7 @@ def job_to_envelope(job: _Job) -> JobEnvelope:
         job_id=job.job_id,
         session_id=job.session_id,
         job_status=job.status,
-        attempt=job.attempt,
+        attempt=max(1, job.attempt),
         max_attempts=job.max_attempts,
         poll_after_ms=None if terminal else PROGRESS_POLL_AFTER_MS,
         result=job.result,

@@ -2,8 +2,8 @@
 
 > 전문 용어가 낯선 초보자가 텍스트로 묘사한 캐주얼 캐릭터의 **체형/소체, 포즈, 구도**를 기초 드로잉 용어와 역할별 Pinterest 탐색 계획으로 바꾸는 Agent입니다.
 
-> **현재 상태: 기반 골조 구현 중**
-> 기본 Agent API는 `GET /health`만 동작합니다. LLM 기반 해석, Agent 메시지 API, Langfuse, UI 및 Agent API 배포는 아직 구현·측정하지 않았습니다. 별도 MCP 서비스의 `get_active_term_card` FastMCP 도구와 TERM_CARD 시작 검증은 구현됐지만, 외부 MCP client 호출·Agent worker 연동·배포 실행 증거는 아직 없습니다. 아래의 목표 구조와 계획 항목은 완료 기능으로 해석하면 안 됩니다.
+> **현재 상태: `GET /health`와 인메모리 mock Agent API까지 구현됨**
+> `POST /api/agent`는 세션 쿠키와 queued job을 만들고, `GET /api/jobs/{job_id}`는 동일 세션의 job을 조회합니다. DB 영속화·실제 worker·LLM 해석과 resolver 연동·Pinterest 검색·Langfuse·UI·Agent API 배포는 아직 구현·측정하지 않았습니다. 별도 MCP 서비스의 `get_active_term_card` FastMCP 도구와 TERM_CARD 시작 검증은 구현됐지만, 외부 MCP client 호출 증거는 아직 없습니다. 아래의 목표 구조와 계획 항목은 완료 기능으로 해석하면 안 됩니다.
 
 ## 한눈에 보기
 
@@ -13,7 +13,7 @@
 | 반복 문제 | 원하는 체형·포즈·구도를 일상어로만 검색해 넓은 결과를 반복 탐색한다. |
 | 해결 방식 | 일상어를 구조화한 뒤, 용어 설명과 역할별 외부 탐색 링크를 함께 제공한다. |
 | 팀 | UH케그려 (4조) |
-| 현재 실행 가능 범위 | Docker Compose 기반 FastAPI `GET /health` 골조 |
+| 현재 실행 가능 범위 | Docker Compose 기반 FastAPI `GET /health`와 인메모리 mock Agent API, 카탈로그 시작 검증, MCP 도구 |
 
 ## 팀원
 
@@ -71,8 +71,8 @@
 
 ```text
 사용자 UI
-  -> POST /api/agent (미구현, 서버 세션 쿠키 발급·재사용, 202 + job_id)
-  -> GET /api/jobs/{job_id} polling (미구현, completed/failed까지)
+  -> POST /api/agent (인메모리 mock 구현, 서버 세션 쿠키 발급·재사용, 202 + job_id)
+  -> GET /api/jobs/{job_id} polling (인메모리 mock 구현, 현재 queued 조회)
 Job executor / recovery (미구현)
   -> LLM: 일상어를 허용된 term_id와 역할로 구조화
   -> 결정론 코드: Pydantic 검증, 역할 순서, 허용 ID, URL 인코딩
@@ -104,8 +104,11 @@ PinterestCrawlerProvider와 widget 기반 Pin 미리보기·보관 경계는 [Pi
 | 항목 | 현재 상태 | 최종 목표 |
 | --- | --- | --- |
 | `GET /health` | 구현됨. `{"status":"ok"}` 반환 | Cloud Run 상태 확인 |
-| `POST /api/agent` | 명세 확정·미구현 | 가이드 제출용 Agent API. 서버 세션 쿠키를 발급·재사용하고 `202`와 비동기 `job_id` 반환 |
-| `GET /api/jobs/{job_id}` | 명세 확정·미구현 | 소유 job의 실제 상태·완료 결과·실패·재시도 가능 여부 반환 |
+| `POST /api/agent` | 인메모리 mock 구현됨. 세션 쿠키 발급·재사용, `202 + job_id` 반환 | 가이드 제출용 Agent API. 서버 세션 쿠키를 발급·재사용하고 `202`와 비동기 `job_id` 반환 |
+| `GET /api/jobs/{job_id}` | 인메모리 mock 구현됨. 동일 세션의 job만 조회 | 소유 job의 실제 상태·완료 결과·실패·재시도 가능 여부 반환 |
+| DB 영속화·실제 worker | 미구현 | job 저장과 상태 전이 |
+| LLM 해석·resolver 연동 | 미구현 | 실제 job 처리 경로 |
+| Pinterest 검색 실행 | 미구현 | 역할별 검색 결과 |
 | `/docs` | FastAPI 기본 문서에서 확인 가능 | 요청·응답 모델 및 오류 응답 확인 |
 | `/mcp` | 구현됨. `backend/mcp/server.py`의 `get_active_term_card(term_id)` FastMCP 도구. 외부 클라이언트 호출 증거는 미기록 | Streamable HTTP endpoint와 도구 호출 증거 |
 | TERM_CARD JSON 카탈로그 | 구현됨. API·MCP 시작 시 검증 후 역할별 활성 카드를 메모리에 로드 | 요청 중 재읽기·DB 적재 없이 활성 카드를 조회 |
