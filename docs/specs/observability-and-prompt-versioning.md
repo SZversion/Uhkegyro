@@ -14,11 +14,12 @@
 
 기본 해석 프롬프트 이름은 `uhkegryo-interpreter-v{n}`이고 production label을 사용한다. 모델 또는 프롬프트 변경 시 버전을 증가시킨다. `prompts/uhkegryo-interpreter-v0.md`는 v0의 저장소 검토 원본이며, 원격 Langfuse Prompt 등록 전후에 내용과 버전을 대조한다.
 
-각 Langfuse trace에는 사용자 요청 원문, `job_id` UUID 원문, `session_id` UUID 원문, 모델, `prompt_version`, `attempt`, `max_attempts`, 단계, `error_type`, 실제 적용한 `backoff_ms`, 최종 `agent_status`, `failure_code`, 검색 결과 상태를 기록한다. `job_id`와 `session_id`는 trace 식별·세션 그룹화를 위한 운영 필드이며, 세션 쿠키 토큰·API key·`anonymous_user_id` 원문은 기록하지 않는다. 일반 애플리케이션 로그에는 요청 원문 대신 해시·길이·선택된 term ID만 기록하며, LLM 원본 응답은 저장하지 않는다.
+각 Langfuse trace에는 사용자 요청 원문, `job_id` UUID 원문, `session_id` UUID 원문, 모델, `prompt_version`, `attempt`, `max_attempts`, 단계, `error_type`, 실제 적용한 `backoff_ms`, 최종 `agent_status`, `failure_code`, 검색 결과 상태를 기록한다. `job_id`와 `session_id`는 trace 식별·세션 그룹화를 위한 운영 필드다. 일반 애플리케이션 로그에는 요청 원문 대신 해시·길이·선택된 term ID만 기록하며, LLM 원본 응답은 저장하지 않는다. 세션 쿠키 토큰 원문·해시, API key, `anonymous_user_id` 원문은 기록하지 않는다.
 
 ## How
 
 - 자동 실행 재시도는 같은 job의 `attempt=1..3`으로 기록한다. 사용자에게 재시도 진행을 표시하지 않는다.
+- Langfuse trace는 job마다 하나만 만든다. attempt와 validating·searching·rendering 같은 처리 단계는 같은 trace 안의 observation 또는 span으로 기록하고, worker가 job 종결 시 trace를 종료한다. LLM adapter는 worker가 전달한 관측 context에 LLM 호출 observation을 추가한다.
 - `LLM_*`, `SEARCH_*`, `JOB_INSTANCE_INTERRUPTED`은 각 시도의 안전한 오류 분류와 지연을 기록한다. LLM `error_type`은 `pydantic_validation_error`, `timeout`, `upstream_5xx`, `rate_limited`, `incomplete_or_unclassified_upstream` 중 하나이며, 오류별 backoff와 최종 포기 경로는 [openrouter-llm-adapter.md](./openrouter-llm-adapter.md)를 따른다.
 - 재시도를 예약한 attempt 1·2는 `error_type`과 실제 양수 `backoff_ms`를 기록하고 `failure_code=null`이다. 종결 attempt는 `error_type`과 최종 `failure_code`를 기록하고 다음 재시도가 없으므로 `backoff_ms=null`이다. 성공 attempt는 `error_type=null`, `backoff_ms=null`, `failure_code=null`이다.
 - 최종 `failed`에는 API와 같은 안정된 failure code를 기록한다. 운영 로그에는 안전한 오류 요약을 추가할 수 있으나 UI에 노출하지 않는다.
@@ -26,6 +27,8 @@
 - `needs_clarification`은 실패가 아니며 새 사용자 메시지의 새 job과 연결한다.
 - API 키, 세션 토큰, `anonymous_user_id` 원문, 이미지 바이트, 썸네일 URL, Pin 본문 등 부가 메타데이터는 기록하지 않는다. 사용자 요청 원문은 Langfuse trace에만 기록한다.
 - Langfuse Prompt 원격 버전은 `uhkegryo-interpreter-v{n}` 이름과 version label로 관리한다. `production` label은 30건 baseline과 회귀 확인 전에는 바꾸지 않는다.
+
+현재 저장소에는 worker와 Langfuse adapter 구현이 없으므로, 다음 구현 작업은 `job_id`, `session_id`, `attempt`, `max_attempts`를 worker에서 adapter로 전달하고, adapter가 모델·prompt version·LLM `error_type`을 반환하도록 한다. `backoff_ms`와 최종 `failure_code`는 worker가 실제 적용값을 기록한다.
 
 ## AC
 

@@ -14,6 +14,8 @@
 
 `sessions`는 `session_id` UUID PK, 고유 `session_token_hash`, `created_at`, `last_activity_at`을 가진다. `jobs`는 `job_id` UUID PK, `session_id` FK `ON DELETE CASCADE`, `request_text`, `request_text_hash`, `idempotency_key_hash`, `idempotency_expires_at`, `status`, `attempt=0`, `max_attempts=3`, `lease_expires_at`, `next_retry_at nullable timestamptz`, `succeeded`, `final_payload_json`, `created_at`, `updated_at`, `completed_at`을 가진다. 신규 job의 `next_retry_at`은 `null`이다.
 
+DB의 `attempt=0`은 아직 실행되지 않은 job을 뜻한다. worker가 claim transaction에서 `attempt`를 1 증가시킨 뒤 해당 값을 실행 시도 번호로 사용한다. 따라서 API `JobEnvelope.attempt`와 Langfuse trace의 `attempt`에는 claim 이후 값인 `1..max_attempts`만 기록하며, `attempt=0`을 API에 노출하지 않는다.
+
 수락한 `request_text`는 연결 session이 삭제될 때까지 job에 보관한다. `succeeded`와 `final_payload_json`은 진행 중에는 모두 `null`, 성공이면 각각 `true`와 `thumbnail_url`을 제거한 `AgentResult`, 실패면 `false`와 `failure` 객체다. 성공 payload는 `pin_id`·`pin_url`·`status`를 유지한다.
 
 `Idempotency-Key`는 UUID 헤더다. 같은 세션·같은 키·10분 이내·같은 `request_text_hash`면 기존 job을 반환한다. 같은 키와 다른 원문은 `409 IDEMPOTENCY_KEY_CONFLICT`다. 10분이 지나면 같은 키는 새 job을 만들 수 있다.
@@ -27,6 +29,7 @@
 - idempotency 판정과 job 생성은 같은 PostgreSQL transaction에서 session별 advisory lock으로 직렬화한다.
 - migration은 `jobs.next_retry_at timestamptz NULL DEFAULT NULL`을 추가하고 기존 행은 `null`로 둔다. worker claim은 queued job에 한해 `next_retry_at IS NULL OR next_retry_at <= now()`를 만족할 때만 허용한다.
 - `GET /api/jobs/{job_id}`는 소유 세션만 읽을 수 있고, 소유하지 않은 경우 `JOB_NOT_FOUND`를 반환한다.
+- 현재 저장소에는 session/job repository와 worker 실행 파일이 없으므로, 다음 구현 작업은 이 문서의 필드·transaction·claim 규칙을 새 코드에 그대로 반영해야 한다. 기존 파일만 수정하는 작업에서는 해당 구현을 임의로 추가하지 않는다.
 
 ## AC
 

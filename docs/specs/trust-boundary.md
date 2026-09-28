@@ -19,7 +19,7 @@
 - 사전 안전 검사는 프롬프트/비밀값 추출과 유해·불법 요청을 `unsafe_input`으로 끝내고 LLM·검색을 호출하지 않는다.
 - crawler와 widget 요청은 서버에서만 수행하며 브라우저는 Pinterest·widget endpoint를 직접 호출하지 않는다. Pinterest API v5는 사용하지 않는다.
 - 외부 원문·이미지·Pin 본문·widget 부가 필드를 LLM 프롬프트나 RAG에 주입하지 않는다. `pin_id`, `pin_url`, `status`는 세션·job 이력에 포함된 결과로만 유지할 수 있으며, 썸네일 URL과 이미지 바이트는 저장·trace·로그에 사용하지 않는다.
-- 사용자 원문은 `jobs.request_text`와 Langfuse trace에만 기록하며 일반 애플리케이션 로그·LLM 원본 응답에는 기록하지 않는다. `job_id`와 `session_id` UUID 원문은 trace 식별·세션 그룹화를 위해 기록할 수 있지만, 비밀값, 세션 쿠키 토큰, `anonymous_user_id`, 이미지 바이트는 UI와 trace에 노출하지 않는다.
+- 사용자 원문은 `jobs.request_text`와 Langfuse trace에만 기록하며 일반 애플리케이션 로그·LLM 원본 응답에는 기록하지 않는다. `job_id`와 `session_id` UUID 원문은 trace 식별·세션 그룹화를 위해 기록할 수 있지만, 비밀값, 세션 쿠키 토큰 원문·해시, `anonymous_user_id`, 이미지 바이트는 UI와 trace에 노출하지 않는다.
 - 세션 저장소는 쿠키 토큰 원문이 아닌 SHA-256 해시만 보관한다.
 
 ## AC
