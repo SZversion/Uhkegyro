@@ -282,8 +282,15 @@ def load_interpreter_prompt(prompt_path: Path) -> tuple[str, str]:
         raise PromptConfigurationError(
             f"INTERPRETER_PROMPT_PATH 파일을 읽을 수 없다: {prompt_path}"
         ) from exc
-    system_message = _extract_fenced_block(text, SYSTEM_HEADING)
-    user_template = _extract_fenced_block(text, USER_TEMPLATE_HEADING)
+
+    try:
+        system_message = _extract_fenced_block(text, SYSTEM_HEADING)
+        user_template = _extract_fenced_block(text, USER_TEMPLATE_HEADING)
+    except ValueError as exc:
+        raise PromptConfigurationError(
+            f"프롬프트 형식이 올바르지 않다: {prompt_path}"
+        ) from exc
+
     return system_message, user_template
 
 
