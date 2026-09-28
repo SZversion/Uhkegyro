@@ -194,7 +194,7 @@ class LLMInterpretationAdapter:
             job_id=job_id,
             usage=usage,
             output=summary,
-            input_chars=len(request_text),
+            request_text=request_text,
         )
         return interpretation
 
@@ -204,8 +204,13 @@ class LLMInterpretationAdapter:
         job_id: str,
         usage: dict[str, int],
         output: dict[str, Any],
-        input_chars: int,
+        request_text: str,
     ) -> None:
+        """Langfuse trace에만 사용자 요청 원문을 기록한다.
+
+        `observability-and-prompt-versioning.md`에 따라 원문은 Langfuse trace로만 보내고
+        일반 애플리케이션 로그에는 해시·길이·term ID만 남긴다. 키가 없으면 전송하지 않고 반환한다.
+        """
         if not (self.settings.langfuse_public_key and self.settings.langfuse_secret_key):
             return
         try:
@@ -219,7 +224,7 @@ class LLMInterpretationAdapter:
             generation = langfuse.generation(
                 name=self.prompt_version,
                 model=self.settings.openrouter_model,
-                input={"request_text_chars": input_chars},
+                input={"request_text": request_text},
                 output=output,
                 metadata={"job_id": job_id},
             )

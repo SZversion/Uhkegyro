@@ -203,23 +203,11 @@ def test_interpret_passes_system_and_user_messages():
 
 # --- 관측 계약 (observability-and-prompt-versioning.md) ----------------------
 
-
-def test_interpret_structured_log_carries_job_id(caplog):
-    """구조화 로그가 관측 스펙이 요구하는 `job_id`를 남긴다."""
-    completions = _FakeCompletions(responses=[_FakeResponse(SELECT_JSON)])
-    adapter = _adapter(completions)
-    with caplog.at_level("INFO", logger="backend.services.llm"):
-        _run(adapter.interpret("반동", job_id="job-42", active_cards_json="{}"))
-
-    payloads = [json.loads(r.message) for r in caplog.records if r.name == "backend.services.llm"]
-    ok = [p for p in payloads if p.get("event") == "llm.interpret.ok"]
-    assert len(ok) == 1
-    assert ok[0]["job_id"] == "job-42"
-    assert ok[0]["prompt_version"] == adapter.prompt_version
+_REQUEST_TEXT = "한쪽 다리에 힘 주고 상체가 살짝 틀어진 마른 캐릭터"
 
 
-def test_interpret_langfuse_metadata_carries_job_id(monkeypatch):
-    """Langfuse metadata에 `job_id`가 전달된다. 네트워크는 호출하지 않는다."""
+def _langfuse_generation_kwargs(monkeypatch, *, with_keys=True):
+    """가짜 langfuse 모듈로 trace 전송 내용을 캡처한다. 네트워크는 호출하지 않는다."""
     recorded = {}
 
     class _FakeGeneration:
@@ -238,14 +226,67 @@ def test_interpret_langfuse_metadata_carries_job_id(monkeypatch):
     monkeypatch.setitem(sys.modules, "langfuse", fake_module)
 
     settings = _real_settings()
-    monkeypatch.setattr(settings, "langfuse_public_key", "pk-test", raising=False)
-    monkeypatch.setattr(settings, "langfuse_secret_key", "sk-test", raising=False)
+    if with_keys:
+        monkeypatch.setattr(settings, "langfuse_public_key", "pk-test", raising=False)
+        monkeypatch.setattr(settings, "langfuse_secret_key", "sk-test", raising=False)
+    else:
+        monkeypatch.setattr(settings, "langfuse_public_key", "", raising=False)
+        monkeypatch.setattr(settings, "langfuse_secret_key", "", raising=False)
 
     completions = _FakeCompletions(responses=[_FakeResponse(SELECT_JSON)])
     adapter = _adapter(completions, settings=settings)
-    _run(adapter.interpret("반동", job_id="job-42", active_cards_json="{}"))
+    _run(adapter.interpret(_REQUEST_TEXT, job_id="job-42", active_cards_json="{}"))
+    return recorded, adapter
 
+
+def test_interpret_structured_log_carries_job_id(caplog):
+    """구조화 로그가 관측 스펙이 요구하는 `job_id`와 `prompt_version`을 남긴다."""
+    completions = _FakeCompletions(responses=[_FakeResponse(SELECT_JSON)])
+    adapter = _adapter(completions)
+    with caplog.at_level("INFO", logger="backend.services.llm"):
+        _run(adapter.interpret(_REQUEST_TEXT, job_id="job-42", active_cards_json="{}"))
+
+    payloads = [json.loads(r.message) for r in caplog.records if r.name == "backend.services.llm"]
+    ok = [p for p in payloads if p.get("event") == "llm.interpret.ok"]
+    assert len(ok) == 1
+    assert ok[0]["job_id"] == "job-42"
+    assert ok[0]["prompt_version"] == adapter.prompt_version
+
+
+def test_structured_log_does_not_carry_request_text(caplog):
+    """원문은 Langfuse trace에만 남긴다. 일반 애플리케이션 로그에는 남기지 않는다."""
+    completions = _FakeCompletions(responses=[_FakeResponse(SELECT_JSON)])
+    adapter = _adapter(completions)
+    with caplog.at_level("DEBUG", logger="backend.services.llm"):
+        _run(adapter.interpret(_REQUEST_TEXT, job_id="job-42", active_cards_json="{}"))
+
+    messages = [r.getMessage() for r in caplog.records if r.name == "backend.services.llm"]
+    assert messages
+    assert all(_REQUEST_TEXT not in message for message in messages)
+
+
+def test_langfuse_input_carries_request_text(monkeypatch):
+    """Langfuse trace input에 사용자 요청 원문이 전달된다."""
+    recorded, _ = _langfuse_generation_kwargs(monkeypatch)
+    assert recorded["generation"]["input"] == {"request_text": _REQUEST_TEXT}
+
+
+def test_langfuse_metadata_keeps_job_id(monkeypatch):
+    """Langfuse metadata의 `job_id`는 그대로 유지된다."""
+    recorded, _ = _langfuse_generation_kwargs(monkeypatch)
     assert recorded["generation"]["metadata"] == {"job_id": "job-42"}
+
+
+def test_langfuse_keeps_prompt_version(monkeypatch):
+    """trace 이름은 프롬프트 버전을 유지한다."""
+    recorded, adapter = _langfuse_generation_kwargs(monkeypatch)
+    assert recorded["generation"]["name"] == adapter.prompt_version
+
+
+def test_langfuse_disabled_sends_nothing(monkeypatch):
+    """키가 없으면 네트워크 호출 없이 조용히 종료한다."""
+    recorded, _ = _langfuse_generation_kwargs(monkeypatch, with_keys=False)
+    assert recorded == {}
 
 
 def test_interpret_requires_job_id_keyword():
