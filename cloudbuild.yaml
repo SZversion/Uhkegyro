@@ -40,7 +40,7 @@ steps:
       - "--max-instances=3"
       - "--concurrency=80"
       - "--timeout=300"
-      - "--set-env-vars=ENVIRONMENT=production"
+      - "--set-env-vars=ENVIRONMENT=production,INTERPRETER_PROMPT_PATH=/app/prompts/uhkegryo-interpreter-v0.md,LLM_MODEL=openai/gpt-4o-mini,LLM_TIMEOUT_SECONDS=180"
       - "--set-secrets=OPENROUTER_API_KEY=OPENROUTER_API_KEY:latest"
       - "--set-secrets=LANGFUSE_PUBLIC_KEY=LANGFUSE_PUBLIC_KEY:latest"
       - "--set-secrets=LANGFUSE_SECRET_KEY=LANGFUSE_SECRET_KEY:latest"
