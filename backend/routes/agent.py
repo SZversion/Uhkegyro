@@ -116,6 +116,19 @@ async def _database_call(operation: Any) -> Any:
         raise ApiContractError(FailureCode.DATABASE_UNAVAILABLE) from None
 
 
+async def _discard_new_session(session_id: str) -> None:
+    if _pool is None:
+        return
+    try:
+        await _pool.execute(
+            "DELETE FROM sessions WHERE session_id = $1::uuid",
+            session_id,
+        )
+    except Exception:
+        # ponytail: cleanup is best-effort during DB outages; move both writes into one transaction if this recurs.
+        pass
+
+
 async def _parse_agent_request(request: Request) -> AgentRequest:
     """요청 본문을 `AgentRequest`로 검증한다.
 
@@ -176,6 +189,7 @@ async def submit_agent(
         await _database_call(sessions.resolve_session(raw_cookie)) if raw_cookie else None
     )
     token = raw_cookie if session_id is not None else create_session_token()
+    created_session = session_id is None
     if session_id is None:
         session_id = await _database_call(sessions.create_session(token))
 
@@ -188,9 +202,15 @@ async def submit_agent(
             )
         )
     except IdempotencyConflict:
+        if created_session:
+            await _discard_new_session(session_id)
         raise ApiContractError(
             ApiErrorCode.IDEMPOTENCY_KEY_CONFLICT, session_token=token
         ) from None
+    except Exception:
+        if created_session:
+            await _discard_new_session(session_id)
+        raise
 
     # 신규 발급이든 재사용이든 세션 활동이므로 90일로 갱신한다. 재사용할 때는
     # 토큰을 그대로 내보내 식별자가 바뀌지 않는다(`session-job-persistence.md:25`).
