@@ -36,6 +36,8 @@
 ## How
 
 - FastMCP 시작 시 `term-card-catalog.md`의 검증을 실행하고, 성공한 활성 카드 사전을 읽기 전용 메모리로 보관한다.
+- FastAPI 엔트리포인트에 Streamable HTTP 앱을 마운트할 때 부모 앱의 lifespan에서 FastMCP session manager를 시작하고 종료한다. 마운트된 자식 앱의 lifespan 자동 실행에 의존하지 않는다.
+- DNS rebinding 방어를 유지하면서 로컬 Host(`127.0.0.1`, `localhost`, `[::1]`)와 `MCP_ALLOWED_HOST`에 지정한 Cloud Run Host만 Streamable HTTP 요청에 허용한다. Cloud Run IAM 인증은 별도로 계속 적용한다.
 - `get_active_term_card`의 description에는 “Pydantic 검증 뒤의 활성 term ID에 대한 팀 검수 설명·검색 조각이 필요할 때 사용한다”를 명시한다.
 - `/mcp`는 서비스 토큰 또는 허용된 서비스 클라이언트만 연결할 수 있게 설정한다. Next.js UI와 일반 브라우저의 직접 호출은 허용하지 않는다.
 - Agent worker는 MCP 응답의 `term_id`, `role`, 활성 조건을 다시 검증하고, 유효한 `query_fragments`만 카드 유래 입력으로 서버 `PinterestCrawlerProvider`에 전달한다. `PinterestCrawlerProvider` 구현 시 결정론 URL 빌더는 기존 조각의 `drawing` 포함 여부를 검사하거나 제거하지 않고 최종 검색어 끝에 고정 접미사 `drawing`을 무조건 한 번 추가한 뒤 공개 검색으로 Pin ID·`pin_url`을 수집하고 widget endpoint로 현재 응답용 `thumbnail_url`을 조회해야 한다. MCP는 그 외부 호출에 관여하지 않는다.
@@ -66,3 +68,15 @@
 - GIVEN: 배포된 서비스가 있다.
 - WHEN: 허용된 MCP client가 `/mcp`에 연결한다.
 - THEN: `get_active_term_card` 목록과 실제 `found`·`not_found` 호출 결과를 README와 데모에 남긴다.
+
+**AC-05 · 마운트된 MCP session manager**
+
+- GIVEN: `backend.mcp.main:app`의 카탈로그 시작 검증이 성공했다.
+- WHEN: FastAPI lifespan 안에서 별도 Streamable HTTP client가 `/mcp`를 초기화하고 도구를 호출한다.
+- THEN: session manager가 준비돼 HTTP 500 없이 `get_active_term_card`의 `found`·`not_found` 결과를 반환한다.
+
+**AC-06 · 허용된 Host에서 Streamable HTTP 요청**
+
+- GIVEN: Cloud Run Host가 `MCP_ALLOWED_HOST`에 지정되어 있고 IAM 인증을 통과했다.
+- WHEN: MCP client가 해당 Host로 `/mcp`를 호출한다.
+- THEN: DNS rebinding 검증이 요청을 `421`로 거부하지 않고 도구 호출을 처리한다.
