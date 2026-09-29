@@ -12,6 +12,7 @@ import time
 import uuid
 from types import SimpleNamespace
 
+import asyncpg
 import pytest
 from fastapi.testclient import TestClient
 
@@ -377,3 +378,34 @@ def test_response_is_json_content_type(client: TestClient) -> None:
 
     assert response.headers["content-type"].startswith("application/json")
     json.loads(response.text)
+
+
+@pytest.mark.parametrize("endpoint", ["submit", "read"])
+def test_database_connection_errors_return_sanitized_contract_body(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    endpoint: str,
+) -> None:
+    if endpoint == "read":
+        created = submit(client, "서 있는 자세")
+        job_id = created["body"]["job_id"]
+
+    async def unavailable():
+        raise asyncpg.PostgresConnectionError("private database connection details")
+
+    monkeypatch.setattr(agent_route, "get_repositories", unavailable)
+    if endpoint == "submit":
+        response = client.post(
+            "/api/agent",
+            json={"request_text": "서 있는 자세"},
+            headers={"Idempotency-Key": str(uuid.uuid4())},
+        )
+    else:
+        response = client.get(f"/api/jobs/{job_id}")
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "failure_code": "DATABASE_UNAVAILABLE",
+        "user_message": "현재 요청을 처리하지 못했습니다. 잠시 후 새 메시지로 다시 시도해 주세요.",
+        "retryable": False,
+    }

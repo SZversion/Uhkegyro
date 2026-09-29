@@ -8,6 +8,7 @@ import json
 import uuid
 from typing import Annotated, Any
 
+import asyncpg
 from fastapi import APIRouter, Header, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
@@ -16,6 +17,8 @@ from backend.schemas import (
     AgentRequest,
     ApiError,
     ApiErrorCode,
+    Failure,
+    FailureCode,
     JobEnvelope,
     SubmissionResponse,
 )
@@ -64,6 +67,15 @@ STATUS_CODES = {
     ApiErrorCode.JOB_NOT_FOUND: 404,
 }
 
+DATABASE_ERROR_STATUS = 503
+DATABASE_ERROR_MESSAGE = "현재 요청을 처리하지 못했습니다. 잠시 후 새 메시지로 다시 시도해 주세요."
+DATABASE_CONNECTION_ERRORS = (
+    asyncpg.PostgresConnectionError,
+    asyncpg.InterfaceError,
+    OSError,
+    TimeoutError,
+)
+
 
 class ApiContractError(Exception):
     """`ApiError` 본문을 그대로 응답으로 내보내는 예외.
@@ -73,12 +85,35 @@ class ApiContractError(Exception):
     (`session-job-persistence.md:25`).
     """
 
-    def __init__(self, code: ApiErrorCode, session_token: str | None = None) -> None:
+    def __init__(
+        self,
+        code: ApiErrorCode | FailureCode,
+        session_token: str | None = None,
+    ) -> None:
         self.code = code
-        self.status_code = STATUS_CODES[code]
         self.session_token = session_token
-        self.error = ApiError(failure_code=code, user_message=MESSAGES[code], retryable=False)
+        if code is FailureCode.DATABASE_UNAVAILABLE:
+            self.status_code = DATABASE_ERROR_STATUS
+            self.error = Failure(
+                failure_code=code,
+                user_message=DATABASE_ERROR_MESSAGE,
+                retryable=False,
+            )
+        else:
+            self.status_code = STATUS_CODES[code]
+            self.error = ApiError(
+                failure_code=code,
+                user_message=MESSAGES[code],
+                retryable=False,
+            )
         super().__init__(code.value)
+
+
+async def _database_call(operation: Any) -> Any:
+    try:
+        return await operation
+    except DATABASE_CONNECTION_ERRORS:
+        raise ApiContractError(FailureCode.DATABASE_UNAVAILABLE) from None
 
 
 async def _parse_agent_request(request: Request) -> AgentRequest:
@@ -119,6 +154,7 @@ def _parse_idempotency_key(raw: str | None) -> str:
     responses={
         409: {"model": ApiError, "description": "같은 요청 번호에 다른 원문"},
         422: {"model": ApiError, "description": "형식이 잘못된 본문 또는 Idempotency-Key"},
+        503: {"model": Failure, "description": "데이터 저장소를 사용할 수 없음"},
     },
 )
 async def submit_agent(
@@ -134,18 +170,22 @@ async def submit_agent(
     payload = await _parse_agent_request(request)
     key = _parse_idempotency_key(idempotency_key)
 
-    sessions, jobs = await get_repositories()
+    sessions, jobs = await _database_call(get_repositories())
     raw_cookie = request.cookies.get(SESSION_COOKIE_NAME)
-    session_id = await sessions.resolve_session(raw_cookie) if raw_cookie else None
+    session_id = (
+        await _database_call(sessions.resolve_session(raw_cookie)) if raw_cookie else None
+    )
     token = raw_cookie if session_id is not None else create_session_token()
     if session_id is None:
-        session_id = await sessions.create_session(token)
+        session_id = await _database_call(sessions.create_session(token))
 
     try:
-        job, _created = await jobs.submit(
-            session_id=session_id,
-            request_text=payload.request_text,
-            idempotency_key=key,
+        job, _created = await _database_call(
+            jobs.submit(
+                session_id=session_id,
+                request_text=payload.request_text,
+                idempotency_key=key,
+            )
         )
     except IdempotencyConflict:
         raise ApiContractError(
@@ -166,6 +206,7 @@ async def submit_agent(
     responses={
         401: {"model": ApiError, "description": "유효한 세션 쿠키 없음"},
         404: {"model": ApiError, "description": "job이 없거나 소유 세션이 아님"},
+        503: {"model": Failure, "description": "데이터 저장소를 사용할 수 없음"},
     },
 )
 async def read_job(
@@ -174,9 +215,12 @@ async def read_job(
     response: Response,
 ) -> JobEnvelope:
     """소유 세션만 자신의 job을 읽는다. `api-contract.md` AC-06."""
-    sessions, jobs = await get_repositories()
     raw_cookie = request.cookies.get(SESSION_COOKIE_NAME)
-    session_id = await sessions.resolve_session(raw_cookie) if raw_cookie else None
+    if not raw_cookie:
+        raise ApiContractError(ApiErrorCode.SESSION_REQUIRED) from None
+
+    sessions, jobs = await _database_call(get_repositories())
+    session_id = await _database_call(sessions.resolve_session(raw_cookie))
     if session_id is None:
         raise ApiContractError(ApiErrorCode.SESSION_REQUIRED) from None
 
@@ -184,7 +228,7 @@ async def read_job(
     set_session_cookie(response, raw_cookie, get_settings())
 
     try:
-        return await jobs.get(session_id=session_id, job_id=job_id)
+        return await _database_call(jobs.get(session_id=session_id, job_id=job_id))
     except JobNotFound:
         raise ApiContractError(
             ApiErrorCode.JOB_NOT_FOUND, session_token=raw_cookie
