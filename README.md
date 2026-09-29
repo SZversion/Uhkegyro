@@ -110,7 +110,7 @@ PinterestCrawlerProvider와 widget 기반 Pin 미리보기·보관 경계는 [Pi
 | LLM 해석·resolver 연동 | 미구현 | 실제 job 처리 경로 |
 | Pinterest 검색 실행 | 미구현 | 역할별 검색 결과 |
 | `/docs` | FastAPI 기본 문서에서 확인 가능 | 요청·응답 모델 및 오류 응답 확인 |
-| `/mcp` | `get_active_term_card(term_id)`의 독립 client 로컬 호출은 검증됨. [호출 증거와 배포 검증 절차](docs/mcp-client-evidence.md). FastAPI 마운트는 현재 500이며 운영 IAM 검증은 대기 중 | Streamable HTTP endpoint와 도구 호출 증거 |
+| `/mcp` | `backend.mcp.main:app`에 마운트된 Streamable HTTP endpoint에서 독립 client의 도구 목록·`found`·`not_found` 호출을 로컬 검증함. [호출 증거와 배포 검증 절차](docs/mcp-client-evidence.md). Cloud Run 운영 IAM 검증은 대기 중 | Streamable HTTP endpoint와 도구 호출 증거 |
 | TERM_CARD JSON 카탈로그 | 구현됨. API·MCP 시작 시 검증 후 역할별 활성 카드를 메모리에 로드 | 요청 중 재읽기·DB 적재 없이 활성 카드를 조회 |
 | MCP 접근 제어 | Cloud Run IAM 배포 설정 구현됨. 실제 배포·호출 증거는 미기록 | 내부 호출자만 `roles/run.invoker`로 접근하는지 검증 |
 

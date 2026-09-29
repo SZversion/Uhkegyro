@@ -2,10 +2,10 @@
 
 ## 검증 범위와 현재 상태
 
-- 2026-09-29, Windows / Python 3.14, `main` 기준 `75b749d`에서 별도 프로세스의 MCP Python SDK client가 Streamable HTTP `/mcp`에 접속했다.
-- 로컬 FastMCP 단독 실행: tool 목록, 활성 카드 `found`, 미등록 카드 `not_found` 검증 **통과**.
+- 2026-09-29, Windows / Python 3.14, `backend.mcp.main:app` 기준 `72eccec`에서 별도 프로세스의 MCP Python SDK client가 마운트된 Streamable HTTP `/mcp`에 접속했다.
+- 마운트된 FastAPI 앱 로컬 실행: tool 목록, 활성 카드 `found`, 미등록 카드 `not_found` 검증 **통과**. 부모 FastAPI lifespan에서 FastMCP session manager가 시작되도록 수정해 이전 HTTP 500을 해결했다.
 - 배포 IAM 접근 제어: **미검증**. `gcloud run services list --region=asia-northeast3 --project=proj2-509406` 결과 서비스가 없고 `mcp` describe는 `Cannot find service [mcp]`였다. 배포 서비스·호출자 권한이 준비되면 아래 절차를 실행해야 AC-04의 배포 증거가 완성된다.
-- 현재 `backend.mcp.main:app` 실행은 `/mcp` 초기화 요청에서 HTTP 500(`Task group is not initialized. Make sure to use run().`)이다. 로컬 성공 결과는 `FastMCP.run(transport="streamable-http")`의 결과이며 이 마운트 오류나 Cloud Run 경로의 성공을 뜻하지 않는다.
+- 이 로컬 결과는 Cloud Run 배포나 IAM 접근 제어의 성공을 의미하지 않는다.
 
 ## 로컬 재현
 
@@ -43,7 +43,7 @@ python scripts/mcp_client_evidence.py
 
 ## Cloud Run 배포 후 접근 제어 재현
 
-`backend.mcp.main:app`의 500 오류를 먼저 수정하고 Cloud Run `mcp` 서비스를 IAM 보호(`--no-allow-unauthenticated`)로 배포해야 한다. 허용 호출자 서비스 계정에는 `roles/run.invoker`가 필요하다. 다음 PowerShell 절차는 허용된 호출자 권한을 가진 운영자가 실행한다.
+로컬 mounted-app 검증은 통과했지만 Cloud Run IAM은 아직 미검증이다. Cloud Run `mcp` 서비스를 IAM 보호(`--no-allow-unauthenticated`)로 배포해야 한다. 허용 호출자 서비스 계정에는 `roles/run.invoker`가 필요하다. 다음 PowerShell 절차는 허용된 호출자 권한을 가진 운영자가 실행한다.
 
 ```powershell
 $mcpServiceUrl = gcloud run services describe mcp --region=asia-northeast3 --project=proj2-509406 --format='value(status.url)'
