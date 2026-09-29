@@ -3,7 +3,7 @@
 > 전문 용어가 낯선 초보자가 텍스트로 묘사한 캐주얼 캐릭터의 **체형/소체, 포즈, 구도**를 기초 드로잉 용어와 역할별 Pinterest 탐색 계획으로 바꾸는 Agent입니다.
 
 > **현재 상태: `GET /health`와 인메모리 mock Agent API까지 구현됨**
-> `POST /api/agent`는 세션 쿠키와 queued job을 만들고, `GET /api/jobs/{job_id}`는 동일 세션의 job을 조회합니다. DB 영속화·실제 worker·LLM 해석과 resolver 연동·Pinterest 검색·UI·Agent API 배포는 아직 구현·측정하지 않았습니다. Langfuse adapter의 일부 관측 코드는 구현됐지만, worker trace 운영 검증·원격 Prompt 등록·Dataset 연결·대시보드 측정은 미완료입니다. 별도 MCP 서비스의 `get_active_term_card` FastMCP 도구와 TERM_CARD 시작 검증은 구현됐지만, 외부 MCP client 호출 증거는 아직 없습니다. 아래의 목표 구조와 계획 항목은 완료 기능으로 해석하면 안 됩니다.
+> `POST /api/agent`는 세션 쿠키와 queued job을 만들고, `GET /api/jobs/{job_id}`는 동일 세션의 job을 조회합니다. DB 영속화·실제 worker·LLM 해석과 resolver 연동·Pinterest 검색·UI·Agent API 배포는 아직 구현·측정하지 않았습니다. Langfuse adapter의 일부 관측 코드는 구현됐지만, worker trace 운영 검증·원격 Prompt 등록·Dataset 연결·대시보드 측정은 미완료입니다. 별도 MCP 서비스의 `get_active_term_card` FastMCP 도구와 TERM_CARD 시작 검증은 구현됐고, 독립 MCP client의 로컬 호출만 검증했습니다. 운영 IAM 호출 증거는 아직 없습니다. 아래의 목표 구조와 계획 항목은 완료 기능으로 해석하면 안 됩니다.
 
 ## 한눈에 보기
 
@@ -110,7 +110,7 @@ PinterestCrawlerProvider와 widget 기반 Pin 미리보기·보관 경계는 [Pi
 | LLM 해석·resolver 연동 | 미구현 | 실제 job 처리 경로 |
 | Pinterest 검색 실행 | 미구현 | 역할별 검색 결과 |
 | `/docs` | FastAPI 기본 문서에서 확인 가능 | 요청·응답 모델 및 오류 응답 확인 |
-| `/mcp` | 구현됨. `backend/mcp/server.py`의 `get_active_term_card(term_id)` FastMCP 도구. 외부 클라이언트 호출 증거는 미기록 | Streamable HTTP endpoint와 도구 호출 증거 |
+| `/mcp` | `get_active_term_card(term_id)`의 독립 client 로컬 호출은 검증됨. [호출 증거와 배포 검증 절차](docs/mcp-client-evidence.md). FastAPI 마운트는 현재 500이며 운영 IAM 검증은 대기 중 | Streamable HTTP endpoint와 도구 호출 증거 |
 | TERM_CARD JSON 카탈로그 | 구현됨. API·MCP 시작 시 검증 후 역할별 활성 카드를 메모리에 로드 | 요청 중 재읽기·DB 적재 없이 활성 카드를 조회 |
 | MCP 접근 제어 | Cloud Run IAM 배포 설정 구현됨. 실제 배포·호출 증거는 미기록 | 내부 호출자만 `roles/run.invoker`로 접근하는지 검증 |
 
