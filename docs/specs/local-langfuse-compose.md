@@ -2,14 +2,15 @@
 
 ## Why
 
-로컬 개발자가 Docker Compose에서 Langfuse UI를 사용해 LLM 관측 데이터를 확인할 수 있어야 한다.
+로컬 개발자가 Docker Compose로 Langfuse 인프라를 준비하고 기동 상태를 확인할 수 있어야 한다.
 
 ## Goal
 
-- Compose로 애플리케이션과 로컬 Langfuse를 실행한다.
+- Compose로 애플리케이션과 로컬 Langfuse 인프라를 실행한다.
 - Langfuse UI는 `http://localhost:3000`에서 연다.
 - Langfuse 저장 서비스는 앱의 Neon `DATABASE_URL`과 분리한다.
-- Out of Scope: worker trace lifecycle, 운영 배포, 원격 Prompt·Dataset 설정.
+- 이 Spec은 Langfuse 인프라 준비만 다룬다. 애플리케이션 LLM 관측 데이터가 UI에 나타나는 것은 완료 조건이 아니다.
+- Out of Scope: worker root trace 생성·lifecycle 연결, 운영 배포, 원격 Prompt·Dataset 설정. Worker trace lifecycle 구현은 [관측 Spec](./observability-and-prompt-versioning.md)을 기준으로 별도 PR에서 다룬다.
 
 ## What
 
@@ -28,5 +29,6 @@
 
 - GIVEN: Docker Compose와 필수 `.env` 값이 준비되어 있다. WHEN: `docker compose config --quiet`를 실행한다. THEN: 구성 검증이 통과한다.
 - GIVEN: Compose 서비스가 정상 기동했다. WHEN: 호스트에서 `http://localhost:3000`을 연다. THEN: Langfuse UI가 표시된다.
+- GIVEN: Compose 서비스가 정상 기동했다. WHEN: web `/api/public/health`와 worker `/api/health`를 호출한다. THEN: 두 endpoint가 HTTP 200을 반환한다.
 - GIVEN: Compose의 API 서비스가 실행 중이다. WHEN: API가 `LANGFUSE_HOST`를 읽는다. THEN: `http://langfuse-web:3000`에 연결한다.
 - GIVEN: `docker compose down`으로 서비스를 중지한다. WHEN: named volume을 확인한다. THEN: Langfuse 저장 데이터가 유지된다.

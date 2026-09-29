@@ -142,7 +142,7 @@ docker compose up --build
 | `http://localhost:8000/docs` | FastAPI 자동 문서 |
 | `http://localhost:3000` | 로컬 Langfuse UI. 가입 후 organization/project를 만들고 API key를 `.env`의 `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`에 입력 |
 
-Compose API 컨테이너는 Langfuse에 `http://langfuse-web:3000`으로 연결합니다. 현재 Langfuse worker의 job trace lifecycle 연결은 별도 미구현입니다.
+Compose API 컨테이너는 Langfuse에 `http://langfuse-web:3000`으로 연결하며, 이 구성은 로컬 Langfuse 인프라 준비를 제공합니다. 실제 LLM 관측 데이터 확인은 이번 범위의 완료 조건이 아닙니다. Worker root trace 생성과 job trace lifecycle 연결은 [관측 Spec](./docs/specs/observability-and-prompt-versioning.md)을 기준으로 별도 PR에서 진행합니다.
 
 종료는 다음 명령으로 합니다.
 
@@ -150,7 +150,7 @@ Compose API 컨테이너는 Langfuse에 `http://langfuse-web:3000`으로 연결�
 docker compose down
 ```
 
-> 아직 전체 MVP를 10분 안에 재현하는 실측은 수행하지 않았습니다. Langfuse adapter의 일부 관측 코드는 구현됐지만, worker trace 운영 검증·원격 Prompt 등록·Dataset 연결·대시보드 측정과 UI 구현 후 새 환경에서 위 절차를 검증하고 결과를 갱신합니다.
+> 아직 전체 MVP를 10분 안에 재현하는 실측은 수행하지 않았습니다. Langfuse 인프라 기동 확인은 LLM trace 기록 확인과 별개입니다. [관측 Spec](./docs/specs/observability-and-prompt-versioning.md)의 worker root trace lifecycle 연결, 원격 Prompt 등록·Dataset 연결·대시보드 측정과 UI 구현 후 새 환경에서 절차를 검증하고 결과를 갱신합니다.
 
 ## 환경 변수와 보안
 
