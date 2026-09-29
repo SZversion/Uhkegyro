@@ -124,6 +124,7 @@ class JobRepository:
                 completed_at = CASE WHEN $5 THEN now() ELSE NULL END,
                 lease_expires_at = CASE WHEN $5 THEN NULL ELSE lease_expires_at END
             WHERE job_id = $1::uuid
+              AND status NOT IN ('completed', 'failed')
             RETURNING *
             """,
             job_id,

@@ -13,8 +13,9 @@ from backend.services.job_repository import IdempotencyConflict, JobNotFound, Jo
 
 
 class FakeConnection:
-    def __init__(self, rows=()):
+    def __init__(self, rows=(), update_row=True):
         self.rows = list(rows)
+        self.update_row = update_row
         self.calls = []
 
     async def execute(self, query, *args):
@@ -30,6 +31,8 @@ class FakeConnection:
                             args[5], 0, args[6], None))
             return row
         if "UPDATE jobs" in query:
+            if not self.update_row:
+                return None
             row = _job_row((args[0], SESSION_ID, "text", "hash", "key", None,
                             args[1], 0, 3, None))
             row["attempt"] = 1
@@ -157,3 +160,16 @@ def test_update_status_requires_contractual_terminal_payload():
         _run(repository.update_status(
             job_id=JOB_ID, status=JobStatus.QUEUED, failure=failure
         ))
+
+
+@pytest.mark.parametrize("terminal_status", [JobStatus.COMPLETED, JobStatus.FAILED])
+def test_update_status_does_not_overwrite_terminal_job(terminal_status):
+    connection = FakeConnection(update_row=False)
+
+    with pytest.raises(JobNotFound):
+        _run(JobRepository(FakePool(connection)).update_status(
+            job_id=JOB_ID, status=JobStatus.RUNNING
+        ))
+
+    query, _ = connection.calls[0]
+    assert "status NOT IN ('completed', 'failed')" in query
