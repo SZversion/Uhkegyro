@@ -1,16 +1,47 @@
 # 작업 티켓 — UH케그려
 
+## 작업 번호와 GitHub PR 매핑
+
+| 작업 번호 | GitHub PR |
+| --- | --- |
+| 작업 1 | GitHub PR #38 |
+| 작업 2 | GitHub PR #39 |
+| 작업 3 | GitHub PR #40 |
+| 작업 4 | GitHub PR #41 |
+| 작업 5 | GitHub PR #42 |
+| 작업 6 | GitHub PR #43 |
+| 작업 7 | GitHub PR #44 |
+| 작업 8 | GitHub PR #45 |
+| 작업 9 | GitHub PR #46 |
+| 작업 10 | GitHub PR #47 |
+| 작업 11 | GitHub PR #48 |
+| 작업 12 | GitHub PR #49 |
+| 작업 13 | GitHub PR #50 |
+| 작업 14 | GitHub PR #51 |
+| 작업 15 | GitHub PR #52 |
+| 작업 16 | GitHub PR #53 |
+| 작업 17 | GitHub PR #54 |
+| 작업 18 | GitHub PR #55 |
+| 작업 19 | GitHub PR #56 |
+| 작업 20 | GitHub PR #57 |
+| 작업 21 | GitHub PR #58 |
+| 작업 22 | GitHub PR #59 |
+| 작업 23 | GitHub PR #60 |
+| 작업 24 | GitHub PR #61 |
+
+
+
 ## 계획 기준
 
 - 기준 브랜치: `main`
-- 원칙: PR 1개 = 브랜치 1개
-- PR 변경량: 400줄 이하
+- 원칙: GitHub PR 1개 = 브랜치 1개
+- GitHub PR 변경량: 400줄 이하
 - 브랜치 생성: 최신 `main`에서만 생성
 - 브랜치 형식: `{이니셜}{번호}/{작업유형}/{짧은-영문-설명}`
 - 아래 브랜치명은 작업 식별용 예시이며, 실제 생성 시 해당 팀원의 사용 이력을 다시 조회해 다음 번호로 확정한다.
 - 구현 전 관련 `docs/specs/{feature-name}.md`의 Why, Goal, What, How, AC를 완성한다.
 - AC 기반 테스트 통과 후에만 완료로 표시한다.
-- PR 승인 후 사람이 merge한다.
+- GitHub PR 승인 후 사람이 merge한다.
 
 ## 현재 구현 현황
 
@@ -51,104 +82,104 @@
 | OpenRouter LLM adapter 골조와 구조화 출력 검증 | ✅ 완료 |
 | LLM generation observation 일부 | 🟡 부분 구현, 운영 검증 미완료 |
 
-## 남은 작업: PR별 세부 티켓
+## 남은 작업: 작업 번호별 세부 티켓
 
 ### 데이터 저장
 
-#### PR-38 · DB 설정과 migration 기반
+#### 작업 1 · DB 설정과 migration 기반
 
 - 브랜치: `feature/postgres-migration-foundation`
 - Spec: `docs/specs/session-job-persistence.md`
-- 작업: DB 설정, migration 실행 기반, 연결 수명 관리만 추가한다.
+- 작업: DB 설정과 migration 실행 기반을 추가한다. migration은 파일명 순으로 실행하고 `schema_migrations(version, applied_at)`에 적용 이력을 남기며, 적용과 이력 기록을 하나의 transaction으로 처리한다.
 - 제외: Repository, route 교체, worker.
-- AC (Given-When-Then): GIVEN 로컬 환경이 준비되었을 때 WHEN migration을 실행하면 THEN PostgreSQL 연결과 migration이 재현된다.
+- AC (Given-When-Then): GIVEN 미적용 migration이 있을 때 WHEN migration runner를 실행하면 THEN 미적용 SQL과 이력을 transaction으로 적용하고, 재실행 시에는 이미 적용한 파일을 건너뛴다. GIVEN migration SQL이 실패할 때 WHEN transaction이 rollback되면 THEN 이력이 남지 않는다.
 - 의존성: `docs/specs/api-contract.md`
-- 파일 범위: `backend/shared/config.py`, migration 디렉터리, DB 설정 테스트만 수정한다.
+- 파일 범위: `.env.example`, `DEPLOYMENT.md`, `scripts/gcp-setup-free.sh`, `backend/shared/config.py`, `backend/shared/database.py`, `backend/db/migrate.py`, migration 디렉터리, DB 설정·migration 테스트만 수정한다.
 - 예상 변경량: 150줄 이하
 
-#### PR-39 · Session Repository
+#### 작업 2 · Session Repository
 
 - 브랜치: `feature/session-repository`
-- Spec: `docs/specs/session-job-persistence.md`
-- 작업: session 생성·조회·활동 갱신·토큰 hash 조회·만료 정리.
-- AC (Given-When-Then): GIVEN 세션 요청이 있을 때 WHEN 저장소가 처리하면 THEN 토큰 원문 없이 hash만 저장하고 `last_activity_at`을 갱신한다.
-- 의존성: PR-38
-- 파일 범위: session repository와 repository 테스트만 수정한다.
+- Spec: `docs/specs/session-repository.md`
+- 작업: session 생성·조회·활동 갱신·토큰 hash 조회·3개월 초과 비활성 session 삭제만 구현한다. 빈 token은 DB 호출 전에 거부하고, 미등록 token은 `None`을 반환하며, DB 오류는 호출자에게 전달한다.
+- AC (Given-When-Then): GIVEN 유효한 token이 있을 때 WHEN session을 생성·조회하면 THEN token hash만 저장하고 조회 시 `last_activity_at`을 갱신한다. GIVEN 빈 token 또는 미등록 token일 때 WHEN 조회·생성하면 THEN 각각 DB 호출 전 `ValueError` 또는 `None`을 반환한다.
+- 의존성: 작업 1
+- 파일 범위: `backend/services/session_repository.py`, `backend/tests/test_session_repository.py`, `docs/specs/session-repository.md`만 수정한다.
 - 예상 변경량: 250줄 이하
 
-#### PR-40 · Job Repository와 idempotency
+#### 작업 3 · Job Repository와 idempotency
 
 - 브랜치: `feature/job-repository-idempotency`
 - Spec: `docs/specs/session-job-persistence.md`
 - 작업: Job 저장·조회·상태 갱신·동일 키 재사용·충돌 판정.
 - AC (Given-When-Then): GIVEN 같은 세션에서 요청이 재전송될 때 WHEN 키와 원문이 같으면 THEN 기존 Job을 반환하고 원문이 다르면 충돌시킨다.
-- 의존성: PR-38, PR-39
+- 의존성: 작업 1, 작업 2
 - 파일 범위: Job repository, idempotency 모델, repository 테스트만 수정한다.
 - 예상 변경량: 300줄 이하
 
-#### PR-41 · API 저장소 교체
+#### 작업 4 · API 저장소 교체
 
 - 브랜치: `feature/postgres-agent-routes`
 - Spec: `docs/specs/api-contract.md`, `docs/specs/session-job-persistence.md`
 - 작업: `POST /api/agent`, `GET /api/jobs/{job_id}`를 PostgreSQL Repository에 연결한다.
 - AC (Given-When-Then): GIVEN 유효한 Agent 요청이 있을 때 WHEN API가 저장소를 호출하면 THEN 쿠키 소유권·404 위장·90일 갱신·queued 응답을 유지한다.
-- 의존성: PR-39, PR-40
+- 의존성: 작업 2, 작업 3
 - 파일 범위: `backend/routes/agent.py`와 route 테스트만 수정한다.
 - 예상 변경량: 250줄 이하
 
-#### PR-42 · 세션 retention cleanup
+#### 작업 5 · 세션 retention cleanup
 
 - 브랜치: `feature/session-retention-cleanup`
 - Spec: `docs/specs/session-job-persistence.md`
 - 작업: 3개월 비활성 session과 연결 Job을 정리한다.
 - AC (Given-When-Then): GIVEN 만료된 session이 있을 때 WHEN cleanup을 실행하면 THEN 연결 Job과 원문도 함께 삭제된다.
-- 의존성: PR-39, PR-40
+- 의존성: 작업 2, 작업 3
 - 파일 범위: retention task와 cleanup 테스트만 수정한다.
 - 예상 변경량: 180줄 이하
 
 ### Worker
 
-#### PR-43 · Job claim transaction
+#### 작업 6 · Job claim transaction
 
 - 브랜치: `feature/job-claim-transaction`
 - Spec: `docs/specs/postgres-job-worker.md`
 - 작업: queued Job claim, attempt 증가, lease 기록.
 - AC (Given-When-Then): GIVEN 같은 queued Job에 동시 claim이 발생할 때 WHEN 두 worker가 실행되면 THEN 하나만 claim한다.
-- 의존성: PR-40
+- 의존성: 작업 3
 - 파일 범위: claim repository 메서드와 동시성 테스트만 수정한다.
 - 예상 변경량: 300줄 이하
 
-#### PR-44 · Worker 상태 전이
+#### 작업 7 · Worker 상태 전이
 
 - 브랜치: `feature/job-state-machine`
 - Spec: `docs/specs/postgres-job-worker.md`, `docs/specs/api-contract.md`
 - 작업: validating/searching/rendering과 completed/failed 전이를 구현한다.
 - AC (Given-When-Then): GIVEN 현재 상태와 허용되지 않은 다음 상태가 주어질 때 WHEN 전이를 시도하면 THEN 거부하고 종결 payload는 계약대로 저장한다.
-- 의존성: PR-43
+- 의존성: 작업 6
 - 파일 범위: 상태 전이 함수와 상태 전이 테스트만 수정한다.
 - 예상 변경량: 250줄 이하
 
-#### PR-45 · 자동 재시도와 lease recovery
+#### 작업 8 · 자동 재시도와 lease recovery
 
 - 브랜치: `feature/job-retry-recovery`
 - Spec: `docs/specs/postgres-job-worker.md`
 - 작업: `next_retry_at`, 최대 3회 재시도, lease 만료 복구.
 - AC (Given-When-Then): GIVEN 오류가 발생할 때 WHEN worker가 오류를 분류하면 THEN 재시도 가능 오류만 예약하고 최대 3회에서 종료한다.
-- 의존성: PR-43, PR-44
+- 의존성: 작업 6, 작업 7
 - 파일 범위: retry/recovery worker와 retry 테스트만 수정한다.
 - 예상 변경량: 300줄 이하
 
-#### PR-46 · Worker Agent pipeline 연결
+#### 작업 9 · Worker Agent pipeline 연결
 
 - 브랜치: `feature/worker-agent-pipeline`
 - Spec: `docs/specs/api-contract.md`, `docs/specs/prompt-interpreter-v0.md`
 - 작업: 저장 Job을 LLM adapter → resolver → 응답 조립으로 실행한다.
 - AC: success, clarification, partial, terminal failure를 계약대로 저장한다.
-- 의존성: PR-41, PR-43, PR-44, PR-45
+- 의존성: 작업 4, 작업 6, 작업 7, 작업 8
 
 ### Pinterest
 
-#### PR-47 · Provider 계약과 fake provider
+#### 작업 10 · Provider 계약과 fake provider
 
 - 브랜치: `feature/pinterest-provider-contract`
 - Spec: `docs/specs/pinterest-widget-crawler.md`
@@ -158,53 +189,53 @@
 - 파일 범위: provider protocol, 결과 타입, fake provider 테스트만 수정한다.
 - 예상 변경량: 220줄 이하
 
-#### PR-48 · 서버 공개 검색 수집
+#### 작업 11 · 서버 공개 검색 수집
 
 - 브랜치: `feature/pinterest-public-search`
 - Spec: `docs/specs/pinterest-widget-crawler.md`
 - 작업: 서버 Playwright 공개 검색과 Pin ID·URL 추출.
 - AC (Given-When-Then): GIVEN 서버 검색이 실행될 때 WHEN provider가 요청을 만들면 THEN Pinterest API v5와 브라우저 직접 호출을 사용하지 않는다.
-- 의존성: PR-47
+- 의존성: 작업 10
 - 파일 범위: 서버 검색 adapter와 fixture parser 테스트만 수정한다.
 - 예상 변경량: 350줄 이하
 
-#### PR-49 · Widget 결과 조립
+#### 작업 12 · Widget 결과 조립
 
 - 브랜치: `feature/pinterest-widget-results`
 - Spec: `docs/specs/pinterest-widget-crawler.md`
 - 작업: widget 조회, deleted 처리, 역할별 8개 제한, 원순서 보존.
 - AC (Given-When-Then): GIVEN widget 응답에 thumbnail이 있을 때 WHEN 결과를 반환하면 THEN 현재 응답에만 포함하고 저장·trace·로그에는 남기지 않는다.
-- 의존성: PR-47, PR-48
+- 의존성: 작업 10, 작업 11
 - 파일 범위: widget adapter, 결과 조립기, 개인정보 비저장 테스트만 수정한다.
 - 예상 변경량: 350줄 이하
 
-#### PR-50 · Worker 검색 단계 연결
+#### 작업 13 · Worker 검색 단계 연결
 
 - 브랜치: `feature/worker-pinterest-search`
 - Spec: `docs/specs/api-contract.md`, `docs/specs/pinterest-widget-crawler.md`
 - 작업: 검색 provider 호출과 reason code 조립.
 - AC: `PIN_RESULTS_EMPTY`와 `PIN_SEARCH_UNAVAILABLE`을 구분한다.
-- 의존성: PR-46, PR-49
+- 의존성: 작업 9, 작업 12
 
 ### 관측·보안
 
-#### PR-51 · Trace 필수 필드
+#### 작업 14 · Trace 필수 필드
 
 - 브랜치: `feature/trace-required-fields`
 - Spec: `docs/specs/observability-and-prompt-versioning.md`
 - 작업: job/session/attempt/model/prompt version을 trace에 기록한다.
 - AC: 세션 토큰 원문·thumbnail URL·secret이 trace에 없다.
-- 의존성: PR-46
+- 의존성: 작업 9
 
-#### PR-52 · 실패 코드·사용자 메시지 매핑
+#### 작업 15 · 실패 코드·사용자 메시지 매핑
 
 - 브랜치: `feature/failure-code-mapping`
 - Spec: `docs/specs/api-contract.md`
 - 작업: LLM·검색·DB·worker 예외를 공개 FailureCode로 매핑한다.
 - AC: 내부 오류 원문과 secret이 `user_message`에 노출되지 않는다.
-- 의존성: PR-46, PR-50
+- 의존성: 작업 9, 작업 13
 
-#### PR-53 · 외부 MCP client 증거
+#### 작업 16 · 외부 MCP client 증거
 
 - 브랜치: `test/mcp-client-evidence`
 - Spec: `docs/specs/mcp-contract.md`
@@ -216,7 +247,7 @@
 
 ### UI
 
-#### PR-54 · Next.js UI Spec
+#### 작업 17 · Next.js UI Spec
 
 - 브랜치: `docs/nextjs-agent-ui-spec`
 - 작업: UI 전용 Spec을 만들고 Why, Goal, What, How, AC를 완성한다.
@@ -227,97 +258,97 @@
 - 파일 범위: `docs/specs/nextjs-agent-ui.md`만 생성한다.
 - 예상 변경량: 250줄 이하
 
-#### PR-55 · UI 입력과 요청 제출
+#### 작업 18 · UI 입력과 요청 제출
 
 - 브랜치: `feature/nextjs-agent-input`
 - Spec: `docs/specs/nextjs-agent-ui.md`
 - 작업: 1~500자 입력, Idempotency-Key, 동일 origin `/api` 호출.
 - AC: 유효성 오류가 API 호출 전에 표시된다.
-- 의존성: PR-54, `docs/specs/nextjs-agent-ui.md`
+- 의존성: 작업 17, `docs/specs/nextjs-agent-ui.md`
 
-#### PR-56 · UI Job polling
+#### 작업 19 · UI Job polling
 
 - 브랜치: `feature/nextjs-job-polling`
 - Spec: `docs/specs/nextjs-agent-ui.md`
 - 작업: queued/running/completed/failed 표시와 polling 종료.
 - AC: 종결 상태에서 polling을 중단한다.
-- 의존성: PR-54, PR-55
+- 의존성: 작업 17, 작업 18
 
-#### PR-57 · UI 결과·질문·Pin 링크
+#### 작업 20 · UI 결과·질문·Pin 링크
 
 - 브랜치: `feature/nextjs-agent-results`
 - Spec: `docs/specs/nextjs-agent-ui.md`
 - 작업: 용어 설명, 질문, 부분 결과, 원본 Pin 링크와 thumbnail 표시.
 - AC: thumbnail URL을 저장값처럼 다루지 않는다.
-- 의존성: PR-54, PR-56, PR-50
+- 의존성: 작업 17, 작업 19, 작업 13
 
 ### 평가·출시
 
-#### PR-58 · 계약 평가 실행기
+#### 작업 21 · 계약 평가 실행기
 
 - 브랜치: `test/contract-evaluation-runner`
 - Spec: `docs/specs/contract-evaluation-variants.md`
 - 작업: 원문 30건·변형 70건 실행과 계약 위반 집계.
 - AC (Given-When-Then): GIVEN 동일 평가셋이 있을 때 WHEN 평가 실행기를 실행하면 THEN 성공률과 실패 유형을 동일한 형식으로 산출한다.
-- 의존성: PR-46, PR-50, PR-52
+- 의존성: 작업 9, 작업 13, 작업 15
 - 파일 범위: `evals/run_evals.py`와 평가 실행 테스트만 추가한다.
 - 예상 변경량: 350줄 이하
 
-#### PR-59 · 성능·비용 측정
+#### 작업 22 · 성능·비용 측정
 
 - 브랜치: `test/performance-cost-measurement`
 - Spec: `docs/specs/observability-and-prompt-versioning.md`
 - 작업: p50/p95 지연, 요청당 비용, retry 비율을 측정한다.
 - AC (Given-When-Then): GIVEN 평가 실행 결과가 있을 때 WHEN 측정 명령을 다시 실행하면 THEN 동일 평가셋 기준의 지연·비용 결과를 재현한다.
-- 의존성: PR-58, PR-51
+- 의존성: 작업 21, 작업 14
 - 파일 범위: 측정 스크립트와 측정 결과 schema 테스트만 추가한다.
 - 예상 변경량: 300줄 이하
 
-#### PR-60 · EVAL_REPORT와 출시 게이트
+#### 작업 23 · EVAL_REPORT와 출시 게이트
 
 - 브랜치: `docs/release-gate-report`
 - 작업: 평가·관측·비용·실패 사례·출시 판정을 기록한다.
 - AC: 모든 기준을 통과/미통과로 명시한다.
 - Spec: `docs/SCAFFOLD.md`, `docs/specs/observability-and-prompt-versioning.md`
-- 의존성: PR-58, PR-59
+- 의존성: 작업 21, 작업 22
 
-#### PR-61 · 배포·데모 증거
+#### 작업 24 · 배포·데모 증거
 
 - 브랜치: `test/deployment-demo-evidence`
 - 작업: Cloud Run API, UI URL, MCP client, 정상·실패 데모 증거를 기록한다.
 - AC: 실제 날짜·URL·모델·prompt version만 기록한다.
 - Spec: `DEPLOYMENT.md`, `docs/specs/mcp-contract.md`
-- 의존성: PR-53, PR-57, PR-60
+- 의존성: 작업 16, 작업 20, 작업 23
 
 ## 의존 순서
 
 ```text
-PR-38 → PR-39 → PR-40 → PR-41 → PR-42
+작업 1 → 작업 2 → 작업 3 → 작업 4 → 작업 5
                          ↓
-        PR-43 → PR-44 → PR-45 → PR-46
+        작업 6 → 작업 7 → 작업 8 → 작업 9
                                    ↓
-        PR-47 → PR-48 → PR-49 → PR-50
+        작업 10 → 작업 11 → 작업 12 → 작업 13
                                    ↓
-        PR-51 → PR-52 → PR-53
+        작업 14 → 작업 15 → 작업 16
                                    ↓
-        PR-54 → PR-55 → PR-56 → PR-57
+        작업 17 → 작업 18 → 작업 19 → 작업 20
                                    ↓
-        PR-58 → PR-59 → PR-60 → PR-61
+        작업 21 → 작업 22 → 작업 23 → 작업 24
 ```
 
-PR-51과 PR-54는 계약이 확정되면 병렬로 시작할 수 있다. UI 구현은 PR-54 Spec이 먼저 merge된 뒤 시작한다.
+작업 14과 작업 17는 계약이 확정되면 병렬로 시작할 수 있다. UI 구현은 작업 17 Spec이 먼저 merge된 뒤 시작한다.
 
 
-## PR 완료 체크리스트
+## 작업 완료 체크리스트
 
 - [ ] 변경량 400줄 이하
-- [ ] 이 PR의 작업 목적과 파일 범위가 다른 티켓과 겹치지 않음
+- [ ] 이 작업의 목적과 파일 범위가 다른 티켓과 겹치지 않음
 - [ ] 기능 코드 변경 시 해당 AC를 검증하는 테스트가 함께 포함됨
 - [ ] 관련 Spec의 AC 테스트 통과
 - [ ] `NOT_BUILD.md` 범위 미침범
 - [ ] 무관한 파일 미수정
 - [ ] secret·세션 토큰·외부 이미지 바이트 미커밋
-- [ ] PR 승인 후 사람이 merge
+- [ ] GitHub PR 승인 후 사람이 merge
 - [ ] merge 후 해당 티켓을 `✅ 완료`로 갱신
 
 ## 의도적으로 만들지 않는 기능

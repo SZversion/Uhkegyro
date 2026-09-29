@@ -43,7 +43,7 @@ create_secret() {
 }
 
 # DATABASE_URL은 Neon 연결 문자열로 별도 입력 필요 (아래 안내 참조)
-# create_secret "DATABASE_URL" "postgresql+asyncpg://user:pass@ep-xxx.ap-northeast-1.aws.neon.tech/db?sslmode=require"
+# create_secret "DATABASE_URL" "postgresql://user:pass@ep-xxx.ap-northeast-1.aws.neon.tech/db?sslmode=require"
 
 echo ">>> 다음 시크릿 값들을 직접 입력하세요 (Secret Manager 콘솔 또는 아래 gcloud 명령어):"
 echo "1. OPENROUTER_API_KEY:"
@@ -60,8 +60,8 @@ echo "   gcloud secrets create SESSION_SECRET --data-file=- --project=${PROJECT_
 echo ""
 echo "5. DATABASE_URL (Neon PostgreSQL, 필수):"
 echo "   Neon 콘솔(https://console.neon.tech) > 프로젝트 선택 > Connection Details > psql 탭"
-echo "   형식: postgresql+asyncpg://user:password@ep-xxx.ap-northeast-1.aws.neon.tech/dbname?sslmode=require"
-echo "   gcloud secrets create DATABASE_URL --data-file=- --project=${PROJECT_ID} <<< 'postgresql+asyncpg://...'"
+echo "   형식: postgresql://user:password@ep-xxx.ap-northeast-1.aws.neon.tech/dbname?sslmode=require"
+echo "   gcloud secrets create DATABASE_URL --data-file=- --project=${PROJECT_ID} <<< 'postgresql://...'"
 echo ""
 
 echo "=== 5. Cloud Build 트리거 생성 (GitHub 연결 필요) ==="
@@ -119,5 +119,5 @@ echo "다음 단계:"
 echo "1. 위 5개 시크릿 값 모두 입력 (DATABASE_URL 필수)"
 echo "2. GitHub 저장소를 Cloud Build에 연결하고 트리거 생성 (Substitutions 포함)"
 echo "3. main 브랜치에 push하면 자동 빌드·배포 시작 (api, mcp 동시 배포)"
-echo "4. 앱 코드는 DATABASE_URL을 postgresql+asyncpg://...로 사용 (SQLite 사용 안 함)"
+echo "4. 앱 코드는 DATABASE_URL을 postgresql://...로 사용 (SQLite 사용 안 함)"
 echo "5. MCP 호출 시 mcp-caller 서비스 계정 OIDC 토큰 사용"

@@ -56,8 +56,7 @@ gcloud services enable run.googleapis.com artifactregistry.googleapis.com secret
 2. **프로젝트 생성**: 프로젝트명 `proj2-4`, 리전 `Asia Pacific (Seoul)` 권장
 3. **연결 문자열 복사**: Dashboard → Connection Details → `psql` 탭
    - 형식: `postgresql://user:password@ep-xxx.ap-northeast-1.aws.neon.tech/dbname?sslmode=require`
-   - **asyncpg용 변환**: `postgresql+asyncpg://user:password@ep-xxx.ap-northeast-1.aws.neon.tech/dbname?sslmode=require`
-4. 이 문자열을 **Secret Manager `DATABASE_URL`에 저장**
+4. `postgresql://` 형식 그대로 **Secret Manager `DATABASE_URL`에 저장** (`asyncpg`에 맞춰 `+asyncpg`를 붙이지 않는다.)
 
 > Neon 무료 티어: 0.5GB 스토리지, 5분 유휴 시 자동 일시정지(비용 0), 브랜칭 기능 포함
 
@@ -80,7 +79,7 @@ bash scripts/gcp-setup-free.sh
 2. `LANGFUSE_PUBLIC_KEY` — Langfuse 공개 키
 3. `LANGFUSE_SECRET_KEY` — Langfuse 비밀 키
 4. `SESSION_SECRET` — 임의 32자 문자열 (`openssl rand -base64 32 | tr -d "=+/" | cut -c1-32`)
-5. `DATABASE_URL` — **Neon 연결 문자열** (`postgresql+asyncpg://...`)
+5. `DATABASE_URL` — **Neon 연결 문자열** (`postgresql://...`)
 
 **프롬프트 파일 환경변수** (API 서비스 전용, MCP 서비스 불필요):
 - `INTERPRETER_PROMPT_PATH=/app/prompts/uhkegryo-interpreter-v0.md`
@@ -100,7 +99,7 @@ gcloud secrets create OPENROUTER_API_KEY --data-file=- --project=proj2-509406 <<
 gcloud secrets create LANGFUSE_PUBLIC_KEY --data-file=- --project=proj2-509406 <<< 'pk-lf-xxx'
 gcloud secrets create LANGFUSE_SECRET_KEY --data-file=- --project=proj2-509406 <<< 'sk-lf-xxx'
 gcloud secrets create SESSION_SECRET --data-file=- --project=proj2-509406 <<< 'your-32-char-secret'
-gcloud secrets create DATABASE_URL --data-file=- --project=proj2-509406 <<< 'postgresql+asyncpg://user:pwd@ep-xxx.neon.tech/db?sslmode=require'
+gcloud secrets create DATABASE_URL --data-file=- --project=proj2-509406 <<< 'postgresql://user:pwd@ep-xxx.neon.tech/db?sslmode=require'
 ```
 
 ---
