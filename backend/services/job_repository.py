@@ -22,6 +22,24 @@ class JobNotFound(Exception):
     """The job does not exist or is not owned by the requesting session."""
 
 
+class InvalidJobTransition(ValueError):
+    """The requested job status transition is not allowed."""
+
+
+_ALLOWED_PREVIOUS_STATUSES = {
+    JobStatus.VALIDATING: [JobStatus.RUNNING.value],
+    JobStatus.SEARCHING: [JobStatus.VALIDATING.value],
+    JobStatus.RENDERING: [JobStatus.SEARCHING.value],
+    JobStatus.COMPLETED: [JobStatus.RENDERING.value],
+    JobStatus.FAILED: [
+        JobStatus.RUNNING.value,
+        JobStatus.VALIDATING.value,
+        JobStatus.SEARCHING.value,
+        JobStatus.RENDERING.value,
+    ],
+}
+
+
 def _hash(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
 
@@ -177,6 +195,10 @@ class JobRepository:
         result: AgentResult | None = None,
         failure: Failure | None = None,
     ) -> JobEnvelope:
+        allowed_previous = _ALLOWED_PREVIOUS_STATUSES.get(status)
+        if allowed_previous is None:
+            raise InvalidJobTransition
+
         terminal = status in (JobStatus.COMPLETED, JobStatus.FAILED)
         if status is JobStatus.COMPLETED and (result is None or failure is not None):
             raise ValueError("completed job requires result and forbids failure")
@@ -198,7 +220,7 @@ class JobRepository:
                 completed_at = CASE WHEN $5 THEN now() ELSE NULL END,
                 lease_expires_at = CASE WHEN $5 THEN NULL ELSE lease_expires_at END
             WHERE job_id = $1::uuid
-              AND status NOT IN ('completed', 'failed')
+              AND status = ANY($6::text[])
             RETURNING *
             """,
             job_id,
@@ -206,9 +228,15 @@ class JobRepository:
             _dump(result) if result is not None else None,
             _dump(failure) if failure is not None else None,
             terminal,
+            allowed_previous,
         )
         if row is None:
-            raise JobNotFound
+            current = await self._pool.fetchrow(
+                "SELECT status FROM jobs WHERE job_id = $1::uuid", job_id
+            )
+            if current is None:
+                raise JobNotFound
+            raise InvalidJobTransition
         return _to_envelope(row)
 
 

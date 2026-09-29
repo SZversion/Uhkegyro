@@ -13,15 +13,21 @@ import pytest
 from backend.db.migrate import migrate
 from backend.schemas import AgentResult, Failure
 from backend.schemas.enums import AgentStatus, FailureCode, JobStatus, ReasonCode
-from backend.services.job_repository import IdempotencyConflict, JobNotFound, JobRepository
+from backend.services.job_repository import (
+    IdempotencyConflict,
+    InvalidJobTransition,
+    JobNotFound,
+    JobRepository,
+)
 from backend.shared.auth import hash_session_token
 
 
 class FakeConnection:
-    def __init__(self, rows=(), update_row=True, fail_job_insert=False):
+    def __init__(self, rows=(), update_row=True, fail_job_insert=False, status="rendering"):
         self.rows = list(rows)
         self.update_row = update_row
         self.fail_job_insert = fail_job_insert
+        self.status = status
         self.calls = []
         self.rolled_back = False
         self.transaction_count = 0
@@ -46,7 +52,7 @@ class FakeConnection:
                             args[5], 0, args[6], None))
             return row
         if "UPDATE jobs" in query:
-            if not self.update_row:
+            if not self.update_row or self.status not in args[5]:
                 return None
             row = _job_row((args[0], SESSION_ID, "text", "hash", "key", None,
                             args[1], 0, 3, None))
@@ -55,6 +61,8 @@ class FakeConnection:
             row["succeeded"] = args[1] == "completed" if args[1] in ("completed", "failed") else None
             row["final_payload_json"] = args[2] if args[1] == "completed" else args[3] if args[1] == "failed" else None
             return row
+        if query.lstrip().startswith("SELECT status FROM jobs"):
+            return {"status": self.status} if self.status is not None else None
         raise AssertionError(query)
 
     @asynccontextmanager
@@ -203,6 +211,83 @@ def test_update_status_persists_terminal_payload_without_thumbnail():
     assert job.result == result
 
 
+@pytest.mark.parametrize(
+    ("current_status", "next_status"),
+    [
+        (JobStatus.RUNNING, JobStatus.VALIDATING),
+        (JobStatus.VALIDATING, JobStatus.SEARCHING),
+        (JobStatus.SEARCHING, JobStatus.RENDERING),
+        (JobStatus.RENDERING, JobStatus.COMPLETED),
+        (JobStatus.RUNNING, JobStatus.FAILED),
+        (JobStatus.VALIDATING, JobStatus.FAILED),
+        (JobStatus.SEARCHING, JobStatus.FAILED),
+        (JobStatus.RENDERING, JobStatus.FAILED),
+    ],
+)
+def test_update_status_accepts_only_contractual_forward_and_failure_transitions(
+    current_status, next_status
+):
+    connection = FakeConnection(status=current_status.value)
+    terminal_args = (
+        {"failure": Failure(failure_code=FailureCode.INTERNAL_CODE_ERROR, user_message="failed")}
+        if next_status is JobStatus.FAILED
+        else {"result": AgentResult(agent_status=AgentStatus.OUT_OF_SCOPE,
+                                    reason_codes=[ReasonCode.OUT_OF_SCOPE_REQUEST])}
+        if next_status is JobStatus.COMPLETED
+        else {}
+    )
+
+    job = _run(JobRepository(FakePool(connection)).update_status(
+        job_id=JOB_ID, status=next_status, **terminal_args
+    ))
+
+    assert job.job_status is next_status
+    assert current_status.value in connection.calls[0][1][5]
+    if next_status is JobStatus.COMPLETED:
+        assert job.result == terminal_args["result"]
+        assert job.failure is None
+    elif next_status is JobStatus.FAILED:
+        assert job.result is None
+        assert job.failure == terminal_args["failure"]
+
+
+@pytest.mark.parametrize(
+    ("current_status", "next_status"),
+    [
+        (JobStatus.RUNNING, JobStatus.SEARCHING),
+        (JobStatus.VALIDATING, JobStatus.RENDERING),
+        (JobStatus.RENDERING, JobStatus.VALIDATING),
+        (JobStatus.COMPLETED, JobStatus.FAILED),
+        (JobStatus.FAILED, JobStatus.COMPLETED),
+    ],
+)
+def test_update_status_rejects_unallowed_transition(current_status, next_status):
+    connection = FakeConnection(status=current_status.value)
+    repository = JobRepository(FakePool(connection))
+    terminal_args = (
+        {"failure": Failure(failure_code=FailureCode.INTERNAL_CODE_ERROR, user_message="failed")}
+        if next_status is JobStatus.FAILED
+        else {"result": AgentResult(agent_status=AgentStatus.OUT_OF_SCOPE,
+                                    reason_codes=[ReasonCode.OUT_OF_SCOPE_REQUEST])}
+        if next_status is JobStatus.COMPLETED
+        else {}
+    )
+
+    with pytest.raises(InvalidJobTransition):
+        _run(repository.update_status(job_id=JOB_ID, status=next_status, **terminal_args))
+
+    assert "status = ANY($6::text[])" in connection.calls[0][0]
+
+
+def test_update_status_rejects_missing_job():
+    connection = FakeConnection(status=None)
+
+    with pytest.raises(JobNotFound):
+        _run(JobRepository(FakePool(connection)).update_status(
+            job_id=JOB_ID, status=JobStatus.VALIDATING
+        ))
+
+
 def test_update_status_requires_contractual_terminal_payload():
     repository = JobRepository(FakePool(FakeConnection()))
     failure = Failure(failure_code=FailureCode.INTERNAL_CODE_ERROR, user_message="failed")
@@ -217,15 +302,22 @@ def test_update_status_requires_contractual_terminal_payload():
 
 @pytest.mark.parametrize("terminal_status", [JobStatus.COMPLETED, JobStatus.FAILED])
 def test_update_status_does_not_overwrite_terminal_job(terminal_status):
-    connection = FakeConnection(update_row=False)
+    connection = FakeConnection(status=terminal_status.value)
+    next_status = JobStatus.FAILED if terminal_status is JobStatus.COMPLETED else JobStatus.COMPLETED
+    terminal_payload = (
+        {"failure": Failure(failure_code=FailureCode.INTERNAL_CODE_ERROR, user_message="failed")}
+        if next_status is JobStatus.FAILED
+        else {"result": AgentResult(agent_status=AgentStatus.OUT_OF_SCOPE,
+                                    reason_codes=[ReasonCode.OUT_OF_SCOPE_REQUEST])}
+    )
 
-    with pytest.raises(JobNotFound):
+    with pytest.raises(InvalidJobTransition):
         _run(JobRepository(FakePool(connection)).update_status(
-            job_id=JOB_ID, status=JobStatus.RUNNING
+            job_id=JOB_ID, status=next_status, **terminal_payload
         ))
 
     query, _ = connection.calls[0]
-    assert "status NOT IN ('completed', 'failed')" in query
+    assert "status = ANY($6::text[])" in query
 
 
 def test_claim_next_uses_transactional_lock_and_updates_attempt_and_lease():
