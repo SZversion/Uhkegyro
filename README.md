@@ -144,6 +144,16 @@ docker compose up --build
 
 Compose API 컨테이너는 Langfuse에 `http://langfuse-web:3000`으로 연결하며, 이 구성은 로컬 Langfuse 인프라 준비를 제공합니다. 실제 LLM 관측 데이터 확인은 이번 범위의 완료 조건이 아닙니다. Worker root trace 생성과 job trace lifecycle 연결은 [관측 Spec](./docs/specs/observability-and-prompt-versioning.md)을 기준으로 별도 PR에서 진행합니다.
 
+기동 후 PowerShell에서 설정과 health를 확인합니다. worker는 호스트 포트를 공개하지 않으므로 컨테이너 내부에서 검사합니다.
+
+```powershell
+docker compose config --quiet
+(Invoke-WebRequest -Uri 'http://localhost:3000/api/public/health').StatusCode
+docker compose exec -T langfuse-worker sh -c 'wget -S -O- "http://$(hostname -i):3030/api/health"'
+```
+
+두 health endpoint는 `200`을 반환해야 합니다. Worker 검사 응답 본문은 `{"status":"ok"}`입니다.
+
 종료는 다음 명령으로 합니다.
 
 ```powershell
