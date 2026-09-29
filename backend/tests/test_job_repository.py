@@ -18,16 +18,20 @@ from backend.services.job_repository import (
     InvalidJobTransition,
     JobNotFound,
     JobRepository,
+    StaleJobAttempt,
 )
 from backend.shared.auth import hash_session_token
 
 
 class FakeConnection:
-    def __init__(self, rows=(), update_row=True, fail_job_insert=False, status="rendering"):
+    def __init__(
+        self, rows=(), update_row=True, fail_job_insert=False, status="rendering", attempt=1
+    ):
         self.rows = list(rows)
         self.update_row = update_row
         self.fail_job_insert = fail_job_insert
         self.status = status
+        self.attempt = attempt
         self.calls = []
         self.rolled_back = False
         self.transaction_count = 0
@@ -52,17 +56,17 @@ class FakeConnection:
                             args[5], 0, args[6], None))
             return row
         if "UPDATE jobs" in query:
-            if not self.update_row or self.status not in args[5]:
+            if not self.update_row or self.status not in args[5] or self.attempt != args[6]:
                 return None
             row = _job_row((args[0], SESSION_ID, "text", "hash", "key", None,
                             args[1], 0, 3, None))
-            row["attempt"] = 1
+            row["attempt"] = args[6]
             row["status"] = args[1]
             row["succeeded"] = args[1] == "completed" if args[1] in ("completed", "failed") else None
             row["final_payload_json"] = args[2] if args[1] == "completed" else args[3] if args[1] == "failed" else None
             return row
-        if query.lstrip().startswith("SELECT status FROM jobs"):
-            return {"status": self.status} if self.status is not None else None
+        if query.lstrip().startswith("SELECT status, attempt FROM jobs"):
+            return {"status": self.status, "attempt": self.attempt} if self.status is not None else None
         raise AssertionError(query)
 
     @asynccontextmanager
@@ -200,7 +204,7 @@ def test_update_status_persists_terminal_payload_without_thumbnail():
     )
 
     job = _run(JobRepository(FakePool(connection)).update_status(
-        job_id=JOB_ID, status=JobStatus.COMPLETED, result=result
+        job_id=JOB_ID, status=JobStatus.COMPLETED, attempt=1, result=result
     ))
 
     update_query, args = connection.calls[0]
@@ -238,7 +242,7 @@ def test_update_status_accepts_only_contractual_forward_and_failure_transitions(
     )
 
     job = _run(JobRepository(FakePool(connection)).update_status(
-        job_id=JOB_ID, status=next_status, **terminal_args
+        job_id=JOB_ID, status=next_status, attempt=1, **terminal_args
     ))
 
     assert job.job_status is next_status
@@ -274,7 +278,9 @@ def test_update_status_rejects_unallowed_transition(current_status, next_status)
     )
 
     with pytest.raises(InvalidJobTransition):
-        _run(repository.update_status(job_id=JOB_ID, status=next_status, **terminal_args))
+        _run(repository.update_status(
+            job_id=JOB_ID, status=next_status, attempt=1, **terminal_args
+        ))
 
     assert "status = ANY($6::text[])" in connection.calls[0][0]
 
@@ -284,7 +290,7 @@ def test_update_status_rejects_missing_job():
 
     with pytest.raises(JobNotFound):
         _run(JobRepository(FakePool(connection)).update_status(
-            job_id=JOB_ID, status=JobStatus.VALIDATING
+            job_id=JOB_ID, status=JobStatus.VALIDATING, attempt=1
         ))
 
 
@@ -293,10 +299,12 @@ def test_update_status_requires_contractual_terminal_payload():
     failure = Failure(failure_code=FailureCode.INTERNAL_CODE_ERROR, user_message="failed")
 
     with pytest.raises(ValueError):
-        _run(repository.update_status(job_id=JOB_ID, status=JobStatus.COMPLETED))
+        _run(repository.update_status(
+            job_id=JOB_ID, status=JobStatus.COMPLETED, attempt=1
+        ))
     with pytest.raises(ValueError):
         _run(repository.update_status(
-            job_id=JOB_ID, status=JobStatus.QUEUED, failure=failure
+            job_id=JOB_ID, status=JobStatus.QUEUED, attempt=1, failure=failure
         ))
 
 
@@ -313,11 +321,22 @@ def test_update_status_does_not_overwrite_terminal_job(terminal_status):
 
     with pytest.raises(InvalidJobTransition):
         _run(JobRepository(FakePool(connection)).update_status(
-            job_id=JOB_ID, status=next_status, **terminal_payload
+            job_id=JOB_ID, status=next_status, attempt=1, **terminal_payload
         ))
 
     query, _ = connection.calls[0]
     assert "status = ANY($6::text[])" in query
+
+
+def test_update_status_rejects_stale_attempt():
+    connection = FakeConnection(status="running", attempt=2)
+
+    with pytest.raises(StaleJobAttempt):
+        _run(JobRepository(FakePool(connection)).update_status(
+            job_id=JOB_ID, status=JobStatus.VALIDATING, attempt=1
+        ))
+
+    assert "AND attempt = $7" in connection.calls[0][0]
 
 
 def test_claim_next_uses_transactional_lock_and_updates_attempt_and_lease():

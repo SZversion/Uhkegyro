@@ -10,7 +10,7 @@ import pytest
 
 from backend.db.migrate import migrate
 from backend.schemas.enums import FailureCode, JobStatus
-from backend.services.job_repository import JobRepository
+from backend.services.job_repository import JobRepository, StaleJobAttempt
 from backend.services.job_retry_recovery import JobRetryRecovery, retry_delay_ms
 from backend.services.llm import LLMRateLimited, LLMTimeout, PromptConfigurationError
 
@@ -158,6 +158,18 @@ def test_retry_and_lease_recovery_follow_postgres_contract():
             assert await recovery.recover_expired_leases() == {"requeued": 1, "failed": 0}
             claimed = await repository.claim_next()
             assert claimed["attempt"] == 2
+            with pytest.raises(StaleJobAttempt):
+                await repository.update_status(
+                    job_id=lease_job.job_id,
+                    status=JobStatus.VALIDATING,
+                    attempt=1,
+                )
+            async with pool.acquire() as connection:
+                row = await connection.fetchrow(
+                    "SELECT status, attempt FROM jobs WHERE job_id=$1::uuid",
+                    lease_job.job_id,
+                )
+            assert row["status"] == "running" and row["attempt"] == 2
 
             async with pool.acquire() as connection:
                 await connection.execute(
