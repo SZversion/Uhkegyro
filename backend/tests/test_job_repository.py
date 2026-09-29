@@ -251,13 +251,30 @@ def test_concurrent_claims_return_a_job_to_only_one_worker_on_postgres():
         pytest.skip("TEST_DATABASE_URL is required for the PostgreSQL concurrency test")
 
     async def verify_concurrent_claim():
-        admin = await asyncpg.connect(database_url)
+        application_name = f"claim_test_{uuid.uuid4().hex}"
+        admin = await asyncpg.connect(
+            database_url, server_settings={"application_name": f"{application_name}_admin"}
+        )
         schema = f"claim_test_{uuid.uuid4().hex}"
+        lock_key = uuid.uuid4().int & 0x7FFFFFFF
         pool = None
+        claim_task = None
+        second_task = None
+        lock_held = False
         try:
             await admin.execute(f'CREATE SCHEMA "{schema}"')
+
+            async def setup_connection(connection):
+                await connection.execute(f'SET search_path TO "{schema}"')
+                await connection.execute(
+                    "SELECT set_config('application_name', $1, false)", application_name
+                )
+
             pool = await asyncpg.create_pool(
-                database_url, server_settings={"search_path": schema}
+                database_url,
+                min_size=2,
+                max_size=2,
+                setup=setup_connection,
             )
             async with pool.acquire() as connection:
                 await migrate(connection)
@@ -267,6 +284,28 @@ def test_concurrent_claims_return_a_job_to_only_one_worker_on_postgres():
                     session_id,
                     uuid.uuid4().hex,
                 )
+                await connection.execute(
+                    f"""
+                    CREATE FUNCTION hold_claim_for_test() RETURNS trigger
+                        LANGUAGE plpgsql AS $$
+                        BEGIN
+                            PERFORM set_config(
+                                'application_name', 'claim_job_' || NEW.job_id::text, true
+                            );
+                            PERFORM pg_advisory_xact_lock({lock_key}::bigint);
+                            RETURN NEW;
+                    END;
+                    $$
+                    """
+                )
+                await connection.execute(
+                    """
+                    CREATE TRIGGER hold_claim_for_test
+                    AFTER UPDATE OF status ON jobs
+                    FOR EACH ROW WHEN (NEW.status = 'running')
+                    EXECUTE FUNCTION hold_claim_for_test()
+                    """
+                )
 
             repository = JobRepository(pool)
             first_job, _ = await repository.submit(
@@ -274,38 +313,81 @@ def test_concurrent_claims_return_a_job_to_only_one_worker_on_postgres():
                 request_text="first request",
                 idempotency_key=str(uuid.uuid4()),
             )
-            second_job, _ = await repository.submit(
-                session_id=session_id,
-                request_text="second request",
-                idempotency_key=str(uuid.uuid4()),
-            )
-            async with pool.acquire() as connection:
-                await connection.execute(
+            await admin.execute("SELECT pg_advisory_lock($1::bigint)", lock_key)
+            lock_held = True
+            claim_task = asyncio.create_task(repository.claim_next())
+
+            deadline = asyncio.get_running_loop().time() + 10
+            while True:
+                waiting = await admin.fetchrow(
                     """
-                    UPDATE jobs AS later
-                    SET created_at = earlier.created_at + interval '1 second'
-                    FROM jobs AS earlier
-                    WHERE later.job_id = $1::uuid AND earlier.job_id = $2::uuid
+                    SELECT application_name FROM pg_stat_activity
+                    WHERE application_name LIKE 'claim_job_%'
+                      AND wait_event_type = 'Lock'
+                      AND query LIKE '%UPDATE jobs AS claimed%'
+                    LIMIT 1
                     """,
-                    second_job.job_id,
-                    first_job.job_id,
                 )
-            first, second = await asyncio.gather(
-                repository.claim_next(), repository.claim_next()
-            )
+                if waiting:
+                    assert waiting["application_name"] == f"claim_job_{first_job.job_id}"
+                    break
+                if claim_task.done():
+                    await claim_task
+                    raise AssertionError("first claim did not block in the test trigger")
+                if asyncio.get_running_loop().time() >= deadline:
+                    raise AssertionError("first claim never reached the held advisory lock")
+                await asyncio.sleep(0.01)
+
+            second_task = asyncio.create_task(repository.claim_next())
+            try:
+                second = await asyncio.wait_for(asyncio.shield(second_task), timeout=10)
+            except asyncio.TimeoutError as error:
+                blocked = await admin.fetch(
+                    """
+                    SELECT application_name, state, wait_event_type, wait_event, query
+                    FROM pg_stat_activity
+                    WHERE application_name LIKE 'claim_test_%'
+                      AND state <> 'idle'
+                    """,
+                )
+                raise AssertionError(
+                    f"second claim blocked on PostgreSQL lock: "
+                    f"{[(row['application_name'], row['wait_event'], row['query'][:80]) for row in blocked]}"
+                ) from error
+            assert second is None
+            assert not claim_task.done()
+            await admin.execute("SELECT pg_advisory_unlock($1::bigint)", lock_key)
+            lock_held = False
+            first = await asyncio.wait_for(claim_task, timeout=5)
 
             claimed = [job for job in (first, second) if job is not None]
             assert len(claimed) == 1
             assert str(claimed[0]["job_id"]) == first_job.job_id
-            assert claimed[0]["status"] == "running"
-            assert claimed[0]["attempt"] == 1
             async with pool.acquire() as connection:
-                assert await connection.fetchval(
-                    "SELECT lease_expires_at > now() AND lease_expires_at <= now() + interval '31 seconds' "
-                    "FROM jobs WHERE job_id = $1::uuid",
-                    str(claimed[0]["job_id"]),
-                ) is True
+                rows = await connection.fetch(
+                    """
+                    SELECT status, attempt, lease_expires_at,
+                           lease_expires_at > now()
+                               AND lease_expires_at <= now() + interval '31 seconds' AS lease_valid
+                    FROM jobs WHERE job_id = $1::uuid
+                    """,
+                    first_job.job_id,
+                )
+            assert len(rows) == 1
+            assert rows[0]["status"] == "running"
+            assert rows[0]["attempt"] == 1
+            assert rows[0]["lease_expires_at"] is not None
+            assert rows[0]["lease_valid"] is True
         finally:
+            if lock_held:
+                await admin.execute("SELECT pg_advisory_unlock($1::bigint)", lock_key)
+            for task in (claim_task, second_task):
+                if task is not None:
+                    try:
+                        await asyncio.wait_for(asyncio.shield(task), timeout=5)
+                    except Exception:
+                        task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
             if pool is not None:
                 await pool.close()
             await admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
