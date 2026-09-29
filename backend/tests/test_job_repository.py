@@ -42,6 +42,10 @@ class FakeConnection:
 
     async def fetchrow(self, query, *args):
         self.calls.append((query, args))
+        if "SET lease_expires_at = now()" in query:
+            if self.status not in args[2] or self.attempt != args[1]:
+                return None
+            return {"job_id": args[0]}
         if "UPDATE jobs AS claimed" in query:
             row = _job_row((JOB_ID, SESSION_ID, "draw", "hash", "key", None,
                             "running", 1, 3, None))
@@ -337,6 +341,19 @@ def test_update_status_rejects_stale_attempt():
         ))
 
     assert "AND attempt = $7" in connection.calls[0][0]
+
+
+def test_extend_lease_is_fenced_by_active_attempt():
+    connection = FakeConnection(status="running", attempt=2)
+    repository = JobRepository(FakePool(connection))
+
+    _run(repository.extend_lease(job_id=JOB_ID, attempt=2))
+    with pytest.raises(StaleJobAttempt):
+        _run(repository.extend_lease(job_id=JOB_ID, attempt=1))
+
+    query, args = connection.calls[0]
+    assert "AND attempt = $2" in query and "status = ANY($3::text[])" in query
+    assert args[:2] == (JOB_ID, 2)
 
 
 def test_claim_next_uses_transactional_lock_and_updates_attempt_and_lease():
