@@ -12,7 +12,7 @@ import urllib.parse
 
 
 def build_search_url(query_fragments: list[str], base_url: str | None = None) -> str:
-    """`query_fragments`를 공백으로 조합해 URL 인코딩한 Pinterest 검색 URL을 만든다."""
+    """카드 검색 조각 뒤에 `drawing`을 붙여 Pinterest 검색 URL을 만든다."""
     if not query_fragments:
         raise ValueError("query_fragments는 비어 있을 수 없다")
 
@@ -21,6 +21,6 @@ def build_search_url(query_fragments: list[str], base_url: str | None = None) ->
 
         base_url = get_settings().pinterest_search_base_url
 
-    query = " ".join(str(fragment) for fragment in query_fragments)
+    query = " ".join(str(fragment) for fragment in query_fragments) + " drawing"
     base = str(base_url).rstrip("/")
     return f"{base}/?q={urllib.parse.quote_plus(query)}"
