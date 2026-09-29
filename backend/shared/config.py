@@ -3,6 +3,7 @@ import os
 import warnings
 from functools import lru_cache
 from pathlib import Path
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -39,6 +40,9 @@ class Settings(BaseSettings):
 
     # TERM_CARD 카탈로그 경로
     term_cards_path: str = "/app/term-cards"
+
+    # PostgreSQL Job worker
+    worker_concurrency: int = Field(default=5, ge=1)
 
     # Pinterest 검색 URL 기본 템플릿 (provider 계약 확정 전 결정론 기본값, T16에서 교체)
     pinterest_search_base_url: str = "https://www.pinterest.com/search/pins/"
