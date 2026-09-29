@@ -13,9 +13,12 @@ def test_build_search_url_joins_query_fragments_and_appends_drawing():
 
 
 def test_build_search_url_encodes_korean_and_space():
-    url = build_search_url(["half lotus", "pose reference"], base_url=BASE)
+    url = build_search_url(["한복 캐릭터", "pose reference"], base_url=BASE)
     assert url.startswith("https://www.pinterest.com/search/pins/?q=")
-    assert url == "https://www.pinterest.com/search/pins/?q=half+lotus+pose+reference+drawing"
+    assert (
+        url
+        == "https://www.pinterest.com/search/pins/?q=%ED%95%9C%EB%B3%B5+%EC%BA%90%EB%A6%AD%ED%84%B0+pose+reference+drawing"
+    )
 
 
 def test_build_search_url_appends_drawing_after_fragments_that_already_contain_drawing():
