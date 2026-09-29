@@ -26,6 +26,10 @@ class InvalidJobTransition(ValueError):
     """The requested job status transition is not allowed."""
 
 
+class StaleJobAttempt(InvalidJobTransition):
+    """The status write belongs to an attempt that no longer owns the Job."""
+
+
 _ALLOWED_PREVIOUS_STATUSES = {
     JobStatus.VALIDATING: [JobStatus.RUNNING.value],
     JobStatus.SEARCHING: [JobStatus.VALIDATING.value],
@@ -192,6 +196,7 @@ class JobRepository:
         *,
         job_id: str,
         status: JobStatus,
+        attempt: int,
         result: AgentResult | None = None,
         failure: Failure | None = None,
     ) -> JobEnvelope:
@@ -221,6 +226,7 @@ class JobRepository:
                 lease_expires_at = CASE WHEN $5 THEN NULL ELSE lease_expires_at END
             WHERE job_id = $1::uuid
               AND status = ANY($6::text[])
+              AND attempt = $7
             RETURNING *
             """,
             job_id,
@@ -229,13 +235,16 @@ class JobRepository:
             _dump(failure) if failure is not None else None,
             terminal,
             allowed_previous,
+            attempt,
         )
         if row is None:
             current = await self._pool.fetchrow(
-                "SELECT status FROM jobs WHERE job_id = $1::uuid", job_id
+                "SELECT status, attempt FROM jobs WHERE job_id = $1::uuid", job_id
             )
             if current is None:
                 raise JobNotFound
+            if current["attempt"] != attempt:
+                raise StaleJobAttempt
             raise InvalidJobTransition
         return _to_envelope(row)
 
