@@ -21,6 +21,7 @@ worker는 1초마다 `attempt < max_attempts`이고 `next_retry_at IS NULL OR ne
 - claim은 `FOR UPDATE SKIP LOCKED` transaction으로 수행해 worker 둘이 같은 job을 얻지 못하게 한다.
 - `WORKER_CONCURRENCY` 기본값은 5이며 worker가 동시에 보유한 lease 수를 제한한다.
 - worker는 첫 실행에서 `queued → running → validating → searching → rendering → completed|failed`로 전이하고, 회복 가능한 오류에서는 실행 중 상태에서 `queued`로 되돌린다.
+- worker는 claim 결과의 `attempt`를 모든 상태 전이와 완료·실패 저장에 함께 전달한다. 저장은 현재 DB 행의 `attempt`와 일치할 때만 허용된다. lease recovery 뒤 이전 attempt의 worker가 `StaleJobAttempt`를 받으면 이를 정상적인 fencing 신호로 처리하고 해당 실행을 중단한다. stale write는 사용자 failure를 만들거나 재시도를 예약하지 않는다.
 - LLM 회복 가능 오류에서만 `attempt<3`이면 lease를 제거하고 `next_retry_at`을 LLM 오류별 backoff 뒤 시각으로 설정한 뒤 `queued`로 되돌린다. worker polling은 그 시각 전에는 claim하지 않으며, 다음 claim이 attempt를 증가시켜 처음부터 재실행한다. LLM 오류의 분류·backoff·구조화 출력 재요청은 [openrouter-llm-adapter.md](./openrouter-llm-adapter.md)가 단일 기준이다. crawler·widget은 worker의 `next_retry_at` 재큐잉 대상이 아니며, 결과 경로는 [pinterest-widget-crawler.md](./pinterest-widget-crawler.md)의 `partial_result`·`deleted` 규칙을 따른다. `attempt=3`이면 실제 failure code로 `failed` 처리한다. 구성·DB migration·코드 오류는 즉시 `failed`다.
 - 완료·실패 저장에 성공한 뒤 lease를 제거한다.
 
@@ -32,3 +33,5 @@ worker는 1초마다 `attempt < max_attempts`이고 `next_retry_at IS NULL OR ne
 - GIVEN: worker가 heartbeat 없이 중단, WHEN: 30초 lease가 만료, THEN: 다른 worker는 attempt를 1 증가해 job을 처음부터 재실행한다.
 - GIVEN: 세 번째 attempt가 회복 가능한 오류로 끝남, WHEN: worker가 종결, THEN: job은 failed이며 더 이상 claim되지 않는다.
 - GIVEN: 첫 LLM timeout이 12:00:00에 발생, WHEN: worker가 job을 queued로 되돌린다, THEN: `next_retry_at=12:00:01`이고 12:00:01 전 polling은 해당 job을 claim하지 않는다.
+- GIVEN: attempt 1의 lease가 만료된 뒤 attempt 2가 job을 claim했다, WHEN: 늦게 복귀한 attempt 1 worker가 상태 전이를 저장한다, THEN: 저장은 `StaleJobAttempt`로 거부되고 attempt 2의 상태와 결과는 바뀌지 않는다.
+- GIVEN: worker가 상태 저장에서 `StaleJobAttempt`를 받았다, WHEN: 해당 worker 실행을 중단한다, THEN: 사용자 failure를 새로 만들거나 재시도를 예약하지 않는다.
