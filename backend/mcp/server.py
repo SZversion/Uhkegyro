@@ -5,8 +5,10 @@ FastAPI 앱에 마운트되어 `/mcp` 경로로 서비스됨.
 TERM_CARD는 시작 시 검증을 통과해야 ready이며, 실패 시 프로세스가 시작하지 않는다 (fail-closed).
 """
 from contextlib import asynccontextmanager
+import os
 
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 
 from backend.services.catalog_repository import (
     CatalogSnapshot,
@@ -39,7 +41,14 @@ def load_catalog_snapshot() -> None:
 load_catalog_snapshot()
 
 
-mcp = FastMCP("illustration-reference-mcp")
+_allowed_hosts = ["127.0.0.1:*", "localhost:*", "[::1]:*"]
+if cloud_host := os.getenv("MCP_ALLOWED_HOST"):
+    _allowed_hosts.append(cloud_host)
+
+mcp = FastMCP(
+    "illustration-reference-mcp",
+    transport_security=TransportSecuritySettings(allowed_hosts=_allowed_hosts),
+)
 
 
 @mcp.tool()
