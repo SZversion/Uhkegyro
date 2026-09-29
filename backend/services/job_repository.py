@@ -32,6 +32,40 @@ class JobRepository:
     def __init__(self, pool: Any) -> None:
         self._pool = pool
 
+    async def claim_next(self) -> Any | None:
+        """Claim the oldest eligible job without racing another worker."""
+        async with self._pool.acquire() as connection:
+            async with connection.transaction():
+                return await connection.fetchrow(
+                    """
+                    WITH candidate AS (
+                        SELECT queued.job_id
+                        FROM jobs AS queued
+                        WHERE queued.status = 'queued'
+                          AND queued.attempt < queued.max_attempts
+                          AND (queued.next_retry_at IS NULL OR queued.next_retry_at <= now())
+                          AND NOT EXISTS (
+                              SELECT 1 FROM jobs AS earlier
+                              WHERE earlier.session_id = queued.session_id
+                                AND earlier.status NOT IN ('completed', 'failed')
+                                AND (earlier.created_at, earlier.job_id)
+                                    < (queued.created_at, queued.job_id)
+                          )
+                        ORDER BY queued.created_at, queued.job_id
+                        LIMIT 1
+                        FOR UPDATE OF queued SKIP LOCKED
+                    )
+                    UPDATE jobs AS claimed
+                    SET status = 'running',
+                        attempt = claimed.attempt + 1,
+                        lease_expires_at = now() + interval '30 seconds',
+                        updated_at = now()
+                    FROM candidate
+                    WHERE claimed.job_id = candidate.job_id
+                    RETURNING claimed.*
+                    """
+                )
+
     async def submit(
         self, *, session_id: str, request_text: str, idempotency_key: str
     ) -> tuple[JobEnvelope, bool]:
