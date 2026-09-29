@@ -39,11 +39,16 @@ class FakeSessionRepository:
 
 
 class FakeJobRepository:
-    def __init__(self):
+    def __init__(self, sessions):
+        self.sessions = sessions
         self.jobs = {}
         self.idempotency = {}
+        self.submit_error = None
+        self.get_error = None
 
     async def submit(self, *, session_id, request_text, idempotency_key):
+        if self.submit_error is not None:
+            raise self.submit_error
         key = (session_id, hashlib.sha256(idempotency_key.encode()).hexdigest())
         text_hash = hashlib.sha256(request_text.encode()).hexdigest()
         previous = self.idempotency.get(key)
@@ -65,7 +70,19 @@ class FakeJobRepository:
         }
         return self._envelope(row), True
 
+    async def submit_new_session(self, *, session_token, request_text, idempotency_key):
+        session_id = str(uuid.uuid4())
+        result = await self.submit(
+            session_id=session_id,
+            request_text=request_text,
+            idempotency_key=idempotency_key,
+        )
+        self.sessions.sessions[hash_session_token(session_token)] = session_id
+        return result
+
     async def get(self, *, session_id, job_id):
+        if self.get_error is not None:
+            raise self.get_error
         row = self.jobs.get(job_id)
         if row is None or row["session_id"] != session_id:
             raise JobNotFound
@@ -84,7 +101,7 @@ class FakeJobRepository:
 class FakeRepositories:
     def __init__(self):
         self.sessions = FakeSessionRepository()
-        self.jobs = FakeJobRepository()
+        self.jobs = FakeJobRepository(self.sessions)
 
     async def get(self):
         return self.sessions, self.jobs
@@ -409,3 +426,19 @@ def test_database_connection_errors_return_sanitized_contract_body(
         "user_message": "현재 요청을 처리하지 못했습니다. 잠시 후 새 메시지로 다시 시도해 주세요.",
         "retryable": False,
     }
+
+
+def test_new_session_and_failed_job_submit_leave_no_session(client: TestClient) -> None:
+    client.repositories.jobs.submit_error = asyncpg.PostgresConnectionError(
+        "private database connection details"
+    )
+
+    response = client.post(
+        "/api/agent",
+        json={"request_text": "서 있는 자세"},
+        headers={"Idempotency-Key": str(uuid.uuid4())},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["failure_code"] == "DATABASE_UNAVAILABLE"
+    assert client.repositories.sessions.sessions == {}

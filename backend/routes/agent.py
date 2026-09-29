@@ -176,17 +176,24 @@ async def submit_agent(
         await _database_call(sessions.resolve_session(raw_cookie)) if raw_cookie else None
     )
     token = raw_cookie if session_id is not None else create_session_token()
-    if session_id is None:
-        session_id = await _database_call(sessions.create_session(token))
 
     try:
-        job, _created = await _database_call(
-            jobs.submit(
-                session_id=session_id,
-                request_text=payload.request_text,
-                idempotency_key=key,
+        if session_id is None:
+            job, _created = await _database_call(
+                jobs.submit_new_session(
+                    session_token=token,
+                    request_text=payload.request_text,
+                    idempotency_key=key,
+                )
             )
-        )
+        else:
+            job, _created = await _database_call(
+                jobs.submit(
+                    session_id=session_id,
+                    request_text=payload.request_text,
+                    idempotency_key=key,
+                )
+            )
     except IdempotencyConflict:
         raise ApiContractError(
             ApiErrorCode.IDEMPOTENCY_KEY_CONFLICT, session_token=token

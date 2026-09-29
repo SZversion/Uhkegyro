@@ -9,6 +9,7 @@ from typing import Any
 from backend.schemas import AgentResult, Failure, JobEnvelope
 from backend.schemas.enums import JobStatus
 from backend.schemas.models import PROGRESS_POLL_AFTER_MS, RETRY_COUNT_MAX
+from backend.shared.auth import hash_session_token
 
 IDEMPOTENCY_TTL_SECONDS = 10 * 60
 
@@ -35,52 +36,91 @@ class JobRepository:
         self, *, session_id: str, request_text: str, idempotency_key: str
     ) -> tuple[JobEnvelope, bool]:
         """Create a queued job or return its unexpired idempotent match."""
-        key_hash = _hash(idempotency_key)
-        text_hash = _hash(request_text)
+        async with self._pool.acquire() as connection:
+            async with connection.transaction():
+                return await self._submit(
+                    connection,
+                    session_id=session_id,
+                    request_text=request_text,
+                    idempotency_key=idempotency_key,
+                )
+
+    async def submit_new_session(
+        self, *, session_token: str, request_text: str, idempotency_key: str
+    ) -> tuple[JobEnvelope, bool]:
+        """Create a session and its first job atomically."""
+        if not session_token:
+            raise ValueError("session_token must not be empty")
+        session_id = str(uuid.uuid4())
         async with self._pool.acquire() as connection:
             async with connection.transaction():
                 await connection.execute(
-                    "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
-                    session_id,
-                )
-                existing = await connection.fetchrow(
                     """
-                    SELECT * FROM jobs
-                    WHERE session_id = $1::uuid
-                      AND idempotency_key_hash = $2
-                      AND idempotency_expires_at > now()
-                    ORDER BY created_at DESC
-                    LIMIT 1
+                    INSERT INTO sessions (session_id, session_token_hash)
+                    VALUES ($1::uuid, $2)
                     """,
                     session_id,
-                    key_hash,
+                    hash_session_token(session_token),
                 )
-                if existing is not None:
-                    if existing["request_text_hash"] != text_hash:
-                        raise IdempotencyConflict
-                    return _to_envelope(existing), False
+                return await self._submit(
+                    connection,
+                    session_id=session_id,
+                    request_text=request_text,
+                    idempotency_key=idempotency_key,
+                )
 
-                row = await connection.fetchrow(
-                    """
-                    INSERT INTO jobs (
-                        job_id, session_id, request_text, request_text_hash,
-                        idempotency_key_hash, idempotency_expires_at, status,
-                        attempt, max_attempts, next_retry_at
-                    ) VALUES (
-                        $1::uuid, $2::uuid, $3, $4, $5,
-                        now() + interval '10 minutes', $6, 0, $7, NULL
-                    )
-                    RETURNING *
-                    """,
-                    str(uuid.uuid4()),
-                    session_id,
-                    request_text,
-                    text_hash,
-                    key_hash,
-                    JobStatus.QUEUED.value,
-                    RETRY_COUNT_MAX,
-                )
-                return _to_envelope(row), True
+    async def _submit(
+        self,
+        connection: Any,
+        *,
+        session_id: str,
+        request_text: str,
+        idempotency_key: str,
+    ) -> tuple[JobEnvelope, bool]:
+        key_hash = _hash(idempotency_key)
+        text_hash = _hash(request_text)
+        await connection.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+            session_id,
+        )
+        existing = await connection.fetchrow(
+            """
+            SELECT * FROM jobs
+            WHERE session_id = $1::uuid
+              AND idempotency_key_hash = $2
+              AND idempotency_expires_at > now()
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            session_id,
+            key_hash,
+        )
+        if existing is not None:
+            if existing["request_text_hash"] != text_hash:
+                raise IdempotencyConflict
+            return _to_envelope(existing), False
+
+        row = await connection.fetchrow(
+            """
+            INSERT INTO jobs (
+                job_id, session_id, request_text, request_text_hash,
+                idempotency_key_hash, idempotency_expires_at, status,
+                attempt, max_attempts, next_retry_at
+            ) VALUES (
+                $1::uuid, $2::uuid, $3, $4, $5,
+                now() + interval '10 minutes', $6, 0, $7, NULL
+            )
+            RETURNING *
+            """,
+            str(uuid.uuid4()),
+            session_id,
+            request_text,
+            text_hash,
+            key_hash,
+            JobStatus.QUEUED.value,
+            RETRY_COUNT_MAX,
+        )
+        return _to_envelope(row), True
 
     async def get(self, *, session_id: str, job_id: str) -> JobEnvelope:
         row = await self._pool.fetchrow(

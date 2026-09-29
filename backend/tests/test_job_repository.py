@@ -10,13 +10,16 @@ import pytest
 from backend.schemas import AgentResult, Failure
 from backend.schemas.enums import AgentStatus, FailureCode, JobStatus, ReasonCode
 from backend.services.job_repository import IdempotencyConflict, JobNotFound, JobRepository
+from backend.shared.auth import hash_session_token
 
 
 class FakeConnection:
-    def __init__(self, rows=(), update_row=True):
+    def __init__(self, rows=(), update_row=True, fail_job_insert=False):
         self.rows = list(rows)
         self.update_row = update_row
+        self.fail_job_insert = fail_job_insert
         self.calls = []
+        self.rolled_back = False
 
     async def execute(self, query, *args):
         self.calls.append((query, args))
@@ -27,6 +30,8 @@ class FakeConnection:
         if query.lstrip().startswith("SELECT * FROM jobs"):
             return self.rows.pop(0) if self.rows else None
         if "INSERT INTO jobs" in query:
+            if self.fail_job_insert:
+                raise RuntimeError("job insert failed")
             row = _job_row((args[0], args[1], args[2], args[3], args[4], None,
                             args[5], 0, args[6], None))
             return row
@@ -44,7 +49,11 @@ class FakeConnection:
 
     @asynccontextmanager
     async def transaction(self):
-        yield
+        try:
+            yield
+        except BaseException:
+            self.rolled_back = True
+            raise
 
 
 class FakePool:
@@ -95,6 +104,39 @@ def test_submit_creates_hashed_queued_job_under_session_lock():
     assert insert_args[2] == "draw"
     assert insert_args[3] != "draw"
     assert insert_args[4] != JOB_ID
+
+
+def test_new_session_and_job_share_transaction():
+    connection = FakeConnection()
+    token = "opaque-session-token"
+
+    job, created = _run(JobRepository(FakePool(connection)).submit_new_session(
+        session_token=token, request_text="draw", idempotency_key=JOB_ID
+    ))
+
+    session_query, session_args = connection.calls[0]
+    assert "INSERT INTO sessions" in session_query
+    assert session_args[1] == hash_session_token(token)
+    assert "opaque-session-token" not in session_args
+    assert "INSERT INTO jobs" in connection.calls[3][0]
+    assert connection.calls[3][1][1] == job.session_id
+    assert created is True
+    assert connection.rolled_back is False
+
+
+def test_new_session_rolls_back_when_job_insert_fails():
+    connection = FakeConnection(fail_job_insert=True)
+
+    with pytest.raises(RuntimeError, match="job insert failed"):
+        _run(JobRepository(FakePool(connection)).submit_new_session(
+            session_token="opaque-session-token",
+            request_text="draw",
+            idempotency_key=JOB_ID,
+        ))
+
+    assert "INSERT INTO sessions" in connection.calls[0][0]
+    assert any("INSERT INTO jobs" in query for query, _ in connection.calls)
+    assert connection.rolled_back is True
 
 
 def test_submit_reuses_matching_unexpired_job():
