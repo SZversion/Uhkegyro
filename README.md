@@ -122,7 +122,8 @@ PinterestCrawlerProvider와 widget 기반 Pin 미리보기·보관 경계는 [Pi
 
 - Docker Desktop 또는 Docker Engine과 Docker Compose
 - Git
-- `.env`에 둘 API 키가 필요한 기능은 아직 구현되지 않았습니다. 현재 골조는 키 없이도 `GET /health` 확인이 가능해야 합니다.
+- 로컬 Langfuse 실행을 위해 `.env.example`의 Langfuse 내부 비밀값을 설정합니다. 저장 서비스별 비밀번호는 서로 다른 임의 hex 값으로 생성하고, `LANGFUSE_ENCRYPTION_KEY`는 64자리 hex 값으로 지정합니다.
+- 앱의 `DATABASE_URL`은 Neon 개발 DB를 사용하며, Langfuse는 별도 Compose PostgreSQL을 사용합니다.
 
 ### PowerShell
 
@@ -139,6 +140,9 @@ docker compose up --build
 | --- | --- |
 | `http://localhost:8000/health` | `{"status":"ok"}` |
 | `http://localhost:8000/docs` | FastAPI 자동 문서 |
+| `http://localhost:3000` | 로컬 Langfuse UI. 가입 후 organization/project를 만들고 API key를 `.env`의 `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`에 입력 |
+
+Compose API 컨테이너는 Langfuse에 `http://langfuse-web:3000`으로 연결합니다. 현재 Langfuse worker의 job trace lifecycle 연결은 별도 미구현입니다.
 
 종료는 다음 명령으로 합니다.
 
@@ -180,6 +184,7 @@ docker compose down
 | [경쟁 서비스 분석](./docs/domains/illustration-reference/competitive-analysis.md) | 실제 시작 흐름 비교, 차별점과 조사 한계 |
 | [설계 문서](./docs/domains/illustration-reference/design.md) | LLM·결정론 코드·MCP의 책임 분리와 폴백 설계 |
 | [API 계약](./docs/specs/api-contract.md) | `POST /api/agent`, 비동기 job 상태, 완료 결과, worker 실패·재시도 및 LLM JSON 계약 |
+| [로컬 Langfuse Compose](./docs/specs/local-langfuse-compose.md) | 로컬 Langfuse와 필수 저장 서비스 구성 |
 | [MCP 계약](./docs/specs/mcp-contract.md) | JSON 카탈로그 기반 `get_active_term_card` 도구의 입력·출력·접근 제어 |
 | [NOT_BUILD.md](./NOT_BUILD.md) | MVP에서 의도적으로 만들지 않는 기능과 이유 |
 | [EVAL_REPORT.md](./EVAL_REPORT.md) | 관측, 프롬프트 운영, 평가, 비용·지연, 출시 게이트 |
