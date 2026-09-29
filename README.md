@@ -13,7 +13,7 @@
 | 반복 문제 | 원하는 체형·포즈·구도를 일상어로만 검색해 넓은 결과를 반복 탐색한다. |
 | 해결 방식 | 일상어를 구조화한 뒤, 용어 설명과 역할별 외부 탐색 링크를 함께 제공한다. |
 | 팀 | UH케그려 (4조) |
-| 현재 실행 가능 범위 | Docker Compose 기반 FastAPI `GET /health`, PostgreSQL job API와 LLM worker, 카탈로그 시작 검증, MCP 도구 |
+| 현재 실행 가능 범위 | Docker Compose 기반 FastAPI `GET /health`, PostgreSQL 세션·Job API와 LLM worker, 카탈로그 시작 검증, MCP 도구 |
 
 ## 팀원
 
@@ -71,8 +71,8 @@
 
 ```text
 사용자 UI
-  -> POST /api/agent (PostgreSQL 저장, 서버 세션 쿠키 발급·재사용, 202 + job_id)
-  -> GET /api/jobs/{job_id} polling (PostgreSQL 조회, 소유권 확인)
+  -> POST /api/agent (PostgreSQL에 세션·queued job 저장, 서버 세션 쿠키 발급·재사용, 202 + job_id)
+  -> GET /api/jobs/{job_id} polling (PostgreSQL에서 소유권 확인 후 상태·결과 조회)
 Job worker / retry·lease recovery (LLM → resolver → response assembly 구현, Pinterest 검색 연결 미구현)
   -> LLM: 일상어를 허용된 term_id와 역할로 구조화
   -> 결정론 코드: Pydantic 검증, 역할 순서, 허용 ID, URL 인코딩
@@ -104,8 +104,8 @@ PinterestCrawlerProvider와 widget 기반 Pin 미리보기·보관 경계는 [Pi
 | 항목 | 현재 상태 | 최종 목표 |
 | --- | --- | --- |
 | `GET /health` | 구현됨. `{"status":"ok"}` 반환 | Cloud Run 상태 확인 |
-| `POST /api/agent` | PostgreSQL 구현됨. 세션 쿠키 발급·재사용, `202 + job_id` 반환 | Pinterest 검색 단계 연결 |
-| `GET /api/jobs/{job_id}` | PostgreSQL 구현됨. 동일 세션의 job 상태·결과 조회 | Pinterest thumbnail 응답 조립 |
+| `POST /api/agent` | PostgreSQL 영속화 구현됨. 세션 쿠키 발급·재사용, `202 + job_id` 반환 | Pinterest 검색 단계 연결 |
+| `GET /api/jobs/{job_id}` | PostgreSQL 영속화 구현됨. 소유 job의 상태·완료 결과·실패 조회 | Pinterest thumbnail 응답 조립 |
 | DB 영속화·실제 worker | 구현됨. PostgreSQL job claim, LLM adapter·resolver·response assembler pipeline, retry·lease recovery | Pinterest 검색 단계 연결 |
 | LLM 해석·resolver 연동 | 구현됨. worker가 활성 TERM_CARD를 LLM에 전달하고 resolver·response assembler 결과를 저장 | Pinterest 검색 결과 연결 |
 | Pinterest 검색 실행 | 미구현 | 역할별 검색 결과 |

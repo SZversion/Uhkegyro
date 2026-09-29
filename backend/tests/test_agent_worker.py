@@ -42,13 +42,21 @@ def _selected(term_id="pose_shift"):
 
 
 class FakeJobs:
-    def __init__(self, job=JOB, *, stale_status=None):
+    def __init__(self, job=JOB, *, stale_status=None, stale_heartbeat=False):
         self.job = job
         self.stale_status = stale_status
+        self.stale_heartbeat = stale_heartbeat
         self.writes = []
+        self.heartbeats = 0
 
     async def claim_next(self):
         return self.job
+
+    async def extend_lease(self, *, job_id, attempt):
+        assert (job_id, attempt) == (self.job["job_id"], self.job["attempt"])
+        self.heartbeats += 1
+        if self.stale_heartbeat:
+            raise StaleJobAttempt
 
     async def update_status(self, *, job_id, status, attempt, result=None, failure=None):
         assert job_id == self.job["job_id"]
@@ -80,14 +88,25 @@ class FakeAdapter:
         return self.output
 
 
+class BlockingAdapter:
+    def __init__(self):
+        self.started = asyncio.Event()
+
+    async def interpret(self, request_text, **kwargs):
+        self.started.set()
+        await asyncio.Future()
+
+
 def _run(coro):
     return asyncio.run(coro)
 
 
-def _worker(monkeypatch, jobs, recovery, snapshot, adapter):
+def _worker(monkeypatch, jobs, recovery, snapshot, adapter, heartbeat_interval=10):
     monkeypatch.setattr(agent_worker, "JobRepository", lambda _pool: jobs)
     monkeypatch.setattr(agent_worker, "JobRetryRecovery", lambda _pool: recovery)
-    return AgentJobWorker(object(), snapshot, adapter=adapter)
+    return AgentJobWorker(
+        object(), snapshot, adapter=adapter, heartbeat_interval=heartbeat_interval
+    )
 
 
 def test_worker_runs_claimed_job_through_assembler(monkeypatch, snapshot_factory, card_factory):
@@ -178,5 +197,22 @@ def test_worker_stops_on_stale_attempt_without_creating_failure(
     snapshot = snapshot_factory([card_factory("pose_shift", role="pose")])
     _run(_worker(monkeypatch, jobs, recovery, snapshot, FakeAdapter()).run_once())
 
+    assert [entry[0] for entry in jobs.writes] == [JobStatus.VALIDATING]
+    assert recovery.failures == []
+
+
+def test_stale_heartbeat_cancels_worker_without_failure(monkeypatch, snapshot_factory):
+    jobs, recovery, adapter = FakeJobs(stale_heartbeat=True), FakeRecovery(), BlockingAdapter()
+
+    async def run():
+        worker = _worker(
+            monkeypatch, jobs, recovery, snapshot_factory([]), adapter, heartbeat_interval=0.01
+        )
+        task = asyncio.create_task(worker.run_once())
+        await adapter.started.wait()
+        await asyncio.wait_for(task, timeout=1)
+
+    _run(run())
+    assert jobs.heartbeats == 1
     assert [entry[0] for entry in jobs.writes] == [JobStatus.VALIDATING]
     assert recovery.failures == []

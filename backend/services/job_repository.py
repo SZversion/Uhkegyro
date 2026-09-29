@@ -42,6 +42,12 @@ _ALLOWED_PREVIOUS_STATUSES = {
         JobStatus.RENDERING.value,
     ],
 }
+_ACTIVE_STATUSES = [
+    JobStatus.RUNNING.value,
+    JobStatus.VALIDATING.value,
+    JobStatus.SEARCHING.value,
+    JobStatus.RENDERING.value,
+]
 
 
 def _hash(value: str) -> str:
@@ -87,6 +93,24 @@ class JobRepository:
                     RETURNING claimed.*
                     """
                 )
+
+    async def extend_lease(self, *, job_id: str, attempt: int) -> None:
+        """Extend only the active lease owned by this claimed attempt."""
+        row = await self._pool.fetchrow(
+            """
+            UPDATE jobs
+            SET lease_expires_at = now() + interval '30 seconds', updated_at = now()
+            WHERE job_id = $1::uuid
+              AND attempt = $2
+              AND status = ANY($3::text[])
+            RETURNING job_id
+            """,
+            job_id,
+            attempt,
+            _ACTIVE_STATUSES,
+        )
+        if row is None:
+            raise StaleJobAttempt
 
     async def submit(
         self, *, session_id: str, request_text: str, idempotency_key: str

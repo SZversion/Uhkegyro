@@ -9,7 +9,10 @@ import asyncpg
 import pytest
 
 from backend.db.migrate import migrate
-from backend.schemas.enums import FailureCode, JobStatus
+from backend.schemas.enums import ClarificationType, FailureCode, InterpretationState, JobStatus
+from backend.schemas.models import InterpretationOutput
+from backend.services.agent_worker import AgentJobWorker
+from backend.services.catalog_repository import CatalogSnapshot
 from backend.services.job_repository import JobRepository, StaleJobAttempt
 from backend.services.job_retry_recovery import JobRetryRecovery, retry_delay_ms
 from backend.services.llm import LLMRateLimited, LLMTimeout, PromptConfigurationError
@@ -186,6 +189,56 @@ def test_retry_and_lease_recovery_follow_postgres_contract():
             payload = json.loads(row["final_payload_json"])
             assert row["status"] == "failed"
             assert payload["failure_code"] == FailureCode.JOB_INSTANCE_INTERRUPTED.value
+
+            heartbeat_job, _ = await repository.submit(
+                session_id=session_id, request_text="heartbeat", idempotency_key=str(uuid.uuid4())
+            )
+            started = asyncio.Event()
+            release = asyncio.Event()
+
+            class SlowAdapter:
+                async def interpret(self, request_text, **kwargs):
+                    started.set()
+                    await release.wait()
+                    return InterpretationOutput(
+                        interpretation_state=InterpretationState.NEEDS_CLARIFICATION,
+                        unresolved_constraints=["세부 정보"],
+                        clarifying_question="어떤 세부 정보인가요?",
+                        clarification_type=ClarificationType.ABSTRACT_INTENT,
+                    )
+
+            worker = AgentJobWorker(
+                pool, CatalogSnapshot(dataset_version="test"),
+                adapter=SlowAdapter(), heartbeat_interval=0.01,
+            )
+            running = asyncio.create_task(worker.run_once())
+            await asyncio.wait_for(started.wait(), timeout=2)
+            async with pool.acquire() as connection:
+                await connection.execute(
+                    "UPDATE jobs SET lease_expires_at=now()-interval '1 second' WHERE job_id=$1::uuid",
+                    heartbeat_job.job_id,
+                )
+            async with pool.acquire() as connection:
+                for _ in range(200):
+                    lease = await connection.fetchval(
+                        "SELECT lease_expires_at FROM jobs WHERE job_id=$1::uuid",
+                        heartbeat_job.job_id,
+                    )
+                    if lease > await connection.fetchval("SELECT now() + interval '20 seconds'"):
+                        break
+                    await asyncio.sleep(0.01)
+                else:
+                    pytest.fail("heartbeat did not extend the active lease")
+            assert await recovery.recover_expired_leases() == {"requeued": 0, "failed": 0}
+            release.set()
+            await asyncio.wait_for(running, timeout=2)
+            async with pool.acquire() as connection:
+                row = await connection.fetchrow(
+                    "SELECT status, attempt, lease_expires_at FROM jobs WHERE job_id=$1::uuid",
+                    heartbeat_job.job_id,
+                )
+            assert row["status"] == "completed" and row["attempt"] == 1
+            assert row["lease_expires_at"] is None
         finally:
             if pool is not None:
                 await pool.close()

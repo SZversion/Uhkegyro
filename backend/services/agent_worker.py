@@ -32,11 +32,13 @@ class AgentJobWorker:
         snapshot: CatalogSnapshot,
         *,
         adapter: AgentInterpretationAdapter | None = None,
+        heartbeat_interval: float = 10,
     ) -> None:
         self._jobs = JobRepository(pool)
         self._recovery = JobRetryRecovery(pool)
         self._snapshot = snapshot
         self._adapter = adapter
+        self._heartbeat_interval = heartbeat_interval
 
     async def run_once(
         self,
@@ -46,11 +48,17 @@ class AgentJobWorker:
         job = await self._jobs.claim_next()
         if job is None:
             return False
+        try:
+            await self._with_heartbeat(job, self._process_claimed(job, search_outcomes))
+        except StaleJobAttempt:
+            pass
+        return True
 
+    async def _process_claimed(self, job: Any, search_outcomes: Mapping | None) -> None:
         job_id = str(job["job_id"])
         attempt = job["attempt"]
         if not await self._update(job_id, attempt, JobStatus.VALIDATING):
-            return True
+            return
 
         try:
             if self._adapter is None:
@@ -67,22 +75,51 @@ class AgentJobWorker:
             if resolution.status == STATUS_ALL_INVALID:
                 raise LLMInvalidStructuredOutput("resolver가 모든 선택 후보를 거부했다")
         except StaleJobAttempt:
-            return True
+            return
         except Exception as error:
             await self._handle_failure(job, error)
-            return True
+            return
 
         if not await self._update(job_id, attempt, JobStatus.SEARCHING):
-            return True
+            return
         if not await self._update(job_id, attempt, JobStatus.RENDERING):
-            return True
+            return
         try:
             result = assemble(resolution, self._snapshot, search_outcomes)
         except Exception as error:
             await self._handle_failure(job, error)
-            return True
+            return
         await self._update(job_id, attempt, JobStatus.COMPLETED, result=result)
-        return True
+
+    async def _with_heartbeat(self, job: Any, operation: Any) -> None:
+        stopped = asyncio.Event()
+        heartbeat = asyncio.create_task(self._heartbeat(job, stopped))
+        execution = asyncio.create_task(operation)
+        try:
+            done, _ = await asyncio.wait(
+                (heartbeat, execution), return_when=asyncio.FIRST_COMPLETED
+            )
+            if execution in done:
+                await execution
+            else:
+                await heartbeat
+                await execution
+        finally:
+            stopped.set()
+            for task in (heartbeat, execution):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(heartbeat, execution, return_exceptions=True)
+
+    async def _heartbeat(self, job: Any, stopped: asyncio.Event) -> None:
+        while True:
+            try:
+                await asyncio.wait_for(stopped.wait(), timeout=self._heartbeat_interval)
+                return
+            except asyncio.TimeoutError:
+                await self._jobs.extend_lease(
+                    job_id=str(job["job_id"]), attempt=job["attempt"]
+                )
 
     async def _handle_failure(self, job: Any, error: Exception) -> None:
         await self._recovery.handle_attempt_failure(
