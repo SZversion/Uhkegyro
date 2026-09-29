@@ -4,8 +4,9 @@
 
 - 2026-09-29, Windows / Python 3.14, `backend.mcp.main:app` 기준 `72eccec`에서 별도 프로세스의 MCP Python SDK client가 마운트된 Streamable HTTP `/mcp`에 접속했다.
 - 마운트된 FastAPI 앱 로컬 실행: tool 목록, 활성 카드 `found`, 미등록 카드 `not_found` 검증 **통과**. 부모 FastAPI lifespan에서 FastMCP session manager가 시작되도록 수정해 이전 HTTP 500을 해결했다.
-- 배포 IAM 접근 제어: **미검증**. `gcloud run services list --region=asia-northeast3 --project=proj2-509406` 결과 서비스가 없고 `mcp` describe는 `Cannot find service [mcp]`였다. 배포 서비스·호출자 권한이 준비되면 아래 절차를 실행해야 AC-04의 배포 증거가 완성된다.
-- 이 로컬 결과는 Cloud Run 배포나 IAM 접근 제어의 성공을 의미하지 않는다.
+- Cloud Run 배포: `proj2-509406` / `asia-northeast3`, 서비스 `mcp`, revision `mcp-00006-fh9`, URL `https://mcp-fgdrdxsn6q-du.a.run.app`.
+- 2026-09-29 운영 IAM 검증: 무인증 요청 **403**, 임시로 `roles/run.invoker`를 부여한 인증 호출에서 도구 목록·`found`·`not_found` **통과**. 검증 직후 임시 사용자 권한을 제거했으며, 최종 서비스 IAM 정책에는 `mcp-caller@proj2-509406.iam.gserviceaccount.com`만 등록돼 있다.
+- Cloud Run IAM 앞단 인증 이후 FastMCP Host 검증도 통과하도록 `MCP_ALLOWED_HOST`에 Cloud Run hostname을 설정했다. 로컬 loopback Host 허용은 유지한다.
 
 ## 로컬 재현
 
@@ -43,7 +44,7 @@ python scripts/mcp_client_evidence.py
 
 ## Cloud Run 배포 후 접근 제어 재현
 
-로컬 mounted-app 검증은 통과했지만 Cloud Run IAM은 아직 미검증이다. Cloud Run `mcp` 서비스를 IAM 보호(`--no-allow-unauthenticated`)로 배포해야 한다. 허용 호출자 서비스 계정에는 `roles/run.invoker`가 필요하다. 다음 PowerShell 절차는 허용된 호출자 권한을 가진 운영자가 실행한다.
+Cloud Run `mcp` 서비스는 IAM 보호(`--no-allow-unauthenticated`)로 배포한다. 허용 호출자 서비스 계정에는 `roles/run.invoker`가 필요하다. 다음 PowerShell 절차는 허용 호출자 서비스 계정 impersonation 권한을 가진 운영자가 실행한다.
 
 ```powershell
 $mcpServiceUrl = gcloud run services describe mcp --region=asia-northeast3 --project=proj2-509406 --format='value(status.url)'
@@ -64,4 +65,4 @@ Remove-Item Env:MCP_ID_TOKEN
 | 인증 | 로컬 단독 실행에는 없음; 운영 Cloud Run IAM ID token |
 | Client | `scripts/mcp_client_evidence.py` (`mcp` Python SDK의 `ClientSession`) |
 
-브라우저와 Next.js UI는 MCP에 직접 연결하지 않는다. 배포 접근 제어가 검증되기 전에는 로컬 출력만을 운영 증거로 제시하지 않는다.
+브라우저와 Next.js UI는 MCP에 직접 연결하지 않는다. 위 운영 결과는 2026-09-29 배포 revision에서 재현했다.
