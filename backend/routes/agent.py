@@ -1,8 +1,6 @@
 """공개 API 라우터 — `docs/specs/api-contract.md`를 따른다.
 
-이 라우터는 저장 계층의 내부 구조를 모른다. 세션 토큰과 job의 영속화는
-`backend/services/session_store.py`가 맡고, 그 구현이 교체돼도 라우터 계약은
-바뀌지 않는다.
+세션과 job의 영속화는 PostgreSQL repositories가 맡는다.
 """
 from __future__ import annotations
 
@@ -21,16 +19,34 @@ from backend.schemas import (
     JobEnvelope,
     SubmissionResponse,
 )
-from backend.shared.auth import SESSION_COOKIE_NAME, set_session_cookie
+from backend.shared.auth import SESSION_COOKIE_NAME, create_session_token, set_session_cookie
 from backend.shared.config import get_settings
-from backend.services.session_store import (
+from backend.shared.database import close_pool, create_pool
+from backend.services.job_repository import (
     IdempotencyConflict,
     JobNotFound,
-    SessionRequired,
-    get_session_store,
 )
+from backend.services.job_repository import JobRepository
+from backend.services.session_repository import SessionRepository
 
 router = APIRouter(tags=["agent"])
+_pool: Any | None = None
+
+
+async def get_repositories() -> tuple[SessionRepository, JobRepository]:
+    """Return PostgreSQL repositories backed by the process pool."""
+    global _pool
+    if _pool is None:
+        _pool = await create_pool(get_settings())
+    return SessionRepository(_pool), JobRepository(_pool)
+
+
+@router.on_event("shutdown")
+async def close_database_pool() -> None:
+    global _pool
+    if _pool is not None:
+        await close_pool(_pool)
+        _pool = None
 
 IDEMPOTENCY_KEY_HEADER = "Idempotency-Key"
 
@@ -118,16 +134,15 @@ async def submit_agent(
     payload = await _parse_agent_request(request)
     key = _parse_idempotency_key(idempotency_key)
 
-    store = get_session_store()
+    sessions, jobs = await get_repositories()
     raw_cookie = request.cookies.get(SESSION_COOKIE_NAME)
-    try:
-        session_id = store.resolve_session(raw_cookie)
-        token = raw_cookie
-    except SessionRequired:
-        token, session_id = store.issue_session()
+    session_id = await sessions.resolve_session(raw_cookie) if raw_cookie else None
+    token = raw_cookie if session_id is not None else create_session_token()
+    if session_id is None:
+        session_id = await sessions.create_session(token)
 
     try:
-        job, _created = store.submit(
+        job, _created = await jobs.submit(
             session_id=session_id,
             request_text=payload.request_text,
             idempotency_key=key,
@@ -159,18 +174,17 @@ async def read_job(
     response: Response,
 ) -> JobEnvelope:
     """소유 세션만 자신의 job을 읽는다. `api-contract.md` AC-06."""
-    store = get_session_store()
+    sessions, jobs = await get_repositories()
     raw_cookie = request.cookies.get(SESSION_COOKIE_NAME)
-    try:
-        session_id = store.resolve_session(raw_cookie)
-    except SessionRequired:
+    session_id = await sessions.resolve_session(raw_cookie) if raw_cookie else None
+    if session_id is None:
         raise ApiContractError(ApiErrorCode.SESSION_REQUIRED) from None
 
     # 조회가 성공하든 404여도 유효 세션의 활동이므로 쿠키를 갱신한다.
     set_session_cookie(response, raw_cookie, get_settings())
 
     try:
-        return store.read_job(session_id=session_id, job_id=job_id)
+        return await jobs.get(session_id=session_id, job_id=job_id)
     except JobNotFound:
         raise ApiContractError(
             ApiErrorCode.JOB_NOT_FOUND, session_token=raw_cookie
