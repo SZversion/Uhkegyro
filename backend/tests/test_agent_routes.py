@@ -7,24 +7,96 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import time
 import uuid
 from types import SimpleNamespace
 
+import asyncpg
 import pytest
 from fastapi.testclient import TestClient
 
 from backend.main import app
 from backend.routes import agent as agent_route
 from backend.shared.auth import SESSION_COOKIE_NAME, hash_session_token
-from backend.services.session_store import get_session_store, reset_session_store
+from backend.schemas import JobEnvelope
+from backend.schemas.enums import JobStatus
+from backend.schemas.models import PROGRESS_POLL_AFTER_MS, RETRY_COUNT_MAX
+from backend.services.job_repository import IdempotencyConflict, JobNotFound
+
+
+class FakeSessionRepository:
+    def __init__(self):
+        self.sessions = {}
+
+    async def create_session(self, token):
+        session_id = str(uuid.uuid4())
+        self.sessions[hash_session_token(token)] = session_id
+        return session_id
+
+    async def resolve_session(self, token):
+        return self.sessions.get(hash_session_token(token)) if token else None
+
+
+class FakeJobRepository:
+    def __init__(self):
+        self.jobs = {}
+        self.idempotency = {}
+
+    async def submit(self, *, session_id, request_text, idempotency_key):
+        key = (session_id, hashlib.sha256(idempotency_key.encode()).hexdigest())
+        text_hash = hashlib.sha256(request_text.encode()).hexdigest()
+        previous = self.idempotency.get(key)
+        if previous and previous["expires_at"] > time.monotonic():
+            if previous["text_hash"] != text_hash:
+                raise IdempotencyConflict
+            return self._envelope(self.jobs[previous["job_id"]]), False
+
+        row = {
+            "job_id": str(uuid.uuid4()), "session_id": session_id,
+            "request_text": request_text, "request_text_hash": text_hash,
+            "attempt": 0, "max_attempts": RETRY_COUNT_MAX,
+            "status": JobStatus.QUEUED,
+        }
+        self.jobs[row["job_id"]] = row
+        self.idempotency[key] = {
+            "job_id": row["job_id"], "text_hash": text_hash,
+            "expires_at": time.monotonic() + 600,
+        }
+        return self._envelope(row), True
+
+    async def get(self, *, session_id, job_id):
+        row = self.jobs.get(job_id)
+        if row is None or row["session_id"] != session_id:
+            raise JobNotFound
+        return self._envelope(row)
+
+    @staticmethod
+    def _envelope(row):
+        return JobEnvelope(
+            job_id=row["job_id"], session_id=row["session_id"],
+            job_status=row["status"], attempt=max(1, row["attempt"]),
+            max_attempts=row["max_attempts"],
+            poll_after_ms=PROGRESS_POLL_AFTER_MS, result=None, failure=None,
+        )
+
+
+class FakeRepositories:
+    def __init__(self):
+        self.sessions = FakeSessionRepository()
+        self.jobs = FakeJobRepository()
+
+    async def get(self):
+        return self.sessions, self.jobs
 
 
 @pytest.fixture
-def client() -> TestClient:
-    reset_session_store()
+def client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    repositories = FakeRepositories()
+    monkeypatch.setattr(agent_route, "get_repositories", repositories.get)
     with TestClient(app) as test_client:
+        test_client.repositories = repositories
         yield test_client
-    reset_session_store()
 
 
 def submit(client: TestClient, text: str, key: str | None = None) -> dict:
@@ -238,11 +310,11 @@ def test_job_read_returns_queued_envelope(client: TestClient) -> None:
     assert envelope["result"] is None
     assert envelope["attempt"] == 1  # 계약상 API는 claim 전에도 1을 노출
     assert envelope["max_attempts"] == 3
-    stored = get_session_store()._jobs[created["body"]["job_id"]]
-    assert stored.attempt == 0
+    stored = client.repositories.jobs.jobs[created["body"]["job_id"]]
+    assert stored["attempt"] == 0
     token = client.cookies.get(SESSION_COOKIE_NAME)
-    assert token not in get_session_store()._sessions
-    assert hash_session_token(token) in get_session_store()._sessions
+    assert token not in client.repositories.sessions.sessions
+    assert hash_session_token(token) in client.repositories.sessions.sessions
 
 
 def test_job_read_without_cookie_is_401(client: TestClient) -> None:
@@ -306,3 +378,34 @@ def test_response_is_json_content_type(client: TestClient) -> None:
 
     assert response.headers["content-type"].startswith("application/json")
     json.loads(response.text)
+
+
+@pytest.mark.parametrize("endpoint", ["submit", "read"])
+def test_database_connection_errors_return_sanitized_contract_body(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+    endpoint: str,
+) -> None:
+    if endpoint == "read":
+        created = submit(client, "서 있는 자세")
+        job_id = created["body"]["job_id"]
+
+    async def unavailable():
+        raise asyncpg.PostgresConnectionError("private database connection details")
+
+    monkeypatch.setattr(agent_route, "get_repositories", unavailable)
+    if endpoint == "submit":
+        response = client.post(
+            "/api/agent",
+            json={"request_text": "서 있는 자세"},
+            headers={"Idempotency-Key": str(uuid.uuid4())},
+        )
+    else:
+        response = client.get(f"/api/jobs/{job_id}")
+
+    assert response.status_code == 503
+    assert response.json() == {
+        "failure_code": "DATABASE_UNAVAILABLE",
+        "user_message": "현재 요청을 처리하지 못했습니다. 잠시 후 새 메시지로 다시 시도해 주세요.",
+        "retryable": False,
+    }
