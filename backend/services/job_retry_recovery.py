@@ -1,0 +1,158 @@
+"""Schedule retryable Job failures and recover expired worker leases."""
+from __future__ import annotations
+
+import json
+from typing import Any
+
+from backend.schemas import Failure
+from backend.schemas.enums import FailureCode, JobStatus
+from backend.services.llm import LLMError
+
+_ACTIVE_STATUSES = [
+    JobStatus.RUNNING.value,
+    JobStatus.VALIDATING.value,
+    JobStatus.SEARCHING.value,
+    JobStatus.RENDERING.value,
+]
+_RETRYABLE_FAILURE_CODES = {
+    FailureCode.LLM_TIMEOUT,
+    FailureCode.LLM_RATE_LIMITED,
+    FailureCode.LLM_UPSTREAM_UNAVAILABLE,
+    FailureCode.LLM_INVALID_STRUCTURED_OUTPUT,
+}
+_FAILURE_MESSAGE = "현재 요청을 처리하지 못했습니다. 잠시 후 새 메시지로 다시 시도해 주세요."
+
+
+def retry_delay_ms(attempt: int, error: Exception) -> int:
+    """Return the contract backoff for the failed attempt."""
+    retry_after_ms = getattr(error, "retry_after_ms", None)
+    if getattr(error, "error_type", None) == "rate_limited" and retry_after_ms is not None:
+        return min(max(int(retry_after_ms), 1_000), 30_000)
+    return 1_000 if attempt == 1 else 2_000
+
+
+def _failure(error: Exception) -> Failure:
+    code = (
+        error.failure_code
+        if isinstance(error, LLMError)
+        else FailureCode.INTERNAL_CODE_ERROR
+    )
+    return Failure(failure_code=code, user_message=_FAILURE_MESSAGE)
+
+
+class JobRetryRecovery:
+    """Own retry scheduling and expired-lease recovery for PostgreSQL Jobs."""
+
+    def __init__(self, pool: Any) -> None:
+        self._pool = pool
+
+    async def handle_attempt_failure(
+        self,
+        *,
+        job_id: str,
+        attempt: int,
+        max_attempts: int,
+        error: Exception,
+    ) -> bool:
+        if attempt < 1 or max_attempts < 1 or attempt > max_attempts:
+            raise ValueError("attempt must be between 1 and max_attempts")
+
+        retryable = (
+            isinstance(error, LLMError)
+            and error.retryable
+            and error.failure_code in _RETRYABLE_FAILURE_CODES
+        )
+        async with self._pool.acquire() as connection:
+            if retryable and attempt < max_attempts:
+                row = await connection.fetchrow(
+                    """
+                    UPDATE jobs
+                    SET status = 'queued',
+                        next_retry_at = now() + ($4::int * interval '1 millisecond'),
+                        lease_expires_at = NULL,
+                        succeeded = NULL,
+                        final_payload_json = NULL,
+                        completed_at = NULL,
+                        updated_at = now()
+                    WHERE job_id = $1::uuid
+                      AND status = ANY($5::text[])
+                      AND attempt = $2
+                      AND max_attempts = $3
+                      AND attempt < max_attempts
+                    RETURNING job_id
+                    """,
+                    job_id,
+                    attempt,
+                    max_attempts,
+                    retry_delay_ms(attempt, error),
+                    _ACTIVE_STATUSES,
+                )
+            else:
+                failure = _failure(error)
+                row = await connection.fetchrow(
+                    """
+                    UPDATE jobs
+                    SET status = 'failed',
+                        next_retry_at = NULL,
+                        lease_expires_at = NULL,
+                        succeeded = FALSE,
+                        final_payload_json = $4::jsonb,
+                        completed_at = now(),
+                        updated_at = now()
+                    WHERE job_id = $1::uuid
+                      AND status = ANY($5::text[])
+                      AND attempt = $2
+                      AND max_attempts = $3
+                    RETURNING job_id
+                    """,
+                    job_id,
+                    attempt,
+                    max_attempts,
+                    json.dumps(failure.model_dump(mode="json")),
+                    _ACTIVE_STATUSES,
+                )
+        return row is not None
+
+    async def recover_expired_leases(self) -> dict[str, int]:
+        interrupted = Failure(
+            failure_code=FailureCode.JOB_INSTANCE_INTERRUPTED,
+            user_message=_FAILURE_MESSAGE,
+        )
+        async with self._pool.acquire() as connection:
+            async with connection.transaction():
+                failed = await connection.fetch(
+                    """
+                    UPDATE jobs
+                    SET status = 'failed',
+                        next_retry_at = NULL,
+                        lease_expires_at = NULL,
+                        succeeded = FALSE,
+                        final_payload_json = $1::jsonb,
+                        completed_at = now(),
+                        updated_at = now()
+                    WHERE status = ANY($2::text[])
+                      AND lease_expires_at <= now()
+                      AND attempt >= max_attempts
+                    RETURNING job_id
+                    """,
+                    json.dumps(interrupted.model_dump(mode="json")),
+                    _ACTIVE_STATUSES,
+                )
+                requeued = await connection.fetch(
+                    """
+                    UPDATE jobs
+                    SET status = 'queued',
+                        next_retry_at = NULL,
+                        lease_expires_at = NULL,
+                        succeeded = NULL,
+                        final_payload_json = NULL,
+                        completed_at = NULL,
+                        updated_at = now()
+                    WHERE status = ANY($1::text[])
+                      AND lease_expires_at <= now()
+                      AND attempt < max_attempts
+                    RETURNING job_id
+                    """,
+                    _ACTIVE_STATUSES,
+                )
+        return {"requeued": len(requeued), "failed": len(failed)}
