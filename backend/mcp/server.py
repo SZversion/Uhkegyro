@@ -4,6 +4,8 @@ FastAPI 앱에 마운트되어 `/mcp` 경로로 서비스됨.
 카탈로그 로드·검증은 backend/services/catalog_repository.py로 단일화한다 (T17).
 TERM_CARD는 시작 시 검증을 통과해야 ready이며, 실패 시 프로세스가 시작하지 않는다 (fail-closed).
 """
+from contextlib import asynccontextmanager
+
 from mcp.server.fastmcp import FastMCP
 
 from backend.services.catalog_repository import (
@@ -83,7 +85,14 @@ def create_mcp_app():
     """FastMCP를 FastAPI 앱에 마운트하여 반환."""
     from fastapi import FastAPI
 
-    mcp_app = FastAPI(title="MCP Server")
+    streamable_app = mcp.streamable_http_app()
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        async with mcp.session_manager.run():
+            yield
+
+    mcp_app = FastAPI(title="MCP Server", lifespan=lifespan)
 
     @mcp_app.get("/health")
     def health() -> dict:
@@ -94,7 +103,7 @@ def create_mcp_app():
             "active_cards_count": _snapshot.active_count if _snapshot else 0,
         }
 
-    mcp_app.mount("/", mcp.streamable_http_app())
+    mcp_app.mount("/", streamable_app)
     return mcp_app
 
 
