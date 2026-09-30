@@ -27,6 +27,7 @@
 
 - `backend/services/failure_mapping.py`를 단일 분류 경계로 사용한다. 임의 예외의 `failure_code` 속성이나 메시지 문자열을 신뢰하지 않는다.
 - `LLMError`와 명시적인 운영 오류 wrapper의 enum 코드, `CatalogLoadError`, asyncpg의 인증·스키마·연결 예외 타입을 분류한다. 일반 `OSError`·`TimeoutError`는 DB 호출 경계에서만 DB 장애다.
+- 접속 준비 전 `asyncpg.CannotConnectNowError`와 연결 포화 `asyncpg.TooManyConnectionsError`도 `DATABASE_UNAVAILABLE`이다. API는 HTTP 503과 고정 안내를 반환하고 Worker heartbeat·실패 저장 경계는 같은 코드로 trace한다.
 - 검색 loader 경계는 httpx·Playwright timeout과 HTTP 상태로 분류한다. 오류 원문을 로그에 넣지 않고 `failure_code`만 기록한다.
 - migration wrapper는 transaction rollback 이후 `DATABASE_MIGRATION_ERROR` 운영 오류를 전달한다. 연결·인증 오류는 해당 분류를 유지한다.
 - `JobRetryRecovery`와 `AttemptTrace.failed`는 같은 분류 함수를 쓴다. 기존 LLM 재시도 정책을 유지하고 DB·설정·코드 오류를 자동 재시도하지 않는다.
@@ -53,3 +54,8 @@
 - GIVEN: 검색 loader가 timeout·429·접근 장애를 반환한다.
 - WHEN: 공개 검색 provider가 오류를 처리한다.
 - THEN: 해당 SEARCH 코드를 비밀값 없이 기록하고 결과는 PIN_SEARCH_UNAVAILABLE이다.
+
+**AC-05 · DB 접속 준비·연결 포화**
+- GIVEN: DB 호출에서 CannotConnectNowError 또는 TooManyConnectionsError가 발생한다.
+- WHEN: API 요청 또는 Worker heartbeat가 해당 오류를 처리한다.
+- THEN: API는 DATABASE_UNAVAILABLE·고정 안내·retryable=false와 HTTP 503을 반환하고 Worker trace도 DATABASE_UNAVAILABLE이며 예외 원문을 노출하지 않는다.

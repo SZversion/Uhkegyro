@@ -28,6 +28,8 @@ CASES = [
     (asyncpg.InvalidPasswordError(SECRET), Code.CONFIGURATION_ERROR),
     (asyncpg.UndefinedTableError(SECRET), Code.DATABASE_MIGRATION_ERROR),
     (asyncpg.PostgresConnectionError(SECRET), Code.DATABASE_UNAVAILABLE),
+    (asyncpg.CannotConnectNowError(SECRET), Code.DATABASE_UNAVAILABLE),
+    (asyncpg.TooManyConnectionsError(SECRET), Code.DATABASE_UNAVAILABLE),
     (CatalogLoadError(SECRET), Code.CATALOG_INVALID_AT_STARTUP),
     (OperationalFailure(Code.JOB_INSTANCE_INTERRUPTED, SECRET), Code.JOB_INSTANCE_INTERRUPTED),
     (RuntimeError(SECRET), Code.INTERNAL_CODE_ERROR),
@@ -74,6 +76,8 @@ def test_persisted_failure_and_trace_use_same_code_without_exception_text(error,
     (asyncpg.InvalidPasswordError(SECRET), Code.CONFIGURATION_ERROR, 503),
     (asyncpg.UndefinedColumnError(SECRET), Code.DATABASE_MIGRATION_ERROR, 503),
     (OSError(SECRET), Code.DATABASE_UNAVAILABLE, 503),
+    (asyncpg.CannotConnectNowError(SECRET), Code.DATABASE_UNAVAILABLE, 503),
+    (asyncpg.TooManyConnectionsError(SECRET), Code.DATABASE_UNAVAILABLE, 503),
     (RuntimeError(SECRET), Code.INTERNAL_CODE_ERROR, 500),
 ])
 def test_api_errors_are_sanitized(monkeypatch, error, code, status):
@@ -126,7 +130,8 @@ def test_search_http_429_is_not_interpreted_as_empty_results():
     assert classify_failure(caught.value) is Code.SEARCH_RATE_LIMITED
 
 
-def test_lost_database_heartbeat_is_traced_as_database_failure(monkeypatch, snapshot_factory):
+@pytest.mark.parametrize("error_type", [OSError, asyncpg.CannotConnectNowError, asyncpg.TooManyConnectionsError])
+def test_lost_database_heartbeat_is_traced_as_database_failure(monkeypatch, snapshot_factory, error_type):
     recorded = {}
     trace = AttemptTrace(JobTracer(), SimpleNamespace(update=lambda **data: recorded.update(data)))
     @contextmanager
@@ -136,7 +141,7 @@ def test_lost_database_heartbeat_is_traced_as_database_failure(monkeypatch, snap
         async def claim_next(self):
             return {"job_id": "job", "attempt": 1, "max_attempts": 3}
         async def extend_lease(self, **kwargs):
-            raise OSError(SECRET)
+            raise error_type(SECRET)
     async def blocked(*args):
         await asyncio.Future()
     monkeypatch.setattr(agent_worker, "JobRepository", lambda pool: Jobs())
