@@ -30,7 +30,7 @@
 | 상황 | 처리 |
 | --- | --- |
 | 빈 입력 또는 500자 초과 | API 호출 없이 입력 오류 표시 |
-| `needs_clarification` | 오른쪽에 질문과 서버가 반환한 선택형 답변을 표시한다. 선택 시 전체 요청 문장을 입력창에 채우고 사용자가 수정·전송한다. 결과 영역은 표시하지 않는다. |
+| `needs_clarification` | 오른쪽에 질문과 직접 입력을 표시한다. 선택형 후속 질문 계약이 활성화된 뒤에는 서버가 승인한 선택지도 표시하고, 선택 시 전체 요청 문장을 입력창에 채워 사용자가 수정·전송한다. 결과 영역은 표시하지 않는다. |
 | `partial_result` | 사용 가능한 역할의 결과를 유지한다. 실패 역할에는 안내·검색 링크와 `같은 조건으로 다시 찾기`, `조건 바꿔 입력하기`를 표시한다. |
 | `failed` | `user_message`만 표시하고 내부 오류 원문은 표시하지 않음 |
 | 세션 쿠키 없음 | `credentials: "include"`로 서버 발급 쿠키 수용 |
@@ -56,7 +56,7 @@
 - 결과 상태: `success | needs_clarification | partial_result | out_of_scope | unsafe_input`
 - 브라우저 저장 금지: session token, anonymous user ID, 원문, Pin thumbnail URL
 - Next.js rewrite가 동일 origin `/api/*`를 내부 FastAPI로 전달한다.
-- `clarification_choices`의 각 항목은 서버가 제공한 `{label, request_text}`다. 누르면 `request_text`를 입력창에 채우되 자동 제출하지 않는다. `직접 입력`은 선택지와 별도로 항상 제공한다. 새 요청은 새 UUID `Idempotency-Key`로 제출한다.
+- 현재 API에는 `clarification_choices`가 없다. UI는 필드 부재를 빈 배열로 취급하고 `직접 입력`을 항상 제공한다. [선택형 후속 질문 Spec](./clarification-choices.md)의 schema·resolver·assembler·adapter·Prompt·테스트 구현 후 활성화되면 서버의 `{label, request_text}`를 칩으로 표시한다. 누르면 `request_text`를 입력창에 채우되 자동 제출하지 않는다. 새 요청은 새 UUID `Idempotency-Key`로 제출한다.
 - 부분 결과의 `같은 조건으로 다시 찾기`는 현재 화면의 메모리에 있는 기존 요청 원문을 새 UUID 키로 다시 제출한다. 원문을 브라우저 영구 저장소에 쓰지 않으며, 새로고침으로 메모리가 사라지면 해당 동작을 표시하지 않는다.
 - `검색 링크 열기`는 실패 역할의 서버 제공 `search_url`을 새 탭에서 연다. `조건 바꿔 입력하기`는 기존 요청 원문을 입력창에 채우고 사용자가 수정·전송하게 한다. 두 입력 동작 모두 자동 제출하지 않는다.
 
@@ -91,7 +91,7 @@
 - GIVEN: `agent_status=needs_clarification`이고 질문이 있다.
 - WHEN: UI가 응답을 받는다.
 - THEN: 질문을 표시하고 `reference_plan`은 표시하지 않는다.
-- AND THEN: 서버의 답변 선택지를 표시하고, 선택한 항목의 전체 `request_text`를 편집 가능한 입력창에 채우며, 전송 전에는 새 API 요청을 하지 않는다.
+- AND THEN: 선택지 필드가 없으면 직접 입력을 제공한다. 후속 계약 활성화 뒤 서버가 선택지를 반환하면 해당 칩을 표시하고, 선택한 항목의 전체 `request_text`를 편집 가능한 입력창에 채우며, 전송 전에는 새 API 요청을 하지 않는다.
 - GIVEN: 서버가 `clarification_choices=[]`를 반환한다.
 - WHEN: 질문을 표시한다.
 - THEN: 선택지 없이 `직접 입력`을 제공한다.

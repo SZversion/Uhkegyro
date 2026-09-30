@@ -12,7 +12,7 @@ Agent는 provider별 코드 변경 없이 model을 교체하면서도, 허용된
 
 ## What
 
-adapter 입력은 사용자 원문과 활성 TERM_CARD 후보 경계다. 출력은 `InterpretationOutput={interpretation_state, clarification_type, selections, unresolved_constraints, clarifying_question, clarification_choices}`이며 각 selection은 `{role, term_id, evidence, confidence}`다. `needs_clarification`일 때 `clarification_type`은 `abstract_intent | insufficient_visual_evidence | conflicting_constraints` 중 하나이고 `clarification_choices`는 질문에 답하는 `{label, request_text}` 후보 2~3개다. resolver만 최종 reason code와 공개 선택지를 검증·변환한다. adapter는 검색 URL·Pin·최종 Agent 상태를 만들지 않는다.
+adapter 입력은 사용자 원문과 활성 TERM_CARD 후보 경계다. 현재 출력은 `InterpretationOutput={interpretation_state, clarification_type, selections, unresolved_constraints, clarifying_question}`이며 각 selection은 `{role, term_id, evidence, confidence}`다. `needs_clarification`일 때 `clarification_type`은 `abstract_intent | insufficient_visual_evidence | conflicting_constraints` 중 하나이고, resolver만 이를 최종 reason code로 검증·변환한다. adapter는 검색 URL·Pin·최종 Agent 상태를 만들지 않는다. 선택지 후보 출력은 [선택형 후속 질문 Spec](./clarification-choices.md)의 후속 구현 전까지 비활성이다.
 
 ## How
 
