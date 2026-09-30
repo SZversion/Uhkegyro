@@ -1,15 +1,30 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { countCharacters, createSubmissionController, validateRequestText } from "../lib/agent-submit.mjs";
+import { createJobPoller, STATUS_LABELS } from "../lib/job-polling.mjs";
 
 export default function HomePage() {
   const [requestText, setRequestText] = useState("");
   const [error, setError] = useState("");
-  const [jobId, setJobId] = useState("");
+  const [submission, setSubmission] = useState(null);
+  const [job, setJob] = useState(null);
+  const [pollError, setPollError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const submissionRef = useRef(null);
+  const pollerRef = useRef(null);
   if (!submissionRef.current) submissionRef.current = createSubmissionController();
+
+  useEffect(() => {
+    if (!submission) return;
+    const poller = createJobPoller(submission.jobId, { onUpdate: setJob, onError: setPollError });
+    pollerRef.current = poller;
+    poller.start(submission.pollAfterMs);
+    return () => {
+      poller.stop();
+      if (pollerRef.current === poller) pollerRef.current = null;
+    };
+  }, [submission]);
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -21,12 +36,15 @@ export default function HomePage() {
       return;
     }
 
+    pollerRef.current?.stop();
     setIsSubmitting(true);
     setError("");
-    setJobId("");
+    setPollError("");
+    setSubmission(null);
+    setJob(null);
     try {
       const result = await submissionRef.current.submit(requestText);
-      if (result.ok) setJobId(result.jobId);
+      if (result.ok) setSubmission(result);
       else setError(result.error);
     } finally {
       setIsSubmitting(false);
@@ -53,12 +71,14 @@ export default function HomePage() {
           <h2 id="prompt-title">어떤 캐릭터를 그리고 싶나요?</h2>
           <p>체형, 자세, 보는 각도처럼 떠오르는 모습을 편하게 적어 주세요.</p>
           <div className="example-note">예: 한쪽 다리에 힘을 주고 아래에서 올려다보는 캐릭터</div>
-          {jobId && (
+          {submission && !pollError && !["completed", "failed"].includes(job?.job_status) && (
             <div className="receipt" role="status">
-              <strong>요청을 접수했습니다.</strong>
-              <span>작업 번호 {jobId}</span>
+              {STATUS_LABELS[job?.job_status || "queued"]}
             </div>
           )}
+          {job?.job_status === "completed" && <div className="receipt" role="status">완료</div>}
+          {job?.job_status === "failed" && <p className="form-error" role="alert">{job.failure?.user_message}</p>}
+          {pollError && <p className="form-error" role="alert">{pollError}</p>}
         </div>
 
         <form className="composer" onSubmit={handleSubmit} noValidate>
