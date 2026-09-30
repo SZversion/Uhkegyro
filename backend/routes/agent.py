@@ -9,7 +9,7 @@ import uuid
 from typing import Annotated, Any
 
 import asyncpg
-from fastapi import APIRouter, Header, Request, Response
+from fastapi import APIRouter, Header, Query, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
@@ -58,6 +58,7 @@ MESSAGES = {
     ApiErrorCode.IDEMPOTENCY_KEY_CONFLICT: "같은 요청 번호로 다른 내용을 보냈습니다. 처음 요청의 결과를 확인해 주세요.",
     ApiErrorCode.SESSION_REQUIRED: "이 브라우저에서 시작한 요청의 세션이 없습니다. 처음부터 다시 시도해 주세요.",
     ApiErrorCode.JOB_NOT_FOUND: "요청한 작업을 찾을 수 없습니다.",
+    ApiErrorCode.SESSION_NOT_FOUND: "대화를 찾을 수 없거나 만료되었습니다.",
 }
 
 STATUS_CODES = {
@@ -65,6 +66,7 @@ STATUS_CODES = {
     ApiErrorCode.IDEMPOTENCY_KEY_CONFLICT: 409,
     ApiErrorCode.SESSION_REQUIRED: 401,
     ApiErrorCode.JOB_NOT_FOUND: 404,
+    ApiErrorCode.SESSION_NOT_FOUND: 404,
 }
 
 DATABASE_ERROR_STATUS = 503
@@ -81,7 +83,7 @@ class ApiContractError(Exception):
     """`ApiError` 본문을 그대로 응답으로 내보내는 예외.
 
     `session_token`이 있으면 오류 응답에서도 세션 쿠키를 갱신한다. 유효 세션의
-    활동이라면 결과가 404여도 90일 Max-Age를 다시 내보내야 하기 때문이다
+    활동이라면 결과가 404여도 달력 기준 3개월 Max-Age를 다시 내보내야 하기 때문이다
     (`session-job-persistence.md:25`).
     """
 
@@ -172,10 +174,19 @@ async def submit_agent(
 
     sessions, jobs = await _database_call(get_repositories())
     raw_cookie = request.cookies.get(SESSION_COOKIE_NAME)
-    session_id = (
-        await _database_call(sessions.resolve_session(raw_cookie)) if raw_cookie else None
-    )
-    token = raw_cookie if session_id is not None else create_session_token()
+    known = raw_cookie and await _database_call(sessions.has_owner(raw_cookie))
+    token = raw_cookie if known else create_session_token()
+    session_id = None
+    if payload.session_id is not None:
+        if not known:
+            raise ApiContractError(ApiErrorCode.SESSION_REQUIRED)
+        session_id = str(payload.session_id)
+        try:
+            await _database_call(sessions.get_session(token, session_id))
+        except JobNotFound:
+            raise ApiContractError(ApiErrorCode.SESSION_NOT_FOUND, token) from None
+    elif known:
+        session_id = await _database_call(sessions.resolve_session(token))
 
     try:
         if session_id is None:
@@ -198,8 +209,10 @@ async def submit_agent(
         raise ApiContractError(
             ApiErrorCode.IDEMPOTENCY_KEY_CONFLICT, session_token=token
         ) from None
+    except JobNotFound:
+        raise ApiContractError(ApiErrorCode.SESSION_NOT_FOUND, token) from None
 
-    # 신규 발급이든 재사용이든 세션 활동이므로 90일로 갱신한다. 재사용할 때는
+    # 신규 발급이든 재사용이든 세션 활동이므로 달력 기준 3개월로 갱신한다. 재사용할 때는
     # 토큰을 그대로 내보내 식별자가 바뀌지 않는다(`session-job-persistence.md:25`).
     set_session_cookie(response, token, get_settings())
 
@@ -227,16 +240,66 @@ async def read_job(
         raise ApiContractError(ApiErrorCode.SESSION_REQUIRED) from None
 
     sessions, jobs = await _database_call(get_repositories())
-    session_id = await _database_call(sessions.resolve_session(raw_cookie))
-    if session_id is None:
+    if not await _database_call(sessions.has_owner(raw_cookie)):
         raise ApiContractError(ApiErrorCode.SESSION_REQUIRED) from None
 
     # 조회가 성공하든 404여도 유효 세션의 활동이므로 쿠키를 갱신한다.
     set_session_cookie(response, raw_cookie, get_settings())
 
     try:
+        job_id = str(uuid.UUID(job_id))
+        session_id = await _database_call(sessions.session_for_job(raw_cookie, job_id))
         return await _database_call(jobs.get(session_id=session_id, job_id=job_id))
-    except JobNotFound:
+    except (JobNotFound, ValueError):
         raise ApiContractError(
             ApiErrorCode.JOB_NOT_FOUND, session_token=raw_cookie
         ) from None
+
+
+async def _owner(request: Request, response: Response, sessions: SessionRepository) -> str:
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not token or not await _database_call(sessions.has_owner(token)):
+        raise ApiContractError(ApiErrorCode.SESSION_REQUIRED)
+    set_session_cookie(response, token, get_settings())
+    return token
+
+
+@router.post("/api/sessions", status_code=201)
+async def create_conversation(request: Request, response: Response):
+    sessions, _ = await _database_call(get_repositories())
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not token or not await _database_call(sessions.has_owner(token)):
+        token = create_session_token()
+    session_id = await _database_call(sessions.create_session(token))
+    set_session_cookie(response, token, get_settings())
+    return await _database_call(sessions.get_session(token, session_id))
+
+
+@router.get("/api/sessions")
+async def list_conversations(request: Request, response: Response,
+                             limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0)):
+    sessions, _ = await _database_call(get_repositories())
+    token = await _owner(request, response, sessions)
+    return {"items": await _database_call(sessions.list_sessions(token, limit, offset))}
+
+
+@router.get("/api/sessions/{session_id}")
+async def open_conversation(session_id: uuid.UUID, request: Request, response: Response):
+    sessions, _ = await _database_call(get_repositories())
+    token = await _owner(request, response, sessions)
+    try:
+        return await _database_call(sessions.get_session(token, str(session_id), touch=True))
+    except JobNotFound:
+        raise ApiContractError(ApiErrorCode.SESSION_NOT_FOUND, token) from None
+
+
+@router.get("/api/sessions/{session_id}/jobs")
+async def conversation_history(session_id: uuid.UUID, request: Request, response: Response,
+                               limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0)):
+    sessions, jobs = await _database_call(get_repositories())
+    token = await _owner(request, response, sessions)
+    try:
+        await _database_call(sessions.get_session(token, str(session_id)))
+        return {"items": await _database_call(jobs.history(str(session_id), limit, offset))}
+    except JobNotFound:
+        raise ApiContractError(ApiErrorCode.SESSION_NOT_FOUND, token) from None
