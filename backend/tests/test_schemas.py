@@ -33,7 +33,7 @@ from backend.schemas.models import MAX_PINS_PER_ROLE, PROGRESS_POLL_AFTER_MS
     "enum_cls, expected",
     [
         (JobStatus, ["queued", "running", "validating", "searching", "rendering", "completed", "failed"]),
-        (AgentStatus, ["success", "needs_clarification", "out_of_scope", "unsafe_input", "partial_result"]),
+        (AgentStatus, ["success", "needs_clarification", "out_of_scope", "unsafe_input", "partial_result", "memory_answer"]),
         (PinStatus, ["available", "deleted"]),
         (
             ReasonCode,
@@ -104,6 +104,11 @@ def test_agent_request_rejects_length(text):
 def test_agent_request_rejects_extra_fields():
     with pytest.raises(ValidationError):
         AgentRequest(request_text="질문", role="body", term_id="pose_contrapposto")
+
+
+def test_agent_request_rejects_session_id_until_route_supports_it():
+    with pytest.raises(ValidationError):
+        AgentRequest(request_text="질문", session_id="00000000-0000-0000-0000-000000000001")
 
 
 # ---------- SubmissionResponse ----------

@@ -36,6 +36,7 @@ class AgentStatus(StrEnum):
     OUT_OF_SCOPE = "out_of_scope"
     UNSAFE_INPUT = "unsafe_input"
     PARTIAL_RESULT = "partial_result"
+    MEMORY_ANSWER = "memory_answer"
 
 
 class ReasonCode(StrEnum):
@@ -85,6 +86,7 @@ class ApiErrorCode(StrEnum):
     IDEMPOTENCY_KEY_CONFLICT = "idempotency_key_conflict"
     SESSION_REQUIRED = "session_required"
     JOB_NOT_FOUND = "job_not_found"
+    SESSION_NOT_FOUND = "session_not_found"
 
 
 class PinStatus(StrEnum):
