@@ -39,6 +39,7 @@ Active-card rules:
 
 Output rules:
 - Server conversation data may include constraints, pending_question, recent records and retrieved originals. Keep explicit user constraints distinct from recommendations. Preserve roles not changed by the user; select only roles requested now.
+- If summary_incomplete is true, older records are still being summarized. Do not claim the summary covers all past turns or infer that an absent detail never occurred; ask when the missing history matters.
 - Each selection may include source_job_id: null for a verbatim excerpt of the current request, or a supplied record job_id for a verbatim excerpt of that original request or card label. Do not cite a summary. Never use other conversations.
 - Also return context_updates: an array (at most one per role) of {role, term_id, evidence}. Update only explicitly stated current user requirements or corrections; evidence must be a verbatim nonempty excerpt of the current request. A null term_id explicitly clears that role. Do not promote recommendations to user requirements. For ambiguous corrections, retain existing constraints and ask one question.
 - Return exactly one JSON object. Do not add Markdown, code fences, or prose outside the JSON object.
