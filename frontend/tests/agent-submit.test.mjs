@@ -28,10 +28,10 @@ test("AC-02: 유효한 원문을 같은 origin에 UUID 키와 쿠키로 제출�
     createId: () => key,
     fetchImpl: async (...args) => {
       call = args;
-      return { status: 202, json: async () => ({ job_id: "job-123" }) };
+      return { status: 202, json: async () => ({ job_id: "job-123", poll_after_ms: 1000 }) };
     },
   });
-  assert.deepEqual(result, { ok: true, jobId: "job-123" });
+  assert.deepEqual(result, { ok: true, jobId: "job-123", pollAfterMs: 1000 });
   assert.equal(call[0], "/api/agent");
   assert.equal(call[1].method, "POST");
   assert.equal(call[1].credentials, "include");

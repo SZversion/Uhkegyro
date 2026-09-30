@@ -44,7 +44,7 @@ export async function submitAgentRequest(requestText, options = {}) {
     if (typeof payload?.job_id !== "string" || !payload.job_id) {
       return { ok: false, error: GENERIC_ERROR };
     }
-    return { ok: true, jobId: payload.job_id };
+    return { ok: true, jobId: payload.job_id, pollAfterMs: payload.poll_after_ms };
   } catch {
     return { ok: false, error: GENERIC_ERROR };
   }
