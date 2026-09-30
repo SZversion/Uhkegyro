@@ -7,16 +7,16 @@ from typing import Any, Mapping
 
 from backend.schemas.enums import JobStatus, Role
 from backend.services.catalog_repository import CatalogSnapshot
+from backend.services.conversation_memory import ConversationMemory
+from backend.services import conversation_context
 from backend.services.job_repository import JobRepository, StaleJobAttempt
 from backend.services.job_retry_recovery import JobRetryRecovery
 from backend.services.job_trace import AttemptTrace, JobTracer
 from backend.services.llm import (
     AgentInterpretationAdapter,
     LLMInterpretationAdapter,
-    LLMInvalidStructuredOutput,
 )
 from backend.services.llm import format_active_cards_json
-from backend.services.resolver import STATUS_ALL_INVALID, resolve
 from backend.services.response_assembler import RoleSearchOutcome, assemble
 
 logger = logging.getLogger(__name__)
@@ -37,6 +37,7 @@ class AgentJobWorker:
         tracer: JobTracer | None = None,
     ) -> None:
         self._jobs = JobRepository(pool)
+        self._memory = ConversationMemory(pool)
         self._recovery = JobRetryRecovery(pool)
         self._snapshot = snapshot
         self._adapter = adapter
@@ -61,50 +62,47 @@ class AgentJobWorker:
     async def _process_claimed(
         self, job: Any, search_outcomes: Mapping | None, trace: AttemptTrace
     ) -> None:
-        job_id = str(job["job_id"])
-        attempt = job["attempt"]
+        job_id, attempt = str(job["job_id"]), job["attempt"]
         try:
-            with trace.stage("validating"):
-                if not await self._update(job_id, attempt, JobStatus.VALIDATING):
-                    trace.stale()
-                    return
-                if self._adapter is None:
-                    self._adapter = LLMInterpretationAdapter()
-                interpretation = await self._adapter.interpret(
-                    job["request_text"],
-                    job_id=job_id,
-                    session_id=str(job["session_id"]),
-                    attempt=attempt,
-                    max_attempts=job["max_attempts"],
-                    active_cards_json=format_active_cards_json(self._snapshot),
-                )
-                resolution = resolve(interpretation, self._snapshot)
-                if resolution.status == STATUS_ALL_INVALID:
-                    raise LLMInvalidStructuredOutput("resolver가 모든 선택 후보를 거부했다")
-        except StaleJobAttempt:
-            trace.stale()
-            return
-        except Exception as error:
-            await self._handle_failure(job, error, trace)
-            return
-
-        with trace.stage("searching"):
-            if not await self._update(job_id, attempt, JobStatus.SEARCHING):
+            if not await self._update(job_id, attempt, JobStatus.VALIDATING):
                 trace.stale()
                 return
-        try:
+            if self._adapter is None:
+                self._adapter = LLMInterpretationAdapter()
+            with trace.stage("memory-context"):
+                context = await conversation_context.prepare(self._memory, job, self._adapter, trace)
+            recalled, recall_only = await conversation_context.recall(
+                self._memory, job, context, self._adapter, trace)
+            state = context["state"]
+            if recall_only:
+                result = recalled
+            else:
+                with trace.stage("validating"):
+                    interpretation = await self._adapter.interpret(
+                        job["request_text"], **conversation_context.trace_args(job),
+                        active_cards_json=format_active_cards_json(self._snapshot),
+                        session_context=conversation_context.prompt_context(context),
+                    )
+                    resolution = await conversation_context.validate(
+                        self._memory, job, interpretation, self._snapshot)
+                with trace.stage("searching"):
+                    if not await self._update(job_id, attempt, JobStatus.SEARCHING):
+                        trace.stale()
+                        return
+                result = assemble(resolution, self._snapshot, search_outcomes)
+                if recalled is not None:
+                    result.memory_answer, result.sources = recalled.memory_answer, recalled.sources
+                state = conversation_context.next_state(context, job, interpretation, result)
             with trace.stage("rendering"):
                 if not await self._update(job_id, attempt, JobStatus.RENDERING):
                     trace.stale()
                     return
-                result = assemble(resolution, self._snapshot, search_outcomes)
+                await self._memory.complete(job, result, state)
+            trace.completed(result)
+        except StaleJobAttempt:
+            trace.stale()
         except Exception as error:
             await self._handle_failure(job, error, trace)
-            return
-        if await self._update(job_id, attempt, JobStatus.COMPLETED, result=result):
-            trace.completed(result)
-        else:
-            trace.stale()
 
     async def _with_heartbeat(self, job: Any, operation: Any) -> None:
         stopped = asyncio.Event()

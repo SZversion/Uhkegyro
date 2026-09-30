@@ -35,3 +35,7 @@ worker는 1초마다 `attempt < max_attempts`이고 `next_retry_at IS NULL OR ne
 - GIVEN: 첫 LLM timeout이 12:00:00에 발생, WHEN: worker가 job을 queued로 되돌린다, THEN: `next_retry_at=12:00:01`이고 12:00:01 전 polling은 해당 job을 claim하지 않는다.
 - GIVEN: attempt 1의 lease가 만료된 뒤 attempt 2가 job을 claim했다, WHEN: 늦게 복귀한 attempt 1 worker가 상태 전이를 저장한다, THEN: 저장은 `StaleJobAttempt`로 거부되고 attempt 2의 상태와 결과는 바뀌지 않는다.
 - GIVEN: worker가 상태 저장에서 `StaleJobAttempt`를 받았다, WHEN: 해당 worker 실행을 중단한다, THEN: 사용자 failure를 새로 만들거나 재시도를 예약하지 않는다.
+
+## 대화 기억 변경
+
+대화 기억 확장: 만료된 대화는 claim하지 않는다. 기억 구성·요약·회상 후 일반 해석을 수행하고, 회상 전용이면 searching을 생략한다. 완료 상태와 memory_json은 같은 transaction에서 attempt 및 세션 만료를 검사해 저장한다. 요약 실패는 기존 LLM 오류 재시도 규칙을 따른다.
