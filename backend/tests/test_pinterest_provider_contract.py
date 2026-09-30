@@ -36,7 +36,11 @@ def test_fake_result_assembles_pin_contract(snapshot_factory, card_factory):
         Role.POSE: RoleSearchOutcome(role=Role.POSE, pins=[_pin()])
     })
     outcome = asyncio.run(provider.search(Role.POSE, tuple(card["query_fragments"])))
-    result = assemble(resolve(interpretation, snapshot), snapshot, {Role.POSE: outcome})
+    result = assemble(
+        resolve(interpretation, snapshot, request_text="한쪽 다리에 체중"),
+        snapshot,
+        {Role.POSE: outcome},
+    )
 
     assert result.agent_status is AgentStatus.SUCCESS
     pin = result.reference_plan.terms[0].pins[0]

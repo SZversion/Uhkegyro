@@ -259,6 +259,34 @@ def test_update_status_accepts_only_contractual_forward_and_failure_transitions(
         assert job.failure == terminal_args["failure"]
 
 
+def test_update_status_rejects_non_unsafe_completion_from_validating():
+    connection = FakeConnection(status=JobStatus.VALIDATING.value)
+    result = AgentResult(
+        agent_status=AgentStatus.OUT_OF_SCOPE,
+        reason_codes=[ReasonCode.OUT_OF_SCOPE_REQUEST],
+    )
+
+    with pytest.raises(InvalidJobTransition):
+        _run(JobRepository(FakePool(connection)).update_status(
+            job_id=JOB_ID, status=JobStatus.COMPLETED, attempt=1, result=result
+        ))
+
+
+def test_update_status_accepts_unsafe_input_completion_from_validating():
+    connection = FakeConnection(status=JobStatus.VALIDATING.value)
+    result = AgentResult(
+        agent_status=AgentStatus.UNSAFE_INPUT,
+        reason_codes=[ReasonCode.UNSAFE_INPUT],
+    )
+
+    job = _run(JobRepository(FakePool(connection)).update_status(
+        job_id=JOB_ID, status=JobStatus.COMPLETED, attempt=1, result=result
+    ))
+
+    assert job.job_status is JobStatus.COMPLETED
+    assert job.result == result
+
+
 @pytest.mark.parametrize(
     ("current_status", "next_status"),
     [

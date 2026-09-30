@@ -36,7 +36,7 @@ def _pin(url="https://pin.it/1", status="available"):
 
 
 def _resolve(selections, snapshot):
-    return resolve(_interpretation(selections), snapshot)
+    return resolve(_interpretation(selections), snapshot, request_text="단서")
 
 
 def test_feedback_mapping_takes_priority(snapshot_factory, card_factory):
@@ -159,10 +159,12 @@ def test_clarify_assembles_state_without_plan(snapshot_factory, card_factory):
         clarifying_question="어떤 포즈 축인가요?",
         clarification_type=ClarificationType.INSUFFICIENT_VISUAL_EVIDENCE,
     )
-    resolution = resolve(interp, snapshot)
+    resolution = resolve(interp, snapshot, request_text="단서 부족")
     result = assemble(resolution, snapshot)
 
     assert result.agent_status == AgentStatus.NEEDS_CLARIFICATION
     assert result.reason_codes == [ReasonCode.INSUFFICIENT_VISUAL_EVIDENCE]
-    assert result.clarifying_question == "어떤 포즈 축인가요?"
+    assert result.clarifying_question == (
+        "캐릭터의 체형·포즈·시점 중 어떤 정보를 더 알려주실 수 있나요?"
+    )
     assert result.reference_plan is None
