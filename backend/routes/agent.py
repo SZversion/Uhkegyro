@@ -8,7 +8,6 @@ import json
 import uuid
 from typing import Annotated, Any
 
-import asyncpg
 from fastapi import APIRouter, Header, Query, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import ValidationError
@@ -31,6 +30,7 @@ from backend.services.job_repository import (
 )
 from backend.services.job_repository import JobRepository
 from backend.services.session_repository import SessionRepository
+from backend.services.failure_mapping import DATABASE_ERRORS, FAILURE_MESSAGE, classify_failure
 from backend.services.pinterest_widget import PinterestWidgetClient
 
 router = APIRouter(tags=["agent"])
@@ -75,13 +75,8 @@ STATUS_CODES = {
 }
 
 DATABASE_ERROR_STATUS = 503
-DATABASE_ERROR_MESSAGE = "현재 요청을 처리하지 못했습니다. 잠시 후 새 메시지로 다시 시도해 주세요."
-DATABASE_CONNECTION_ERRORS = (
-    asyncpg.PostgresConnectionError,
-    asyncpg.InterfaceError,
-    OSError,
-    TimeoutError,
-)
+DATABASE_ERROR_MESSAGE = FAILURE_MESSAGE
+DATABASE_CONNECTION_ERRORS = DATABASE_ERRORS
 
 
 class ApiContractError(Exception):
@@ -99,7 +94,7 @@ class ApiContractError(Exception):
     ) -> None:
         self.code = code
         self.session_token = session_token
-        if code is FailureCode.DATABASE_UNAVAILABLE:
+        if isinstance(code, FailureCode):
             self.status_code = DATABASE_ERROR_STATUS
             self.error = Failure(
                 failure_code=code,
@@ -119,8 +114,8 @@ class ApiContractError(Exception):
 async def _database_call(operation: Any) -> Any:
     try:
         return await operation
-    except DATABASE_CONNECTION_ERRORS:
-        raise ApiContractError(FailureCode.DATABASE_UNAVAILABLE) from None
+    except DATABASE_CONNECTION_ERRORS as error:
+        raise ApiContractError(classify_failure(error, context="database")) from None
 
 
 async def _parse_agent_request(request: Request) -> AgentRequest:

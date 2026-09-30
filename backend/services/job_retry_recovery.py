@@ -7,6 +7,7 @@ from typing import Any
 from backend.schemas import Failure
 from backend.schemas.enums import FailureCode, JobStatus
 from backend.services.llm import LLMError
+from backend.services.failure_mapping import FAILURE_MESSAGE, public_failure
 
 _ACTIVE_STATUSES = [
     JobStatus.RUNNING.value,
@@ -20,7 +21,7 @@ _RETRYABLE_FAILURE_CODES = {
     FailureCode.LLM_UPSTREAM_UNAVAILABLE,
     FailureCode.LLM_INVALID_STRUCTURED_OUTPUT,
 }
-_FAILURE_MESSAGE = "현재 요청을 처리하지 못했습니다. 잠시 후 새 메시지로 다시 시도해 주세요."
+_FAILURE_MESSAGE = FAILURE_MESSAGE
 
 
 def retry_delay_ms(attempt: int, error: Exception) -> int:
@@ -42,12 +43,7 @@ def should_retry(attempt: int, max_attempts: int, error: Exception) -> bool:
 
 
 def _failure(error: Exception) -> Failure:
-    code = (
-        error.failure_code
-        if isinstance(error, LLMError)
-        else FailureCode.INTERNAL_CODE_ERROR
-    )
-    return Failure(failure_code=code, user_message=_FAILURE_MESSAGE)
+    return public_failure(error)
 
 
 class JobRetryRecovery:

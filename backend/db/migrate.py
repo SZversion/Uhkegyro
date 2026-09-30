@@ -1,4 +1,5 @@
 from pathlib import Path
+from backend.services.failure_mapping import OperationalFailure, classify_failure
 
 
 MIGRATIONS_DIR = Path(__file__).with_name("migrations")
@@ -9,6 +10,13 @@ def migration_sql() -> str:
 
 
 async def migrate(connection) -> None:
+    try:
+        await _migrate(connection)
+    except Exception as error:
+        raise OperationalFailure(classify_failure(error, context="migration"), "migration failed") from None
+
+
+async def _migrate(connection) -> None:
     await connection.execute(
         """
         CREATE TABLE IF NOT EXISTS schema_migrations (

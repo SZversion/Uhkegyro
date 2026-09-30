@@ -31,6 +31,7 @@ adapter 입력은 사용자 원문과 활성 TERM_CARD 후보 경계다. 현재 
 - Adapter 예외는 worker가 기록할 `error_type`을 제공한다. timeout은 `timeout`, 429는 `rate_limited`, HTTP 5xx는 `upstream_5xx`, 미완료 응답·분류 불가 upstream 오류는 `incomplete_or_unclassified_upstream`, Pydantic 출력 검증 오류는 `pydantic_validation_error`다.
 - `Retry-After`는 delay-seconds와 HTTP-date 형식을 모두 받는다. HTTP-date는 현재 UTC 시각까지의 delay로 변환하고 1,000~30,000ms로 clamp한다. 이미 지난 날짜나 해석할 수 없는 값은 유효하지 않은 값으로 보고 worker의 attempt별 기본 backoff(1,000ms·2,000ms)를 사용한다.
 - 우리 코드가 던진 예외는 `incomplete_or_unclassified_upstream`으로 바꾸지 않는다. `INTERNAL_CODE_ERROR`로 즉시 failed 처리하며 자동 재시도하지 않는다.
+- OpenRouter HTTP 401·403은 `error_type=configuration`, `CONFIGURATION_ERROR`로 즉시 실패하며 자동 재시도하지 않는다. 예외 원문과 인증 응답 본문은 공개 오류에 포함하지 않는다.
 - API 키는 trace·로그에 기록하지 않는다. 사용자 원문은 Langfuse trace에만 기록하며 LLM 원본 응답은 저장하지 않는다.
 - resolver가 adapter 출력을 JSON 카탈로그와 대조해 활성 term·역할·조건을 검증한다.
 

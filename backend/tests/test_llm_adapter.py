@@ -515,6 +515,19 @@ def test_interpret_upstream_5xx_raises_llm_upstream_unavailable():
     assert exc.value.retryable
 
 
+@pytest.mark.parametrize("status", [401, 403])
+def test_provider_authentication_error_is_configuration_failure(status):
+    error = openai.APIStatusError(
+        "private API key", response=httpx.Response(status, request=_REQ), body=None
+    )
+    adapter = _adapter(_FakeCompletions(error=error))
+    with pytest.raises(llm.LLMConfigurationError) as caught:
+        _run(adapter.interpret("자세", job_id="job", session_id="session", attempt=1, max_attempts=3))
+    assert caught.value.failure_code is FailureCode.CONFIGURATION_ERROR
+    assert not caught.value.retryable
+    assert "private API key" not in str(caught.value)
+
+
 def test_interpret_connection_error_raises_llm_upstream_unavailable():
     error = openai.APIConnectionError(request=_REQ)
     completions = _FakeCompletions(error=error)

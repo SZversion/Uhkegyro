@@ -40,6 +40,8 @@ HTTP 오류 본문은 종결 실패의 `Failure`와 같은 형태인 `{failure_c
 
 ## How
 
+- 실패 코드의 타입·호출 경계별 매핑과 고정 안내 문구는 [failure-code-mapping.md](./failure-code-mapping.md)를 따른다. API 저장소의 연결·인증·스키마 오류는 HTTP 503과 분류된 `Failure`를 반환하며, 예상하지 않은 코드 오류는 HTTP 500과 `INTERNAL_CODE_ERROR`를 반환한다.
+
 - 세션 쿠키의 발급·달력 기준 3개월 갱신, session/job 저장 구조, idempotency 저장 규칙은 [session-job-persistence.md](./session-job-persistence.md)가 단일 기준이다. `GET /api/jobs/{job_id}`는 이 쿠키를 검증하며, job 조회에서 세션이 job 소유자가 아니어도 `JOB_NOT_FOUND`를 반환한다.
 - Next.js 프론트는 `NEXT_PUBLIC_API_BASE_URL=/api`와 `credentials:"include"`를 사용한다. 브라우저는 FastAPI origin을 직접 호출하지 않는다. Next.js rewrite가 동일 origin의 `/api/*` 요청을 내부 FastAPI로 전달하며, BFF가 필요해질 때만 Route Handler를 추가한다. 세션 토큰·`anonymous_user_id`를 localStorage, URL, 로그에 저장하지 않는다.
 - worker의 polling, lease, 세션별 실행 순서와 재실행은 [postgres-job-worker.md](./postgres-job-worker.md)가 단일 기준이다. 같은 job은 최초 실행을 포함해 최대 3회이며 LLM 회복 가능 실패 뒤에는 `next_retry_at` 전까지 재실행하지 않는다. `next_retry_at`의 저장 계약은 [session-job-persistence.md](./session-job-persistence.md)가 단일 기준이다. LLM 오류별 재시도·backoff·최종 failure code는 [openrouter-llm-adapter.md](./openrouter-llm-adapter.md)가 단일 기준이다. worker는 job당 하나의 Langfuse trace를 유지하고, adapter·검색·결과 조립 단계는 그 trace에 observation/span을 추가한다.

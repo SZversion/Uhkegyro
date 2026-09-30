@@ -201,6 +201,20 @@ def test_worker_completes_unsafe_input_without_creating_or_calling_adapter(
     assert recovery.failures == []
 
 
+def test_error_during_completion_is_sent_to_failure_mapping(monkeypatch, snapshot_factory, card_factory):
+    from backend.services.failure_mapping import classify_failure
+    from backend.schemas.enums import FailureCode
+    class BrokenCompletion(FakeJobs):
+        async def update_status(self, **kwargs):
+            if kwargs["status"] is JobStatus.COMPLETED:
+                raise RuntimeError("private completion detail")
+            await super().update_status(**kwargs)
+    recovery = FakeRecovery()
+    snapshot = snapshot_factory([card_factory("pose_shift", role="pose")])
+    _run(_worker(monkeypatch, BrokenCompletion(), recovery, snapshot, FakeAdapter()).run_once())
+    assert classify_failure(recovery.failures[0]["error"]) is FailureCode.INTERNAL_CODE_ERROR
+
+
 def test_worker_stores_clarification_as_completed(monkeypatch, snapshot_factory):
     output = InterpretationOutput(
         interpretation_state=InterpretationState.NEEDS_CLARIFICATION,

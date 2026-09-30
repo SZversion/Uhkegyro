@@ -16,6 +16,8 @@ from backend.shared.auth import set_session_cookie
 from backend.services.catalog_repository import CatalogLoadError, load_catalog
 from backend.shared.config import get_settings, resolve_term_cards_dir
 from backend.services.agent_worker import run_worker
+from backend.services.failure_mapping import public_failure
+from backend.schemas.enums import FailureCode
 
 settings = get_settings()
 
@@ -58,6 +60,13 @@ async def handle_api_contract_error(request: FastAPI, exc: ApiContractError) -> 
 
 
 app.include_router(agent_router)
+
+
+@app.exception_handler(Exception)
+async def handle_unexpected_error(request, exc: Exception) -> JSONResponse:
+    failure = public_failure(exc)
+    status = 500 if failure.failure_code is FailureCode.INTERNAL_CODE_ERROR else 503
+    return JSONResponse(status_code=status, content=failure.model_dump(mode="json"))
 
 
 @app.get("/health")
