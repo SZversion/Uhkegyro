@@ -22,7 +22,7 @@
 4. 완료는 `agent_status`와 검색 사유 코드만 남긴다. 민감한 검색 결과 본문은 보내지 않는다.
 5. Langfuse 키가 없으면 Job 처리를 그대로 수행하고 trace를 만들지 않는다.
 
-**Edge Cases**: stale attempt 또는 lease 상실은 성공·실패로 기록하지 않는다. 관측 서버 장애는 Job 결과를 바꾸지 않는다. 재시도된 attempt는 새 trace가 아닌 같은 trace ID를 사용한다.
+**Edge Cases**: stale attempt 또는 lease 상실은 성공·실패로 기록하지 않는다. 관측 서버 장애는 Job 결과를 바꾸지 않는다. 재시도된 attempt는 새 trace가 아닌 같은 trace ID를 사용한다. worker 종료 시 마지막 attempt의 대기 중인 관측 이벤트를 전송한다.
 
 ## How
 
@@ -32,6 +32,7 @@
 - 재시도·종결 판정은 `JobRetryRecovery`의 동일한 정책 함수를 사용한다. retry attempt는 `failure_code=null`과 `backoff_ms=retry_delay_ms(...)`; 종결 실패는 `backoff_ms=null`과 API의 `FailureCode`를 기록한다.
 - 완료 시 `agent_status`와 `reason_codes`만 기록한다. 일반 로그·trace에는 session cookie/token, API key, `anonymous_user_id`, Pin URL·thumbnail·본문, LLM 원본 응답을 추가하지 않는다. 사용자 요청 원문은 Langfuse root와 기존 LLM generation 입력에만 허용한다.
 - Langfuse 키가 둘 다 설정된 경우에만 SDK client를 만든다. SDK 오류는 안전한 debug 로그로만 남기고 Job 상태 전이를 막지 않는다.
+- `AgentJobWorker.run_forever`가 종료·취소되면 실행 중인 attempt observation을 닫은 뒤 소유한 Langfuse client의 `shutdown()`을 호출한다. 동기 `shutdown()`은 event loop를 막지 않도록 별도 thread에서 실행하고, 실패해도 worker 종료를 막지 않는다.
 
 ## AC
 
@@ -54,3 +55,8 @@
 - GIVEN: Langfuse 키가 없거나 관측 SDK가 실패한다.
 - WHEN: worker가 Job을 처리한다.
 - THEN: Job 상태·결과는 동일하며 관측 실패가 사용자 오류가 되지 않는다.
+
+**AC-05 · 종료 시 전송**
+- GIVEN: worker가 마지막 attempt observation을 닫았고 Langfuse client에 대기 중인 이벤트가 있다.
+- WHEN: API 종료로 worker 루프가 취소된다.
+- THEN: client의 `shutdown()`이 observation 종료 뒤 한 번 호출되며, 그 호출이 실패해도 worker 취소가 완료된다.

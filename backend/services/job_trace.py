@@ -18,6 +18,13 @@ class JobTracer:
         self.model = model
         self.prompt_version = prompt_version
 
+    def shutdown(self) -> None:
+        try:
+            if self.client is not None:
+                self.client.shutdown()
+        except Exception:
+            logger.debug("Langfuse shutdown failed")
+
     @classmethod
     def from_settings(cls) -> "JobTracer":
         from backend.shared.config import get_settings

@@ -5,6 +5,8 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from types import SimpleNamespace
 
+import pytest
+
 from backend.schemas.enums import InterpretationState, JobStatus, Role
 from backend.schemas.models import InterpretationOutput, InterpretationSelection
 from backend.services import agent_worker
@@ -86,18 +88,27 @@ def test_retry_attempts_share_trace_and_keep_private_fields_out(
     monkeypatch, snapshot_factory, card_factory
 ):
     client = FakeLangfuse()
+    shutdown_calls = []
+    def shutdown():
+        shutdown_calls.append(len(client.records))
+        raise RuntimeError("telemetry unavailable")
+    client.shutdown = shutdown
     store = FakeStore([_job(attempt) for attempt in (1, 2, 3)])
     tracer = JobTracer(client, model="test-model", prompt_version="prompt-v0")
     snapshot = snapshot_factory([card_factory("pose_shift", role="pose")])
     worker = _worker(monkeypatch, snapshot, store, FailingTwiceAdapter(client), tracer)
-
     async def run():
         for _ in range(3):
             assert await worker.run_once()
+        task = asyncio.create_task(worker.run_forever(concurrency=1))
+        await asyncio.sleep(0)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
     asyncio.run(run())
-
     roots = [r for r in client.records if r["name"] == "agent-job-attempt"]
     assert len(roots) == 3
+    assert shutdown_calls == [len(client.records)]
     assert {r["trace_id"] for r in client.records} == {"trace:job-1"}
     assert [r["metadata"]["attempt"] for r in roots] == [1, 2, 3]
     assert all(r["metadata"]["model"] == "test-model" for r in roots)

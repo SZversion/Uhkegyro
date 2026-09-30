@@ -177,7 +177,10 @@ class AgentJobWorker:
                     )
                 await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
-        await asyncio.gather(recover_leases(), *(run_slot() for _ in range(concurrency)))
+        try:
+            await asyncio.gather(recover_leases(), *(run_slot() for _ in range(concurrency)))
+        finally:
+            await asyncio.to_thread(self._tracer.shutdown)
 
     async def _update(
         self,
