@@ -106,9 +106,9 @@ def test_agent_request_rejects_extra_fields():
         AgentRequest(request_text="질문", role="body", term_id="pose_contrapposto")
 
 
-def test_agent_request_rejects_session_id_until_route_supports_it():
-    with pytest.raises(ValidationError):
-        AgentRequest(request_text="질문", session_id="00000000-0000-0000-0000-000000000001")
+def test_agent_request_accepts_session_id_with_conversation_route():
+    request = AgentRequest(request_text="질문", session_id="00000000-0000-0000-0000-000000000001")
+    assert str(request.session_id) == "00000000-0000-0000-0000-000000000001"
 
 
 # ---------- SubmissionResponse ----------
