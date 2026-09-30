@@ -5,9 +5,9 @@ import logging
 from contextlib import contextmanager
 from typing import Any, Iterator
 
-from backend.schemas.enums import FailureCode
 from backend.services.job_retry_recovery import retry_delay_ms, should_retry
 from backend.services.llm import LLMError
+from backend.services.failure_mapping import classify_failure
 
 logger = logging.getLogger(__name__)
 
@@ -119,7 +119,7 @@ class AttemptTrace:
 
     def failed(self, job: Any, error: Exception) -> None:
         retry = should_retry(job["attempt"], job["max_attempts"], error)
-        code = error.failure_code if isinstance(error, LLMError) else FailureCode.INTERNAL_CODE_ERROR
+        code = classify_failure(error)
         self._update(self._span, output={
             "job_status": "queued" if retry else "failed",
             "agent_status": None,

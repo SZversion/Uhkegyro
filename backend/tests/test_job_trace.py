@@ -135,7 +135,7 @@ def test_terminal_failure_records_public_code_only(monkeypatch, snapshot_factory
     asyncio.run(worker.run_once())
     assert client.records[0]["output"] == {
         "job_status": "failed", "agent_status": None, "reason_codes": [],
-        "failure_code": "CONFIGURATION_ERROR", "error_type": "internal",
+        "failure_code": "CONFIGURATION_ERROR", "error_type": "configuration",
         "backoff_ms": None,
     }
     assert "secret prompt path" not in json.dumps(client.records)

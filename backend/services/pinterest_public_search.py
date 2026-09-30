@@ -9,13 +9,17 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from html.parser import HTMLParser
 import re
+import logging
 from typing import Any
 from urllib.parse import urlparse
 
-from backend.schemas.enums import PinStatus, ReasonCode, Role
+from backend.schemas.enums import FailureCode, PinStatus, ReasonCode, Role
 from backend.schemas.models import PinResult
 from backend.services.response_assembler import RoleSearchOutcome
 from backend.services.search_url_builder import build_search_url
+from backend.services.failure_mapping import OperationalFailure, classify_failure
+
+logger = logging.getLogger(__name__)
 
 
 HtmlLoader = Callable[[str], Awaitable[str]]
@@ -56,7 +60,11 @@ class PinterestPublicSearchProvider:
         search_url = build_search_url(list(query_fragments))
         try:
             html = await self._load_html(search_url)
-        except Exception:
+        except Exception as error:
+            code = classify_failure(error, context="search")
+            if code is FailureCode.CONFIGURATION_ERROR:
+                raise OperationalFailure(code) from None
+            logger.warning("Pinterest search unavailable", extra={"failure_code": code.value})
             return RoleSearchOutcome(
                 role=role,
                 pins=[],
@@ -197,16 +205,22 @@ async def _load_html_from_cdp_browser(
 
 async def _load_public_search_html(page: Any, search_url: str, timeout_ms: int) -> str:
     """공개 Chromium의 현재 HTML을 읽어 빈 결과를 장애로 바꾸지 않는다."""
-    await page.goto(search_url, wait_until="domcontentloaded", timeout=timeout_ms)
+    _check_search_response(await page.goto(search_url, wait_until="domcontentloaded", timeout=timeout_ms))
     return await page.content()
 
 
 async def _load_search_result_html(page: Any, search_url: str, timeout_ms: int) -> str:
     """렌더링된 Pin grid가 붙은 뒤 현재 DOM HTML을 반환한다."""
-    await page.goto(search_url, wait_until="domcontentloaded", timeout=timeout_ms)
+    _check_search_response(await page.goto(search_url, wait_until="domcontentloaded", timeout=timeout_ms))
     await page.wait_for_selector(
         _RENDERED_PIN_SELECTOR,
         state="attached",
         timeout=timeout_ms,
     )
     return await page.content()
+
+
+def _check_search_response(response: Any) -> None:
+    if response is not None and response.status >= 400:
+        code = FailureCode.SEARCH_RATE_LIMITED if response.status == 429 else FailureCode.SEARCH_UPSTREAM_UNAVAILABLE
+        raise OperationalFailure(code)

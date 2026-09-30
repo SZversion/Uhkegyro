@@ -23,6 +23,7 @@ from backend.services.pinterest_public_search import PinterestPublicSearchProvid
 from backend.services.pinterest_widget import PinterestWidgetClient, PinterestWidgetProvider
 from backend.services.resolver import STATUS_ALL_INVALID, ResolutionResult, resolve
 from backend.services.response_assembler import RoleSearchOutcome, assemble
+from backend.services.failure_mapping import DATABASE_ERRORS, OperationalFailure, classify_failure
 
 logger = logging.getLogger(__name__)
 WORKER_CONCURRENCY = 5
@@ -64,6 +65,9 @@ class AgentJobWorker:
                 await self._with_heartbeat(job, self._process_claimed(job, search_outcomes, trace))
             except StaleJobAttempt:
                 trace.stale()
+            except Exception as error:
+                trace.failed(job, error)
+                raise
         return True
 
     async def _process_claimed(
@@ -128,13 +132,13 @@ class AgentJobWorker:
                     trace.stale()
                     return
                 result = assemble(resolution, self._snapshot, search_outcomes)
+            if await self._update(job_id, attempt, JobStatus.COMPLETED, result=result):
+                trace.completed(result)
+            else:
+                trace.stale()
         except Exception as error:
             await self._handle_failure(job, error, trace)
             return
-        if await self._update(job_id, attempt, JobStatus.COMPLETED, result=result):
-            trace.completed(result)
-        else:
-            trace.stale()
 
     async def _search_outcomes(
         self, resolution: ResolutionResult
@@ -185,19 +189,25 @@ class AgentJobWorker:
                 await asyncio.wait_for(stopped.wait(), timeout=self._heartbeat_interval)
                 return
             except asyncio.TimeoutError:
-                await self._jobs.extend_lease(
-                    job_id=str(job["job_id"]), attempt=job["attempt"]
-                )
+                try:
+                    await self._jobs.extend_lease(
+                        job_id=str(job["job_id"]), attempt=job["attempt"]
+                    )
+                except DATABASE_ERRORS as error:
+                    raise OperationalFailure(classify_failure(error, context="database")) from None
 
     async def _handle_failure(
         self, job: Any, error: Exception, trace: AttemptTrace
     ) -> None:
-        updated = await self._recovery.handle_attempt_failure(
-            job_id=str(job["job_id"]),
-            attempt=job["attempt"],
-            max_attempts=job["max_attempts"],
-            error=error,
-        )
+        try:
+            updated = await self._recovery.handle_attempt_failure(
+                job_id=str(job["job_id"]),
+                attempt=job["attempt"],
+                max_attempts=job["max_attempts"],
+                error=error,
+            )
+        except DATABASE_ERRORS as persistence_error:
+            raise OperationalFailure(classify_failure(persistence_error, context="database")) from None
         if updated:
             trace.failed(job, error)
         else:
@@ -252,6 +262,8 @@ class AgentJobWorker:
             )
         except StaleJobAttempt:
             return False
+        except DATABASE_ERRORS as error:
+            raise OperationalFailure(classify_failure(error, context="database")) from None
         return True
 
 

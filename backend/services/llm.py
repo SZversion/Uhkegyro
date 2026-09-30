@@ -7,7 +7,7 @@ LLM 호출은 이 파일 하나로 모은다. 라우터·worker·MCP는 openai�
   User message template 조립 (경로 미설정·불가 시 `PromptConfigurationError`로 초기화 실패)
 - OpenRouter(OpenAI 호환) 구조화 출력(JSON object) 단발 호출
 - 출력을 Pydantic(`InterpretationOutput`)으로 재검증해 resolver·provider에 전달하지 않을 불량을 차단
-- 오류를 안정된 `FailureCode`로 분류(모두 재시도 가능한 LLM_* 코드)
+- 오류를 안정된 `FailureCode`로 분류(LLM_* 재시도, 인증 설정 오류는 즉시 실패)
 
 범위 밖(후속 티켓): 최종 상태·사유 코드·검색 URL 결정은 T17 resolver/assembler, 자동 재시도 카운트·attempt
 정책은 T18 worker, Langfuse 원격 Prompt 등록·production 라벨은 T33. Langfuse 키가 설정된 경우에만
@@ -83,7 +83,13 @@ class LLMIncompleteResponse(LLMUpstreamUnavailable):
     error_type = "incomplete_or_unclassified_upstream"
 
 
-class PromptConfigurationError(LLMError):
+class LLMConfigurationError(LLMError):
+    failure_code = FailureCode.CONFIGURATION_ERROR
+    error_type = "configuration"
+    retryable = False
+
+
+class PromptConfigurationError(LLMConfigurationError):
     """프롬프트 경로 설정 누락·불가. 재시도 대상이 아니다.
 
     LLMError 계층에 두어 오류 분류(failure_code)를 기존과 같은 방식으로 읽게 한다.
@@ -187,6 +193,8 @@ class LLMInterpretationAdapter:
             raise LLMUpstreamUnavailable(f"OpenRouter 연결 실패: {exc}") from exc
         except openai.APIStatusError as exc:
             status = getattr(exc, "status_code", None) or getattr(exc, "status", None)
+            if status in (401, 403):
+                raise LLMConfigurationError("OpenRouter authentication configuration failed") from None
             if status and int(status) == 429:
                 raise LLMRateLimited(
                     "OpenRouter rate limit",
