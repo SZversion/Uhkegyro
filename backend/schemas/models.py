@@ -27,11 +27,12 @@ PROGRESS_POLL_AFTER_MS = 1000
 
 
 class AgentRequest(BaseModel):
-    """POST /api/agent 요청 — request_text 1~500자."""
+    """POST /api/agent 요청 — request_text 1~500자와 선택적 대화 UUID를 허용."""
 
     model_config = ConfigDict(extra="forbid")
 
     request_text: Annotated[str, Field(min_length=1, max_length=500)]
+    session_id: UUID | None = None
 
     @model_validator(mode="after")
     def _reject_whitespace_only(self) -> "AgentRequest":
@@ -213,7 +214,7 @@ class ApiError(BaseModel):
     """HTTP 오류 응답 본문 — `Failure`와 같은 형태, 코드 네임스페이스만 다르다.
 
     `Failure.failure_code`는 job 종결 실패 전용 13종이고, 요청 단계에서 거부되는
-    코드는 `ApiErrorCode` 4종이다. 본문 형태를 통일해 프론트가 한 가지 모양으로
+    코드는 `ApiErrorCode` 5종이다. 본문 형태를 통일해 프론트가 한 가지 모양으로
     오류를 다루게 한다.
     """
 
