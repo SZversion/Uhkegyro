@@ -28,7 +28,7 @@
 - API 키, 세션 토큰, `anonymous_user_id` 원문, 이미지 바이트, 썸네일 URL, Pin 본문 등 부가 메타데이터는 기록하지 않는다. 사용자 요청 원문은 Langfuse trace에만 기록한다.
 - Langfuse Prompt 원격 버전은 `uhkegryo-interpreter-v{n}` 이름과 version label로 관리한다. `production` label은 30건 baseline과 회귀 확인 전에는 바꾸지 않는다.
 
-현재 저장소에는 worker와 Langfuse adapter 구현이 없으므로, 다음 구현 작업은 `job_id`, `session_id`, `attempt`, `max_attempts`를 worker에서 adapter로 전달하고, adapter가 모델·prompt version·LLM `error_type`을 반환하도록 한다. `backoff_ms`와 최종 `failure_code`는 worker가 실제 적용값을 기록한다.
+Worker의 Job trace 필수 필드와 수명주기 구현 범위는 [job-trace-required-fields.md](./job-trace-required-fields.md)를 따른다. 원격 Prompt 등록·Dataset 연결과 평가 집계는 별도 작업이다.
 
 ## AC
 
