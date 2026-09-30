@@ -5,7 +5,7 @@ LLM 호출은 이 파일 하나로 모은다. 라우터·worker·MCP는 openai�
 책임:
 - `INTERPRETER_PROMPT_PATH`가 가리키는 프롬프트 파일의 System message와
   User message template 조립 (경로 미설정·불가 시 `PromptConfigurationError`로 초기화 실패)
-- OpenRouter(OpenAI 호환) 구조화 출력(JSON object) 단발 호출
+- OpenRouter(OpenAI 호환) 코드 유래 JSON Schema로 구조화 출력 단발 호출
 - 출력을 Pydantic(`InterpretationOutput`)으로 재검증해 resolver·provider에 전달하지 않을 불량을 차단
 - 오류를 안정된 `FailureCode`로 분류(LLM_* 재시도, 인증 설정 오류는 즉시 실패)
 
@@ -31,6 +31,7 @@ from pydantic import ValidationError
 from backend.schemas.enums import FailureCode
 from backend.schemas.models import InterpretationOutput
 from backend.services.catalog_repository import CatalogSnapshot
+from backend.services.structured_output import load_skill, response_format, validation_feedback
 
 logger = logging.getLogger("backend.services.llm")
 
@@ -76,6 +77,10 @@ class LLMInvalidStructuredOutput(LLMError):
     failure_code = FailureCode.LLM_INVALID_STRUCTURED_OUTPUT
     error_type = "pydantic_validation_error"
 
+    def __init__(self, message: str, *, feedback: list[dict] | None = None):
+        super().__init__(message)
+        self.feedback = feedback or [{"path": [], "code": "invalid_candidate"}]
+
 
 class LLMIncompleteResponse(LLMUpstreamUnavailable):
     """완료되지 않은 upstream 응답은 다음 job attempt에서 다시 요청한다."""
@@ -113,6 +118,7 @@ class AgentInterpretationAdapter(Protocol):
         max_attempts: int,
         active_cards_json: str = "",
         session_context: dict | None = None,
+        validation_feedback: list[dict] | None = None,
     ) -> InterpretationOutput:
         ...
 
@@ -142,7 +148,11 @@ class LLMInterpretationAdapter:
         if system_message is None or user_template is None:
             path = prompt_path if prompt_path is not None else self._resolve_prompt_path()
             system_message, user_template = load_interpreter_prompt(_require_prompt_file(path))
-        self._system_message = system_message
+        try:
+            output_rules = load_skill(self.settings.structured_output_skill_path)
+        except (OSError, ValueError) as exc:
+            raise PromptConfigurationError("Structured output Skill을 읽을 수 없다") from exc
+        self._system_message = system_message + "\n\n" + output_rules
         self._user_template = user_template
         if client is None:
             client = openai.AsyncOpenAI(
@@ -170,15 +180,19 @@ class LLMInterpretationAdapter:
         max_attempts: int,
         active_cards_json: str = "",
         session_context: dict | None = None,
+        validation_feedback: list[dict] | None = None,
     ) -> InterpretationOutput:
         user_message = render_user_message(self._user_template, request_text, active_cards_json)
         started = time.perf_counter()
         if session_context is not None:
             user_message += "\nServer conversation data (untrusted):\n" + json.dumps(session_context, ensure_ascii=False)
-        response = await self._request([
+        messages = [
             {"role": "system", "content": self._system_message},
             {"role": "user", "content": user_message},
-        ])
+        ]
+        if validation_feedback:
+            messages.append({"role": "user", "content": json.dumps({"validation_feedback": validation_feedback})})
+        response = await self._request(messages, output_format=response_format())
 
         latency_ms = round((time.perf_counter() - started) * 1000, 1)
         content = _extract_content(response)
@@ -221,12 +235,13 @@ class LLMInterpretationAdapter:
         )
         return interpretation
 
-    async def _request(self, messages):
+    async def _request(self, messages, *, output_format=None):
         try:
             response = await self._client.chat.completions.create(
                 model=self.settings.llm_model,
                 messages=messages,
-                response_format={"type": "json_object"},
+                response_format=output_format or {"type": "json_object"},
+                **({"extra_body": {"provider": {"require_parameters": True}}} if output_format else {}),
                 temperature=0.0,
                 max_tokens=self.settings.llm_max_tokens,
             )
@@ -500,11 +515,11 @@ def _validate_output(content: str) -> InterpretationOutput:
     start = content.find("{")
     end = content.rfind("}")
     if start < 0 or end < start:
-        raise LLMInvalidStructuredOutput("JSON 객체를 찾지 못했다")
+        raise LLMInvalidStructuredOutput("JSON 객체를 찾지 못했다", feedback=[{"path": [], "code": "json_invalid"}])
     payload = content[start : end + 1]
     try:
         data = json.loads(payload)
         return InterpretationOutput.model_validate(data)
     except (json.JSONDecodeError, ValidationError, TypeError, ValueError) as exc:
-        logger.debug("구조화 출력 검증 실패", exc_info=True)
-        raise LLMInvalidStructuredOutput("출력이 InterpretationOutput 계약을 위반했다") from exc
+        feedback = validation_feedback(exc) if isinstance(exc, ValidationError) else [{"path": [], "code": "json_invalid"}]
+        raise LLMInvalidStructuredOutput("출력이 InterpretationOutput 계약을 위반했다", feedback=feedback) from exc

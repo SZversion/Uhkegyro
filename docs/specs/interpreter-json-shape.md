@@ -26,7 +26,7 @@
 - Docker image에 v0와 v1을 모두 포함한다.
 - 최신 main의 `session_context`, `source_job_id`, `context_updates` 계약과 Memory classify·summarize·answer 지시문을 유지한다. v1의 출력 예제에도 nullable 출처와 조건 변경 배열을 포함한다.
 - v1 활성화 시 `INTERPRETER_PROMPT_PATH=./prompts/uhkegryo-interpreter-v1.md`, `INTERPRETER_PROMPT_VERSION=uhkegryo-interpreter-v1`을 함께 지정한다.
-- `response_format=json_object`, SDK 내부 재시도 0회, `InterpretationOutput` 및 resolver 검증은 유지한다. JSON mode가 schema 일치를 강제한다고 가정하지 않는다.
+- v1 단계에서는 기존 `response_format=json_object`, SDK 내부 재시도 0회, `InterpretationOutput` 및 resolver 검증을 유지한다. 코드 유래 strict schema로의 전환은 [구조화 출력 Skill Spec](./structured-output-skill.md)에 기록한다.
 - 원본 모델 출력은 영구 저장하지 않는다. 로컬 검증에서는 오류 위치와 타입만 출력한다.
 
 ## AC
