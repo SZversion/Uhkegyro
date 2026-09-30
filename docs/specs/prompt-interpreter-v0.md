@@ -9,7 +9,7 @@
 
 ## Goal
 
-- `request_text`와 활성 TERM_CARD 축약 JSON만 받아 `InterpretationOutput` JSON을 반환한다.
+- `request_text`, 활성 TERM_CARD 축약 JSON, 서버가 제공하는 `session_context`를 받아 `InterpretationOutput` JSON을 반환한다.
 - 출력 상태는 `select_terms`와 `needs_clarification` 두 가지로 제한한다.
 - 질문 상태는 최종 `reason_code`가 아닌 `clarification_type` 후보 enum 하나를 반환해, resolver가 사유 코드를 결정할 수 있게 한다.
 - 질문 선택지용 제한된 카드 후보는 [선택형 후속 질문 Spec](./clarification-choices.md)의 후속 구현 전까지 출력하지 않는다.
@@ -22,7 +22,7 @@
 
 ### Happy Path
 
-1. LLM adapter는 서버가 검증해 메모리에 로드한 활성 카드의 축약 JSON과 `request_text`를 Langfuse Prompt에 전달한다.
+1. LLM adapter는 서버가 검증해 메모리에 로드한 활성 카드의 축약 JSON과 `request_text`, 서버 `session_context`를 Langfuse Prompt에 전달한다.
 2. Prompt는 입력의 실제 단서를 `body`, `pose`, `view`, `perspective`, `layout` 역할로 나눈다.
 3. 각 역할당 최대 하나의 활성 `term_id`를 `evidence`, `confidence`와 함께 `select_terms` JSON으로 반환한다.
 4. Pydantic은 출력 구조를, resolver는 카드 활성 상태·역할·카탈로그 의존 그래프를 다시 검증한다. `requires_all_of`·`requires_any_of`의 부모 ID는 추가 LLM selection이 아니다.
@@ -82,12 +82,13 @@ InterpretationOutput
 Selection
   role: "body" | "pose" | "view" | "perspective" | "layout"
   term_id: str
-  evidence: list[str] (one or more non-empty Korean excerpts from request_text)
+  evidence: list[str] (one or more original excerpts; source_job_id=null means current request)
   confidence: float (0.0 <= confidence <= 1.0)
+  source_job_id: UUID | null
 ```
 
-- `select_terms`: selections는 한 개 이상, 역할 중복 없음, `unresolved_constraints=[]`, `clarifying_question=null`, `clarification_type=null`. `evidence`는 실제 한국어 요청에 있는 비어 있지 않은 짧은 표현을 하나 이상 쓴다.
-- `needs_clarification`: `selections=[]`, `unresolved_constraints`는 비어 있거나 공백만으로 이루어지지 않은 항목을 한 개 이상, `clarifying_question`은 한국어 질문 하나, `clarification_type`은 비어 있지 않은 enum 하나다. `evidence`, `unresolved_constraints`, `clarifying_question` 등 사람이 읽는 문자열은 한국어로만 반환한다.
+- `select_terms`: selections는 한 개 이상, 역할 중복 없음, `unresolved_constraints=[]`, `clarifying_question=null`, `clarification_type=null`. `evidence`는 현재 요청 또는 source_job_id가 가리키는 선행 원본 요청/카드 라벨의 비어 있지 않은 실제 표현을 하나 이상 쓴다.
+- `needs_clarification`: `selections=[]`, `unresolved_constraints`는 비어 있거나 공백만으로 이루어지지 않은 항목을 한 개 이상, `clarifying_question`은 한국어 질문 하나, `clarification_type`은 비어 있지 않은 enum 하나다. `unresolved_constraints`와 `clarifying_question`은 한국어로 반환하고 evidence는 인용 원문의 표기를 보존한다.
 - Prompt는 최종 `agent_status`, `reason_codes`, Pinterest 검색어·URL·MCP 호출·카드 설명을 만들지 않는다. Pydantic 검증과 resolver가 이를 각각 조립·검증한다.
 - `clarification_type`은 최종 `reason_code`가 아니다. resolver는 입력 단서와 카드 `confidence_gate`, 카탈로그 의존 그래프를 다시 확인한 뒤에만 `ABSTRACT_INTENT_ONLY`, `INSUFFICIENT_VISUAL_EVIDENCE`, `CONFLICTING_CONSTRAINTS` 중 최종 코드를 조립한다. `requires_*`의 부모 ID가 selection에 없다는 사실만으로 후보를 실패시키지 않는다. 직접 검색 금지는 LLM 출력과 무관하게 `DIRECT_SEARCH_DISABLED`로 처리한다.
 - 해결되지 않은 모호성은 새 사용자 메시지의 새 job에서 다시 `needs_clarification`으로 처리한다. `pending_human_review`는 현재 공개 API와 `InterpretationOutput`의 enum이 아니다.
@@ -103,7 +104,7 @@ Selection
 **AC-02 · 실제 단서 근거**
 - GIVEN: 정상 사용자 요청과 활성 카드가 있다.
 - WHEN: Prompt가 selection을 반환한다.
-- THEN: 각 `evidence`는 요청에 실제로 있는 한국어 단서이며, 사람이 읽는 출력 문자열은 한국어이고, 역할은 중복되지 않고 정해진 순서를 따른다.
+- THEN: 각 `evidence`는 현재 요청 또는 지정된 선행 원본의 실제 단서이며, 질문·안내는 한국어이고, 역할은 중복되지 않고 정해진 순서를 따른다.
 
 **AC-03 · 모호·상충 입력**
 - GIVEN: 카드 confidence gate를 만족하지 못하거나 서로 충돌하는 단서가 있다.
@@ -125,3 +126,7 @@ Selection
 - GIVEN: v0 해석 요청과 해결되지 않은 모호성이 있다.
 - WHEN: adapter와 resolver가 처리한다.
 - THEN: 영어 v0 System message 하나만 LLM에 전달하고, resolver는 새 term ID·`pending_human_review` 없이 새 job의 `needs_clarification`으로 처리한다.
+
+## 대화 맥락 확장
+
+source_job_id(nullable UUID)와 context_updates(role, term_id nullable, evidence)를 추가한다. 현재 조건/미해결 질문/최근 6개/요약/원본 출처는 서버만 구성한다. 현재 요청의 명시적 수정만 조건을 갱신하고 추천을 사용자 사실로 승격하지 않는다. 원본 근거 검증은 conversation-context.md를 따른다. 동일 파일의 Memory classify/summarize/answer 절은 각각 검색 조건·요약·기록 기반 회상 답변만 생성하며, 외부 지식과 검색 URL을 생성하지 않는다.
