@@ -31,9 +31,14 @@ from backend.services.job_repository import (
 )
 from backend.services.job_repository import JobRepository
 from backend.services.session_repository import SessionRepository
+from backend.services.pinterest_widget import PinterestWidgetClient
 
 router = APIRouter(tags=["agent"])
 _pool: Any | None = None
+
+
+def get_widget_client() -> PinterestWidgetClient:
+    return PinterestWidgetClient()
 
 
 async def get_repositories() -> tuple[SessionRepository, JobRepository]:
@@ -235,8 +240,9 @@ async def read_job(
     set_session_cookie(response, raw_cookie, get_settings())
 
     try:
-        return await _database_call(jobs.get(session_id=session_id, job_id=job_id))
+        job = await _database_call(jobs.get(session_id=session_id, job_id=job_id))
     except JobNotFound:
         raise ApiContractError(
             ApiErrorCode.JOB_NOT_FOUND, session_token=raw_cookie
         ) from None
+    return await get_widget_client().enrich_job(job)
