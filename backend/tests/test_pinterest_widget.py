@@ -99,12 +99,14 @@ def test_get_job_requeries_widget_without_persisting_thumbnail(monkeypatch):
                                            "width": 100, "height": 100}})
 
     class Sessions:
-        async def resolve_session(self, token):
-            return "session-1" if token == "valid" else None
+        async def has_owner(self, token):
+            return token == "valid"
+        async def session_for_job(self, token, job_id):
+            return "session-1"
 
     class Jobs:
         async def get(self, *, session_id, job_id):
-            assert (session_id, job_id) == ("session-1", "job-1")
+            assert (session_id, job_id) == ("session-1", "00000000-0000-0000-0000-000000000001")
             return stored
 
     async def repositories():
@@ -116,8 +118,8 @@ def test_get_job_requeries_widget_without_persisting_thumbnail(monkeypatch):
     with TestClient(app) as client:
         assert client.get("/api/jobs/job-1").status_code == 401
         client.cookies.set(SESSION_COOKIE_NAME, "valid")
-        first = client.get("/api/jobs/job-1").json()
-        second = client.get("/api/jobs/job-1").json()
+        first = client.get("/api/jobs/00000000-0000-0000-0000-000000000001").json()
+        second = client.get("/api/jobs/00000000-0000-0000-0000-000000000001").json()
 
     first_pin = first["result"]["reference_plan"]["terms"][0]["pins"][0]
     second_pin = second["result"]["reference_plan"]["terms"][0]["pins"][0]

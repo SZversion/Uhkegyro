@@ -91,7 +91,9 @@ def test_expired_session_cleanup_cascades_jobs_in_postgres(monkeypatch):
             session_id = str(uuid.uuid4())
             job_id = str(uuid.uuid4())
             await connection.execute(
-                "INSERT INTO sessions (session_id, session_token_hash) VALUES ($1::uuid, $2)",
+                """WITH owner AS (INSERT INTO anonymous_owners(owner_id, session_token_hash)
+                   VALUES ($1::uuid, $2) RETURNING owner_id)
+                   INSERT INTO sessions(session_id, owner_id) SELECT owner_id,owner_id FROM owner""",
                 session_id,
                 uuid.uuid4().hex,
             )

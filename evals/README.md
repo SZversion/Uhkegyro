@@ -75,3 +75,11 @@ LLM-as-judge를 사용할 때는 생성 모델과 다른 모델 또는 사람 �
 5. 모델 또는 프롬프트 변경은 한 번에 하나만 하고, 같은 30건을 다시 실행해 회귀 문항을 기록한다.
 
 `dataset.jsonl` 30건과 `contract-variants.jsonl` 70건은 합쳐 100건 계약 준수 평가 입력이다. 아직 실제 실행 결과는 기록되지 않았으므로, Langfuse Dataset 등록·출시 게이트·baseline 수치는 실행 후에만 채운다.
+
+## 대화 기억 평가
+
+`memory.jsonl`은 기존 30건을 변경하지 않고 추가한 다중 대화 시나리오다. MEM-01은 `test_eval27_followup_preserves_body_and_pending_question`의 실제 worker/PostgreSQL 통합 입력으로 사용한다. 격리·원본 인용·요약 재시도·과다 후보·복합 요청의 결정론 검사는 `test_conversation_memory.py`, 쿠키·만료·기존 데이터 이관은 `test_conversation_sessions.py`에서 실행한다.
+
+이 테스트의 LLM은 구조화된 가짜 응답을 사용한다. 실제 모델이 한국어 수정 의도·회상 범위를 올바르게 해석하는지, 출처가 답변의 모든 주장을 뒷받침하는지, 긴 대화 요약에서 필요한 사실을 유지하는지는 이 시나리오로 별도 모델 평가해야 한다. 자동 테스트 통과를 실제 모델 품질 점수로 보고하지 않는다.
+
+2026-09-30 실제 모델 평가 시도는 upstream 429로 완료하지 못했다. 결과와 미검증 범위는 [memory-live-model-2026-09-30.md](./memory-live-model-2026-09-30.md)에 기록했다.

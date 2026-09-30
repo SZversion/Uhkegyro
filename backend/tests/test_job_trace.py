@@ -13,6 +13,8 @@ from backend.services import agent_worker
 from backend.services.agent_worker import AgentJobWorker
 from backend.services.job_trace import JobTracer
 from backend.services.llm import LLMTimeout, PromptConfigurationError
+from backend.tests.test_agent_worker import EmptyMemory
+from backend.schemas.memory import RecallQuery
 
 
 class FakeLangfuse:
@@ -57,6 +59,9 @@ class FailingTwiceAdapter:
     def __init__(self, client):
         self.client = client
 
+    async def memory(self, *args, **kwargs):
+        return RecallQuery(mode="none")
+
     async def interpret(self, request_text, *, attempt, **kwargs):
         if attempt < 3:
             raise LLMTimeout("private upstream response")
@@ -75,6 +80,7 @@ class FailingTwiceAdapter:
 def _worker(monkeypatch, snapshot, store, adapter, tracer):
     monkeypatch.setattr(agent_worker, "JobRepository", lambda _pool: store)
     monkeypatch.setattr(agent_worker, "JobRetryRecovery", lambda _pool: store)
+    monkeypatch.setattr(agent_worker, "ConversationMemory", lambda _pool: EmptyMemory(store))
     return AgentJobWorker(object(), snapshot, adapter=adapter, tracer=tracer)
 
 
@@ -126,6 +132,9 @@ def test_retry_attempts_share_trace_and_keep_private_fields_out(
 
 def test_terminal_failure_records_public_code_only(monkeypatch, snapshot_factory):
     class BrokenAdapter:
+        async def memory(self, *args, **kwargs):
+            return RecallQuery(mode="none")
+
         async def interpret(self, *args, **kwargs):
             raise PromptConfigurationError("secret prompt path")
 

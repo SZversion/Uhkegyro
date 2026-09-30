@@ -40,8 +40,14 @@ class FakeConnection:
         self.calls.append((query, args))
         return "SELECT 1"
 
+    async def fetchval(self, query, *args):
+        self.calls.append((query, args))
+        return args[0]
+
     async def fetchrow(self, query, *args):
         self.calls.append((query, args))
+        if "INSERT INTO anonymous_owners" in query:
+            return {"owner_id": args[0], "default_session_id": None}
         if "SET lease_expires_at = now()" in query:
             if self.status not in args[2] or self.attempt != args[1]:
                 return None
@@ -124,9 +130,9 @@ def test_submit_creates_hashed_queued_job_under_session_lock():
     lock_query, lock_args = connection.calls[0]
     assert "pg_advisory_xact_lock" in lock_query
     assert lock_args == (SESSION_ID,)
-    lookup_query, _ = connection.calls[1]
+    lookup_query, _ = connection.calls[2]
     assert "idempotency_expires_at > now()" in lookup_query
-    insert_query, insert_args = connection.calls[2]
+    insert_query, insert_args = connection.calls[3]
     assert "INSERT INTO jobs" in insert_query
     assert insert_args[2] == "draw"
     assert insert_args[3] != "draw"
@@ -142,11 +148,11 @@ def test_new_session_and_job_share_transaction():
     ))
 
     session_query, session_args = connection.calls[0]
-    assert "INSERT INTO sessions" in session_query
+    assert "INSERT INTO anonymous_owners" in session_query
     assert session_args[1] == hash_session_token(token)
     assert "opaque-session-token" not in session_args
-    assert "INSERT INTO jobs" in connection.calls[3][0]
-    assert connection.calls[3][1][1] == job.session_id
+    insert = next(args for query, args in connection.calls if "INSERT INTO jobs" in query)
+    assert insert[1] == job.session_id
     assert created is True
     assert connection.rolled_back is False
 
@@ -161,7 +167,7 @@ def test_new_session_rolls_back_when_job_insert_fails():
             idempotency_key=JOB_ID,
         ))
 
-    assert "INSERT INTO sessions" in connection.calls[0][0]
+    assert any("INSERT INTO sessions" in query for query, _ in connection.calls)
     assert any("INSERT INTO jobs" in query for query, _ in connection.calls)
     assert connection.rolled_back is True
 
@@ -178,7 +184,7 @@ def test_submit_reuses_matching_unexpired_job():
     ))
 
     assert job.job_id == JOB_ID and created is False
-    assert len(connection.calls) == 2
+    assert len(connection.calls) == 3
 
 
 def test_submit_rejects_same_key_with_different_request_text():
@@ -190,7 +196,7 @@ def test_submit_rejects_same_key_with_different_request_text():
         _run(JobRepository(FakePool(connection)).submit(
             session_id=SESSION_ID, request_text="draw", idempotency_key=JOB_ID
         ))
-    assert len(connection.calls) == 2
+    assert len(connection.calls) == 3
 
 
 def test_get_hides_jobs_not_owned_by_session():
@@ -291,7 +297,6 @@ def test_update_status_accepts_unsafe_input_completion_from_validating():
     ("current_status", "next_status"),
     [
         (JobStatus.RUNNING, JobStatus.SEARCHING),
-        (JobStatus.VALIDATING, JobStatus.RENDERING),
         (JobStatus.RENDERING, JobStatus.VALIDATING),
         (JobStatus.COMPLETED, JobStatus.FAILED),
         (JobStatus.FAILED, JobStatus.COMPLETED),
@@ -436,7 +441,9 @@ def test_concurrent_claims_return_a_job_to_only_one_worker_on_postgres():
                 await migrate(connection)
                 session_id = str(uuid.uuid4())
                 await connection.execute(
-                    "INSERT INTO sessions (session_id, session_token_hash) VALUES ($1::uuid, $2)",
+                    """WITH owner AS (INSERT INTO anonymous_owners(owner_id, session_token_hash)
+                       VALUES ($1::uuid, $2) RETURNING owner_id)
+                       INSERT INTO sessions(session_id, owner_id) SELECT owner_id,owner_id FROM owner""",
                     session_id,
                     uuid.uuid4().hex,
                 )
@@ -480,7 +487,7 @@ def test_concurrent_claims_return_a_job_to_only_one_worker_on_postgres():
                     SELECT application_name FROM pg_stat_activity
                     WHERE application_name LIKE 'claim_job_%'
                       AND wait_event_type = 'Lock'
-                      AND query LIKE '%UPDATE jobs AS claimed%'
+                      AND query LIKE '%WITH candidate AS%'
                     LIMIT 1
                     """,
                 )

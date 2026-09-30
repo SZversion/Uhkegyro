@@ -5,6 +5,7 @@
 끝까지 돈다.
 """
 from __future__ import annotations
+from backend.shared.auth import session_cookie_max_age
 
 import json
 import hashlib
@@ -36,6 +37,15 @@ class FakeSessionRepository:
 
     async def resolve_session(self, token):
         return self.sessions.get(hash_session_token(token)) if token else None
+
+    async def has_owner(self, token):
+        return bool(await self.resolve_session(token))
+
+    async def session_for_job(self, token, job_id):
+        session_id = await self.resolve_session(token)
+        if session_id is None:
+            raise JobNotFound
+        return session_id
 
 
 class FakeJobRepository:
@@ -138,7 +148,7 @@ def test_new_session_gets_httponly_cookie_and_202(client: TestClient) -> None:
     cookie_header = result["headers"]["set-cookie"]
     assert SESSION_COOKIE_NAME in cookie_header
     assert "HttpOnly" in cookie_header
-    assert "Max-Age=7776000" in cookie_header  # 90일
+    assert f"Max-Age={session_cookie_max_age()}" in cookie_header  # 90일
 
 
 def test_production_response_uses_secure_cookie(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -174,7 +184,7 @@ def test_existing_session_cookie_max_age_is_renewed(client: TestClient) -> None:
 
     assert SESSION_COOKIE_NAME in cookie_header
     assert f"{SESSION_COOKIE_NAME}={token}" in cookie_header  # 같은 토큰
-    assert "Max-Age=7776000" in cookie_header  # 90일로 갱신
+    assert f"Max-Age={session_cookie_max_age()}" in cookie_header  # 90일로 갱신
     assert "HttpOnly" in cookie_header
     assert first["body"]["job_id"] != second["body"]["job_id"]
 
@@ -187,7 +197,7 @@ def test_job_read_renews_cookie(client: TestClient) -> None:
     response = client.get(f"/api/jobs/{created['body']['job_id']}")
 
     assert f"{SESSION_COOKIE_NAME}={token}" in response.headers["set-cookie"]
-    assert "Max-Age=7776000" in response.headers["set-cookie"]
+    assert f"Max-Age={session_cookie_max_age()}" in response.headers["set-cookie"]
 
 
 def test_404_still_renews_cookie(client: TestClient) -> None:

@@ -1,3 +1,4 @@
+from backend.shared.auth import session_cookie_max_age
 import hashlib
 from types import SimpleNamespace
 
@@ -29,7 +30,7 @@ def test_development_session_cookie_is_http_only_and_90_days():
 
     cookie = response.headers["set-cookie"]
     assert cookie.startswith("session_id=opaque-token;")
-    assert "Max-Age=7776000" in cookie
+    assert f"Max-Age={session_cookie_max_age()}" in cookie
     assert "HttpOnly" in cookie
     assert "Path=/" in cookie
     assert "SameSite=lax" in cookie
