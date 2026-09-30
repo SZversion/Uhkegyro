@@ -16,7 +16,8 @@
 ## What
 
 - v0를 보존하고 `uhkegryo-interpreter-v1`을 새 버전으로 제공한다.
-- `selections`와 `evidence`는 배열이고 selection은 `{role, term_id, evidence, confidence}`임을 명시한다.
+- `selections`와 `evidence`는 배열이고 selection은 `{role, term_id, evidence, confidence, source_job_id}`임을 명시한다. `context_updates`도 최상위 배열로 포함한다.
+- `evidence`와 `context_updates[].evidence`는 현재 요청 또는 허용된 선행 원본 요청·카드 라벨의 영문 대소문자를 포함해 원문 철자를 그대로 인용한다. 한국어 출력 제한은 `unresolved_constraints`와 `clarifying_question`에만 적용한다.
 - 선택 상태와 질문 상태를 각각 하나의 JSON 예제로 설명한다. 예제 ID는 실제 후보가 아니며 활성 카드의 ID로 대체해야 한다.
 - 잘못된 출력은 기존 검증에서 거부한다. HTTP 429 및 timeout 정책은 기존 계약을 따른다.
 
@@ -25,13 +26,16 @@
 - 새 파일 `prompts/uhkegryo-interpreter-v1.md`의 `System message` 코드 펜스 안에 출력 구조와 예제를 둔다. loader는 기존 두 메시지 추출 방식을 유지한다.
 - Docker image에 v0와 v1을 모두 포함한다.
 - 최신 main의 `session_context`, `source_job_id`, `context_updates` 계약과 Memory classify·summarize·answer 지시문을 유지한다. v1의 출력 예제에도 nullable 출처와 조건 변경 배열을 포함한다.
+- v1은 비활성 준비용 프롬프트다. 이 PR은 `.env.example`과 배포 설정을 v0에서 변경하지 않는다. 평가와 팀 검토 뒤 별도 활성화 변경에서 Prompt 경로와 버전을 함께 v1로 지정한다.
 - v1 활성화 시 `INTERPRETER_PROMPT_PATH=./prompts/uhkegryo-interpreter-v1.md`, `INTERPRETER_PROMPT_VERSION=uhkegryo-interpreter-v1`을 함께 지정한다.
 - `response_format=json_object`, SDK 내부 재시도 0회, `InterpretationOutput` 및 resolver 검증은 유지한다. JSON mode가 schema 일치를 강제한다고 가정하지 않는다.
 - 원본 모델 출력은 영구 저장하지 않는다. 로컬 검증에서는 오류 위치와 타입만 출력한다.
 
 ## AC
 
-- GIVEN v1 파일, WHEN loader가 System message를 읽으면, THEN selection의 네 필드와 배열 타입 및 두 상태 예제가 실제 메시지에 포함된다.
+- GIVEN v1 파일, WHEN loader가 System message를 읽으면, THEN 현재 `InterpretationOutput`의 최상위 6개 필드와 selection의 5개 필드, 배열 타입 및 두 상태 예제가 실제 메시지에 포함된다.
 - GIVEN System message 안의 선택·질문 예제, WHEN 예제 JSON을 검증하면, THEN 모두 `InterpretationOutput`을 통과한다.
+- GIVEN 요청 원문 또는 허용된 카드 라벨에 영어 단서가 있다, WHEN v1의 `evidence`로 인용하면, THEN 대소문자를 포함한 원문 철자를 유지한 채 구조 검증을 통과한다.
+- GIVEN v1 문서의 출력 계약 표와 예제, WHEN 현재 Pydantic 모델 필드와 비교하면, THEN `source_job_id`와 `context_updates`를 포함해 필드가 일치한다.
 - GIVEN `selections=null` 또는 객체, WHEN 기존 출력 검증을 수행하면, THEN `LLM_INVALID_STRUCTURED_OUTPUT`으로 거부한다.
 - GIVEN Docker image, WHEN v1 경로를 설정하면, THEN 해당 파일을 읽고 v1을 trace 버전으로 사용한다.
