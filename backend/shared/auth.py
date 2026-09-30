@@ -3,12 +3,21 @@ MCP 인증은 Cloud Run IAM으로 처리하므로 별도 JWT 불필요.
 """
 import hashlib
 import secrets
+import calendar
+from datetime import datetime, timezone
 
 from fastapi import Cookie, HTTPException, Request, Response
 from backend.shared.config import Settings
 
 SESSION_COOKIE_NAME = "session_id"
-SESSION_COOKIE_MAX_AGE = 90 * 24 * 60 * 60
+
+
+def session_cookie_max_age(now: datetime | None = None) -> int:
+    now = now or datetime.now(timezone.utc)
+    year, month = divmod(now.year * 12 + now.month - 1 + 3, 12)
+    month += 1
+    expires = now.replace(year=year, month=month, day=min(now.day, calendar.monthrange(year, month)[1]))
+    return int((expires - now).total_seconds())
 
 
 def create_session_token() -> str:
@@ -22,11 +31,11 @@ def hash_session_token(token: str) -> str:
 
 
 def set_session_cookie(response: Response, token: str, settings: Settings) -> None:
-    """환경별 보안 옵션을 적용해 90일 세션 쿠키를 설정한다."""
+    """환경별 보안 옵션을 적용해 달력 기준 3개월 익명 사용자 쿠키를 설정한다."""
     response.set_cookie(
         key=SESSION_COOKIE_NAME,
         value=token,
-        max_age=SESSION_COOKIE_MAX_AGE,
+        max_age=session_cookie_max_age(),
         httponly=True,
         secure=settings.environment != "development",
         samesite="lax",
