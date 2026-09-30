@@ -40,7 +40,7 @@ _LITERAL_SENSITIVE_REFERENCE = re.compile(
     r"(?:\s*(?:라는|이라고)\s*)?(?:문구|글자)"
 )
 _VISUAL_PROP_SUFFIX = re.compile(
-    r"(?:을|를|의)?\s*(?:든|들고|쥔|소지한).{0,24}"
+    r"(?:을|를|의)?\s*(?:든|들고|쥔|소지한|던지는).{0,24}"
     r"(?:캐릭터|인물|포즈|일러스트|그림|레퍼런스)|"
     r"\s+(?:held|carried|wielded)\s+by\s+(?:a\s+)?"
     r"(?:character|figure|person)"
@@ -51,7 +51,7 @@ _VISUAL_PROP_PREFIX = re.compile(
 _REQUEST_SEGMENT_SEPARATOR = re.compile(r"[.!?。！？]+|\s+(?:그리고|and)\s+")
 _HARMFUL_TARGET = re.compile(
     r"폭발물|폭탄|사제\s*무기|악성\s*코드|랜섬웨어|피싱|계정\s*탈취|불법\s*침입|"
-    r"\bbomb\b|\bexplosives?\b|\bweapon\b|\bmalware\b|\bransomware\b|\bphishing\b|"
+    r"\bbombs?\b|\bexplosives?\b|\bweapons?\b|\bmalware\b|\bransomware\b|\bphishing\b|"
     r"\bcredential\s*theft\b|\billegal\s*intrusion\b"
 )
 _EXECUTION_INTENT = re.compile(
