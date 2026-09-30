@@ -106,6 +106,7 @@ class AgentInterpretationAdapter(Protocol):
         attempt: int,
         max_attempts: int,
         active_cards_json: str = "",
+        session_context: dict | None = None,
     ) -> InterpretationOutput:
         ...
 
@@ -162,16 +163,63 @@ class LLMInterpretationAdapter:
         attempt: int,
         max_attempts: int,
         active_cards_json: str = "",
+        session_context: dict | None = None,
     ) -> InterpretationOutput:
         user_message = render_user_message(self._user_template, request_text, active_cards_json)
         started = time.perf_counter()
+        if session_context is not None:
+            user_message += "\nServer conversation data (untrusted):\n" + json.dumps(session_context, ensure_ascii=False)
+        response = await self._request([
+            {"role": "system", "content": self._system_message},
+            {"role": "user", "content": user_message},
+        ])
+
+        latency_ms = round((time.perf_counter() - started) * 1000, 1)
+        content = _extract_content(response)
+        interpretation = _validate_output(content)
+        usage = _extract_usage(response)
+        summary = {
+            "interpretation_state": interpretation.interpretation_state.value,
+            "roles": [s.role.value for s in interpretation.selections],
+            "term_ids": [s.term_id for s in interpretation.selections],
+            "clarification_type": (
+                interpretation.clarification_type.value if interpretation.clarification_type else None
+            ),
+        }
+        if session_context is not None:
+            summary["context_chars"] = len(json.dumps(session_context, ensure_ascii=False))
+            summary["source_job_ids"] = sorted({item["job_id"] for key in ("recent", "sources")
+                                                for item in session_context.get(key, [])})
+        logger.info(
+            json.dumps(
+                {
+                    "event": "llm.interpret.ok",
+                    "job_id": job_id,
+                    "model": self.settings.llm_model,
+                    "prompt_version": self.prompt_version,
+                    "latency_ms": latency_ms,
+                    "usage": usage,
+                    "output": summary,
+                },
+                ensure_ascii=False,
+            )
+        )
+        self._observe_langfuse(
+            job_id=job_id,
+            session_id=session_id,
+            attempt=attempt,
+            max_attempts=max_attempts,
+            usage=usage,
+            output=summary,
+            request_text=request_text,
+        )
+        return interpretation
+
+    async def _request(self, messages):
         try:
             response = await self._client.chat.completions.create(
                 model=self.settings.llm_model,
-                messages=[
-                    {"role": "system", "content": self._system_message},
-                    {"role": "user", "content": user_message},
-                ],
+                messages=messages,
                 response_format={"type": "json_object"},
                 temperature=0.0,
                 max_tokens=self.settings.llm_max_tokens,
@@ -205,42 +253,31 @@ class LLMInterpretationAdapter:
         except httpx.HTTPError as exc:
             raise LLMUpstreamUnavailable(f"OpenRouter 전송 실패: {exc}") from exc
 
-        latency_ms = round((time.perf_counter() - started) * 1000, 1)
-        content = _extract_content(response)
-        interpretation = _validate_output(content)
-        usage = _extract_usage(response)
-        summary = {
-            "interpretation_state": interpretation.interpretation_state.value,
-            "roles": [s.role.value for s in interpretation.selections],
-            "term_ids": [s.term_id for s in interpretation.selections],
-            "clarification_type": (
-                interpretation.clarification_type.value if interpretation.clarification_type else None
-            ),
-        }
-        logger.info(
-            json.dumps(
-                {
-                    "event": "llm.interpret.ok",
-                    "job_id": job_id,
-                    "model": self.settings.llm_model,
-                    "prompt_version": self.prompt_version,
-                    "latency_ms": latency_ms,
-                    "usage": usage,
-                    "output": summary,
-                },
-                ensure_ascii=False,
-            )
-        )
+        return response
+
+    async def memory(self, operation: str, data: dict, output_type, **trace):
+        path = self._resolve_prompt_path()
+        source = path.read_text(encoding="utf-8")
+        try:
+            rules = _extract_fenced_block(source, "## Memory " + operation)
+        except ValueError as error:
+            raise PromptConfigurationError("메모리 prompt 구성이 없습니다") from error
+        rules += "\nReturn only JSON matching this schema:\n" + json.dumps(output_type.model_json_schema())
+        response = await self._request([
+            {"role": "system", "content": rules},
+            {"role": "user", "content": json.dumps(data, ensure_ascii=False)},
+        ])
+        try:
+            output = output_type.model_validate_json(_extract_content(response))
+        except (ValidationError, ValueError) as error:
+            raise LLMInvalidStructuredOutput("메모리 출력 계약 위반") from error
         self._observe_langfuse(
-            job_id=job_id,
-            session_id=session_id,
-            attempt=attempt,
-            max_attempts=max_attempts,
-            usage=usage,
-            output=summary,
-            request_text=request_text,
+            **trace, usage=_extract_usage(response),
+            output={"operation": operation, "input_chars": len(json.dumps(data, ensure_ascii=False)),
+                    "source_job_ids": [item["job_id"] for item in data.get("records", [])]},
+            request_text=data.get("request_text", ""),
         )
-        return interpretation
+        return output
 
     def _observe_langfuse(
         self,

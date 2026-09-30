@@ -44,3 +44,7 @@ adapter 입력은 사용자 원문과 활성 TERM_CARD 후보 경계다. 현재 
 - GIVEN: OpenRouter가 이미 지난 HTTP-date `Retry-After`를 반환, WHEN: adapter가 delay를 변환, THEN: `retry_after_ms=null`을 worker에 전달해 attempt 기본 backoff를 사용하게 한다.
 - GIVEN: LLM 호출이 timeout, 429, HTTP 5xx, 미완료 응답 또는 Pydantic 검증 실패로 끝남, WHEN: adapter가 예외를 worker에 전달, THEN: 각각 `timeout`, `rate_limited`, `upstream_5xx`, `incomplete_or_unclassified_upstream`, `pydantic_validation_error`를 제공한다.
 - GIVEN: 정상 구조화 출력, WHEN: resolver가 처리, THEN: adapter는 최종 상태나 검색 URL을 결정하지 않는다.
+
+## 대화 기억 변경
+
+대화 기억 확장: interpret는 서버 session_context를 받는다. memory(classify/summarize/answer)는 같은 client/model/timeout/오류 매핑을 재사용하고 별도 구조화 출력 모델을 검증한다. 요청 재시도는 기존 worker attempt만 담당한다. 원격 Prompt/production label은 자동 변경하지 않는다.
