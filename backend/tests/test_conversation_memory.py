@@ -170,6 +170,26 @@ def test_worker_remembers_summarizes_and_recalls(snapshot_factory, card_factory)
     asyncio.run(database_case(case))
 
 
+def test_worker_bounds_summary_with_long_history(snapshot_factory, card_factory):
+    async def case(pool):
+        session = await SessionRepository(pool).create_session("owner")
+        await pool.execute("""INSERT INTO jobs(job_id,session_id,request_text,request_text_hash,
+            idempotency_key_hash,idempotency_expires_at,status,final_payload_json,created_at)
+            SELECT gen_random_uuid(),$1::uuid,'서 있는 자세',md5(g::text),md5(g::text),
+            now()+interval '10 minutes','completed','{"agent_status":"success"}'::jsonb,
+            now()-interval '1 day'+g*interval '1 second' FROM generate_series(1,110) g""", session)
+        jobs, adapter = JobRepository(pool), MemoryAdapter()
+        worker = agent_worker.AgentJobWorker(pool, snapshot_factory([
+            card_factory("pose_standing", label_ko="서 있는 자세")]), adapter=adapter)
+        new, _ = await jobs.submit(session_id=session, request_text="서 있는 자세", idempotency_key=str(uuid.uuid4()))
+        assert await worker.run_once()
+        assert adapter.summary_calls == 2
+        assert adapter.contexts[0]["summary_incomplete"]
+        assert (await jobs.get(session_id=session, job_id=new.job_id)).job_status == "completed"
+
+    asyncio.run(database_case(case))
+
+
 @pytest.mark.parametrize("bad", ["quote", "inactive", "duplicate", "foreign"])
 def test_invalid_context_cannot_change_memory(snapshot_factory, card_factory, bad):
     from backend.services import conversation_context

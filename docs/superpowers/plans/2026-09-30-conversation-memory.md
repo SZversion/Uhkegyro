@@ -21,7 +21,7 @@ Git 기준: df92fad04ba0de16eae6e936ffcdb2649976b652. KHS25~KHS30 브랜치에 �
 - 최종 독립 리뷰: 혼합 요청의 회상 실패 시 새 요청이 생략되는 문제와 카드 라벨·질문의 키워드 검색 누락을 지적했다. 각 재현 테스트의 실패를 확인한 뒤 수정했다. 만료 비교 방향 문서도 바로잡았다.
 - 변경으로 SQL이 길어져 기존 잠금 테스트의 pg_stat_activity query 표시가 1KB에서 잘렸다. 실제 advisory 대기를 확인하고 테스트 감지 조건을 쿼리 앞부분으로 변경했다.
 - 최신 main 기준으로 단계별 전체 backend 테스트를 다시 실행했고 마지막 단계는 289 passed였다.
-- 실제 LLM 호출은 하지 않았다. 해석·요약·회상 의미 정확성은 evals/memory.jsonl로 별도 평가해야 하며 자동 테스트 결과를 모델 품질 점수로 취급하지 않는다.
+- 실제 LLM 평가는 시도했으나 upstream 429로 MEM-01~08 결과를 얻지 못했다. 경과는 evals/memory-live-model-2026-09-30.md에 기록했다. 자동 테스트 결과를 모델 품질 점수로 취급하지 않는다.
 
 ## 운영 적용 조건
 Neon `dev/conversation-memory-khs25` 브랜치에 003 migration을 적용해 기존 세션 1개와 job 1개 보존을 확인했다. 부모 `production` DB에는 적용하지 않았다. 운영에서는 저장 구조가 바뀌므로 API와 worker를 중지한 뒤 DB 백업, migration, 새 코드/Prompt 배포, 재기동 순서로 적용한다. 이전 코드로 돌아갈 때는 이전 스키마와 함께 복구해야 한다. 앱 startup은 migration을 자동 수행하지 않는다.

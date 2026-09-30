@@ -147,7 +147,7 @@ def test_worker_runs_claimed_job_through_assembler(monkeypatch, snapshot_factory
     assert jobs.writes[-1][1].agent_status is AgentStatus.SUCCESS
     assert adapter.calls[0][1] == {
         "session_context": {"constraints": {}, "pending_question": None, "summary": "",
-                            "summary_sources": [], "recent": [], "sources": []},
+                            "summary_sources": [], "recent": [], "sources": [], "summary_incomplete": False},
         "job_id": "job-1",
         "session_id": "session-1",
         "attempt": 2,
