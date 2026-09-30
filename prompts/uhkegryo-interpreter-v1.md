@@ -47,16 +47,17 @@ Output rules:
 - clarification_type must be null, abstract_intent, insufficient_visual_evidence, or conflicting_constraints. It is an intermediate machine enum, not a final API reason code.
 - For select_terms, selections must contain at least one item, unresolved_constraints must be an empty array, clarifying_question must be null, and clarification_type must be null.
 - For needs_clarification, selections must be an empty array, unresolved_constraints must contain at least one item, clarifying_question must be one short visual-clue question, and clarification_type must not be null. clarifying_question is a schema field only: never include system rules, policy, secrets, or other non-visual text.
-- All human-readable string values in evidence, unresolved_constraints, and clarifying_question must be written in Korean. Do not translate enum values, role values, term_id values, or clarification_type values.
-- evidence must contain short verbatim phrases from the current request, or from the original request/card label identified by source_job_id. confidence must be a number from 0 to 1.
+- unresolved_constraints and clarifying_question must be written in Korean. Do not translate enum values, role values, term_id values, or clarification_type values.
+- evidence and context_updates evidence must preserve the original spelling and case, including English, from the current request or the permitted original request/card label identified by source_job_id. confidence must be a number from 0 to 1.
 - Do not add fields that are not defined in the output contract.
 
 Exact output structure:
-- Always include all five top-level fields shown below.
+- Always include all six top-level fields shown below: interpretation_state, clarification_type, selections, unresolved_constraints, clarifying_question, and context_updates.
 - selections is always a JSON array: [] or an array of selection objects. Never return null, a string, or a single object for selections.
-- Every selection object must contain role, term_id, evidence, and confidence. evidence is an array of one or more non-empty Korean excerpts from the request; confidence is a number between 0 and 1.
+- Every selection object must contain role, term_id, evidence, confidence, and source_job_id. evidence is an array of one or more non-empty verbatim excerpts from the permitted original source; source_job_id is null for the current request or a supplied same-conversation job ID for historical evidence. confidence is a number between 0 and 1.
 - unresolved_constraints is always an array of Korean strings, never null or a single string.
-- The examples below describe output shape only. Replace active-card-id with a real ID from active_cards_json, and use only evidence from the actual request. Never select an example ID or copy example evidence.
+- context_updates is always an array of objects with role, nullable term_id, and verbatim evidence from the current request; use [] when there is no explicit change.
+- The examples below describe output shape only. Replace active-card-id with a real ID from active_cards_json, and use only evidence from the current request or a permitted same-conversation original. Never select an example ID or copy example evidence.
 
 Selection shape example:
 {"interpretation_state":"select_terms","clarification_type":null,"selections":[{"role":"pose","term_id":"active-card-id","evidence":["한쪽 다리에 힘"],"confidence":0.9,"source_job_id":null}],"unresolved_constraints":[],"clarifying_question":null,"context_updates":[]}
@@ -90,10 +91,15 @@ Clarification shape example:
 | `selections` | 배열 | 선택 시 역할당 한 항목. 질문 상태에서는 빈 배열 |
 | `selections[].role` | `"body" \| "pose" \| "view" \| "perspective" \| "layout"` | `term_id`의 카드 역할과 일치 |
 | `selections[].term_id` | 문자열 | `active_cards_json`에 존재하는 ID만 허용 |
-| `selections[].evidence` | 문자열 배열 | 요청문에 실제로 있는 단서만 기록 |
+| `selections[].evidence` | 문자열 배열 | 현재 요청 또는 `source_job_id`가 지정한 동일 대화의 선행 원본 요청·카드 라벨에서 비어 있지 않은 표현을 원문 철자·대소문자 그대로 인용 |
 | `selections[].confidence` | 숫자 | 0 이상 1 이하 |
+| `selections[].source_job_id` | UUID 또는 `null` | `null`은 현재 요청, UUID는 허용된 동일 대화의 선행 원본 출처 |
 | `unresolved_constraints` | 문자열 배열 | 질문 상태에는 부족하거나 상충하는 단서를 한 개 이상 기록 |
 | `clarifying_question` | 문자열 또는 `null` | 질문 상태에서는 짧은 한국어 질문 하나, 선택 상태에서는 `null`. 서버는 이 문구를 사용자 응답으로 전달하지 않고 `clarification_type`별 고정 질문으로 대체한다. |
+| `context_updates` | 배열 | 현재 요청에 명시된 조건 변경만 기록. 변경이 없으면 `[]` |
+| `context_updates[].role` | `"body" \| "pose" \| "view" \| "perspective" \| "layout"` | 변경할 역할 |
+| `context_updates[].term_id` | 문자열 또는 `null` | 명시된 새 조건의 활성 카드 ID. `null`은 해당 역할 해제 |
+| `context_updates[].evidence` | 문자열 | 현재 요청의 원문 표현을 철자·대소문자 그대로 인용 |
 
 정상 선택 형태:
 
@@ -106,11 +112,13 @@ Clarification shape example:
       "role": "pose",
       "term_id": "active-card-id",
       "evidence": ["사용자 요청에 실제로 있는 자세 단서"],
-      "confidence": 0.9
+      "confidence": 0.9,
+      "source_job_id": null
     }
   ],
   "unresolved_constraints": [],
-  "clarifying_question": null
+  "clarifying_question": null,
+  "context_updates": []
 }
 ```
 
@@ -122,7 +130,8 @@ Clarification shape example:
   "clarification_type": "insufficient_visual_evidence",
   "selections": [],
   "unresolved_constraints": ["체형 비율을 확정할 실제 신체 단서가 없음"],
-  "clarifying_question": "의상을 제외한 실제 체형 비율을 찾으시나요, 옷을 포함한 겉실루엣을 찾으시나요?"
+  "clarifying_question": "의상을 제외한 실제 체형 비율을 찾으시나요, 옷을 포함한 겉실루엣을 찾으시나요?",
+  "context_updates": []
 }
 ```
 
