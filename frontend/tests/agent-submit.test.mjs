@@ -61,3 +61,19 @@ test("AC-03: 요청 중 중복 제출을 막고 서버의 사용자 메시지만
   assert.deepEqual(await first, { ok: false, error: "입력을 확인해 주세요." });
   assert.equal(controller.isPending(), false);
 });
+
+test("작업 20 AC-02: 같은 원문 재검색은 새 Idempotency-Key를 사용한다", async () => {
+  const keys = [];
+  let sequence = 0;
+  const options = {
+    createId: () => `550e8400-e29b-41d4-a716-${String(++sequence).padStart(12, "0")}`,
+    fetchImpl: async (_url, request) => {
+      keys.push(request.headers["Idempotency-Key"]);
+      assert.deepEqual(JSON.parse(request.body), { request_text: "앉은 캐릭터" });
+      return { status: 202, json: async () => ({ job_id: `job-${sequence}`, poll_after_ms: 1000 }) };
+    },
+  };
+  await submitAgentRequest("앉은 캐릭터", options);
+  await submitAgentRequest("앉은 캐릭터", options);
+  assert.equal(new Set(keys).size, 2);
+});
