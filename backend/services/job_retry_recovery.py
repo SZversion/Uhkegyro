@@ -31,6 +31,16 @@ def retry_delay_ms(attempt: int, error: Exception) -> int:
     return 1_000 if attempt == 1 else 2_000
 
 
+def should_retry(attempt: int, max_attempts: int, error: Exception) -> bool:
+    """Use the same retry decision for persistence and trace outcomes."""
+    return (
+        attempt < max_attempts
+        and isinstance(error, LLMError)
+        and error.retryable
+        and error.failure_code in _RETRYABLE_FAILURE_CODES
+    )
+
+
 def _failure(error: Exception) -> Failure:
     code = (
         error.failure_code
@@ -57,13 +67,8 @@ class JobRetryRecovery:
         if attempt < 1 or max_attempts < 1 or attempt > max_attempts:
             raise ValueError("attempt must be between 1 and max_attempts")
 
-        retryable = (
-            isinstance(error, LLMError)
-            and error.retryable
-            and error.failure_code in _RETRYABLE_FAILURE_CODES
-        )
         async with self._pool.acquire() as connection:
-            if retryable and attempt < max_attempts:
+            if should_retry(attempt, max_attempts, error):
                 row = await connection.fetchrow(
                     """
                     UPDATE jobs
