@@ -153,7 +153,7 @@ async def _load_html_with_playwright(search_url: str, timeout_ms: int) -> str:
         browser = await playwright.chromium.launch()
         try:
             page = await browser.new_page()
-            return await _load_search_result_html(page, search_url, timeout_ms)
+            return await _load_public_search_html(page, search_url, timeout_ms)
         finally:
             await browser.close()
 
@@ -193,6 +193,12 @@ async def _load_html_from_cdp_browser(
         if page is not None:
             await page.close()
         await browser.close()
+
+
+async def _load_public_search_html(page: Any, search_url: str, timeout_ms: int) -> str:
+    """공개 Chromium의 현재 HTML을 읽어 빈 결과를 장애로 바꾸지 않는다."""
+    await page.goto(search_url, wait_until="domcontentloaded", timeout=timeout_ms)
+    return await page.content()
 
 
 async def _load_search_result_html(page: Any, search_url: str, timeout_ms: int) -> str:

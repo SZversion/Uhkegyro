@@ -21,7 +21,9 @@
 
 ## 구현 반영
 
-provider의 렌더링 대기와 HTML 파서는 아래 선택자를 사용한다.
+CDP 진단 경로의 렌더링 대기와 HTML 파서는 아래 선택자를 사용한다. 공개 Chromium
+경로는 결과가 없는 검색을 장애로 분류하지 않기 위해 이 선택자를 기다리지 않고 현재
+HTML을 parser에 전달한다.
 
 ```css
 [data-test-id="pin"][data-test-pin-id]

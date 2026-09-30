@@ -19,7 +19,9 @@ Out of scope: 서버 배포, CDP endpoint의 외부 공개, 로그인 자동화,
 
 ## What
 
-1. `cdp_endpoint`가 없으면 기존 공개 Chromium loader를 사용한다.
+1. `cdp_endpoint`가 없으면 기존 공개 Chromium loader를 사용해 `domcontentloaded` 뒤
+   현재 HTML을 바로 읽는다. 이 경로는 Pin 선택자를 기다리지 않아, Pin이 없는 HTML도
+   parser를 거쳐 `PIN_RESULTS_EMPTY`로 분류할 수 있다.
 2. `cdp_endpoint`가 있으면 CDP의 기본 browser context에 임시 탭을 열고 검색 URL로
    이동한다.
 3. `[data-test-id="pin"][data-test-pin-id]`가 붙을 때까지 기다린 뒤 HTML을 기존
@@ -43,7 +45,7 @@ Out of scope: 서버 배포, CDP endpoint의 외부 공개, 로그인 자동화,
 
 - GIVEN: `cdp_endpoint`가 없다.
 - WHEN: provider가 검색한다.
-- THEN: 기존 공개 Chromium loader를 사용한다.
+- THEN: 기존 공개 Chromium loader가 Pin 선택자를 기다리지 않고 현재 HTML을 반환한다.
 
 **AC-02 · CDP 경로**
 

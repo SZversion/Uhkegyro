@@ -89,6 +89,35 @@ def test_load_search_result_html_waits_for_rendered_pin_selector():
     ]
 
 
+def test_load_public_search_html_returns_content_without_waiting_for_pin_selector():
+    class FakePage:
+        def __init__(self) -> None:
+            self.calls: list[tuple] = []
+
+        async def goto(self, url: str, **kwargs: object) -> None:
+            self.calls.append(("goto", url, kwargs))
+
+        async def content(self) -> str:
+            self.calls.append(("content",))
+            return "<main>no matching Pins</main>"
+
+    page = FakePage()
+
+    html = asyncio.run(pinterest_public_search._load_public_search_html(
+        page,
+        "https://www.pinterest.com/search/pins/?q=contrapposto",
+        15_000,
+    ))
+
+    assert html == "<main>no matching Pins</main>"
+    assert page.calls == [
+        ("goto", "https://www.pinterest.com/search/pins/?q=contrapposto", {
+            "wait_until": "domcontentloaded", "timeout": 15_000,
+        }),
+        ("content",),
+    ]
+
+
 def test_provider_uses_cdp_loader_when_endpoint_is_given(monkeypatch):
     received: list[tuple[str, int, str]] = []
 
