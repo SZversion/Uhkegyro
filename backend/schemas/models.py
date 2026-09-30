@@ -5,7 +5,9 @@
 """
 
 from typing import Annotated, Literal
+from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from backend.schemas.memory import ContextUpdate, MemorySource, NO_RECORDS, TOO_MANY
 
 from backend.schemas.enums import (
     AgentStatus,
@@ -25,11 +27,12 @@ PROGRESS_POLL_AFTER_MS = 1000
 
 
 class AgentRequest(BaseModel):
-    """POST /api/agent 요청 — request_text 1~500자만 허용."""
+    """POST /api/agent 요청 — request_text 1~500자와 선택적 대화 UUID를 허용."""
 
     model_config = ConfigDict(extra="forbid")
 
     request_text: Annotated[str, Field(min_length=1, max_length=500)]
+    session_id: UUID | None = None
 
     @model_validator(mode="after")
     def _reject_whitespace_only(self) -> "AgentRequest":
@@ -137,10 +140,16 @@ class AgentResult(BaseModel):
     reference_plan: ReferencePlan | None = None
     clarifying_question: str | None = None
     user_message: str = ""
+    memory_answer: str | None = Field(default=None, min_length=1, max_length=2000)
+    sources: list[MemorySource] = Field(default_factory=list, max_length=20)
 
     @model_validator(mode="after")
     def _validate_state_rules(self) -> "AgentResult":
         codes = set(self.reason_codes)
+        if self.memory_answer and not self.sources and self.memory_answer not in (NO_RECORDS, TOO_MANY):
+            raise ValueError("a factual memory answer requires original sources")
+        if self.sources and not self.memory_answer:
+            raise ValueError("sources require a memory answer")
         if self.agent_status in (AgentStatus.SUCCESS, AgentStatus.PARTIAL_RESULT):
             if self.reference_plan is None:
                 raise ValueError("success·partial_result는 reference_plan이 필수다")
@@ -170,6 +179,9 @@ class AgentResult(BaseModel):
                 )
             if not codes:
                 raise ValueError("needs_clarification은 reason_codes가 최소 하나 있어야 한다")
+        elif self.agent_status is AgentStatus.MEMORY_ANSWER:
+            if not self.memory_answer or self.reference_plan or self.reason_codes or self.clarifying_question:
+                raise ValueError("memory_answer requires text and forbids reference plan")
         else:  # OUT_OF_SCOPE, UNSAFE_INPUT
             if self.reference_plan is not None:
                 raise ValueError(f"{self.agent_status}는 reference_plan=null이어야 한다")
@@ -268,6 +280,7 @@ class InterpretationSelection(BaseModel):
     term_id: str
     evidence: Annotated[list[str], Field(min_length=1)]
     confidence: Annotated[float, Field(ge=0.0, le=1.0)]
+    source_job_id: UUID | None = None
 
     @model_validator(mode="after")
     def _validate_evidence(self) -> "InterpretationSelection":
@@ -296,6 +309,7 @@ class InterpretationOutput(BaseModel):
     unresolved_constraints: list[str] = Field(default_factory=list)
     clarifying_question: str | None = None
     clarification_type: ClarificationType | None = None
+    context_updates: list[ContextUpdate] = Field(default_factory=list, max_length=5)
 
     @model_validator(mode="after")
     def _validate_unresolved_constraints(self) -> "InterpretationOutput":
