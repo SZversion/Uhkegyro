@@ -39,7 +39,7 @@ LLM·PinterestCrawlerProvider·worker의 회복과 최종 실패 경계는 [api-
 
 ## 4. API·프론트 경계
 
-정확한 endpoint, Pydantic 모델, 상태 enum, failure code는 [api-contract.md](./specs/api-contract.md)가 단일 기준이다. UI는 Next.js이며 `NEXT_PUBLIC_API_BASE_URL=/api`, `credentials:"include"`, 활동마다 90일로 갱신되는 HttpOnly same-origin 세션 쿠키를 사용한다. 브라우저의 `/api/*` 요청은 Next.js rewrite를 거쳐 내부 FastAPI로 전달하며, FastAPI origin 직접 호출·cross-origin credential cookie·Vite proxy는 사용하지 않는다. 요청·응답 변환이 필요해질 때만 Next.js Route Handler BFF를 추가한다. `/mcp`는 브라우저가 직접 호출하지 않는 Streamable HTTP 도구 endpoint이며, 계약은 [mcp-contract.md](./specs/mcp-contract.md)가 단일 기준이다. `pinit.js`, 사용자 retry endpoint는 사용하지 않는다.
+정확한 endpoint, Pydantic 모델, 상태 enum, failure code는 [api-contract.md](./specs/api-contract.md)가 단일 기준이다. UI는 Next.js이며 `NEXT_PUBLIC_API_BASE_URL=/api`, `credentials:"include"`, 활동마다 달력 기준 3개월로 갱신되는 HttpOnly same-origin 세션 쿠키를 사용한다. 브라우저의 `/api/*` 요청은 Next.js rewrite를 거쳐 내부 FastAPI로 전달하며, FastAPI origin 직접 호출·cross-origin credential cookie·Vite proxy는 사용하지 않는다. 요청·응답 변환이 필요해질 때만 Next.js Route Handler BFF를 추가한다. `/mcp`는 브라우저가 직접 호출하지 않는 Streamable HTTP 도구 endpoint이며, 계약은 [mcp-contract.md](./specs/mcp-contract.md)가 단일 기준이다. `pinit.js`, 사용자 retry endpoint는 사용하지 않는다.
 
 ## 5. 데이터·보안·관측
 
@@ -51,3 +51,7 @@ LLM·PinterestCrawlerProvider·worker의 회복과 최종 실패 경계는 [api-
 - 활성 카드 외 term ID·역할 불일치·자유 검색어 거부
 - 자동 재시도, 검색 부분 결과, 최종 failure code, 질문 job을 계약 평가로 검증
 - 삭제된 문서와 링크의 잔존 참조를 0건으로 검증
+
+## 대화별 기억
+
+쿠키 소유자 anonymous_owners 아래 여러 sessions를 두고 jobs를 원본 이력으로 재사용한다. 서버는 대화 소유권·만료를 검사한 뒤 최근 6개 기록, 별도 현재 조건과 미해결 질문, 최대 2,000자 요약을 구성한다. 회상은 같은 대화의 원본을 PostgreSQL에서 조회하며 벡터 DB를 사용하지 않는다. job 완료와 기억 갱신은 한 transaction이고 stale attempt는 갱신하지 않는다. 대화 목록·polling은 대화 만료를 연장하지 않는다. 각 API와 동작의 기준은 conversation-sessions/context/summary/recall Spec이다.

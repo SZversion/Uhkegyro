@@ -27,11 +27,12 @@ PROGRESS_POLL_AFTER_MS = 1000
 
 
 class AgentRequest(BaseModel):
-    """POST /api/agent 요청 — request_text 1~500자."""
+    """POST /api/agent 요청 — request_text 1~500자와 선택적 대화 UUID를 허용."""
 
     model_config = ConfigDict(extra="forbid")
 
     request_text: Annotated[str, Field(min_length=1, max_length=500)]
+    session_id: UUID | None = None
 
     @model_validator(mode="after")
     def _reject_whitespace_only(self) -> "AgentRequest":

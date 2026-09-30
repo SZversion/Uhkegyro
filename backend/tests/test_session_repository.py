@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import pytest
+import uuid
+from contextlib import asynccontextmanager
 
 from backend.services.session_repository import SessionRepository
 from backend.shared.auth import hash_session_token
@@ -13,11 +15,25 @@ class FakePool:
         self.error = error
         self.calls = []
 
+    @asynccontextmanager
+    async def acquire(self):
+        yield self
+
+    @asynccontextmanager
+    async def transaction(self):
+        yield self
+
+    async def fetchval(self, query, *args):
+        self.calls.append((query, args))
+        if self.error:
+            raise self.error
+        return self.row["session_id"] if self.row else None
+
     async def fetchrow(self, query, *args):
         self.calls.append((query, args))
         if self.error is not None:
             raise self.error
-        return self.row
+        return {"owner_id": str(uuid.uuid4()), "default_session_id": None}
 
     async def execute(self, query, *args):
         self.calls.append((query, args))
@@ -32,16 +48,17 @@ def test_create_session_stores_only_hash_and_returns_uuid():
 
     result = _run(repository.create_session("opaque-token"))
 
-    assert result == "0d6fe2df-55e4-4ea2-a8fc-44b133a19f3d"
+    assert uuid.UUID(result)
+    assert result == pool.calls[1][1][0]
     assert result != "opaque-token"
     query, args = pool.calls[0]
-    assert "INSERT INTO sessions" in query
+    assert "INSERT INTO anonymous_owners" in query
     assert args[1] == hash_session_token("opaque-token")
     assert args[0] != "opaque-token"
     assert "opaque-token" not in args
 
 
-def test_resolve_session_hashes_token_and_updates_activity():
+def test_resolve_session_hashes_token_without_touching_activity():
     pool = FakePool({"session_id": "session-uuid"})
     repository = SessionRepository(pool)
 
@@ -49,7 +66,8 @@ def test_resolve_session_hashes_token_and_updates_activity():
 
     query, args = pool.calls[0]
     assert result == "session-uuid"
-    assert "SET last_activity_at = now()" in query
+    assert "UPDATE" not in query
+    assert "interval '3 months' > now()" in query
     assert args == (hash_session_token("opaque-token"),)
 
 
@@ -64,7 +82,7 @@ def test_delete_expired_sessions_returns_deleted_count():
 
     assert _run(SessionRepository(pool).delete_expired_sessions()) == 3
     query, args = pool.calls[0]
-    assert "last_activity_at < now() - interval '3 months'" in query
+    assert "last_activity_at + interval '3 months' <= now()" in query
     assert args == ()
 
 

@@ -18,6 +18,7 @@ from backend.services.llm import LLMTimeout
 from backend.services.response_assembler import RoleSearchOutcome
 from backend.services import agent_worker
 from backend.services.agent_worker import AgentJobWorker
+from backend.schemas.memory import RecallQuery
 
 
 JOB = {
@@ -87,6 +88,9 @@ class FakeAdapter:
             raise self.error
         return self.output
 
+    async def memory(self, *args, **kwargs):
+        return RecallQuery(mode="none")
+
 
 class FakePinterestProvider:
     def __init__(self, outcomes):
@@ -107,6 +111,24 @@ class BlockingAdapter:
         self.started.set()
         await asyncio.Future()
 
+    async def memory(self, *args, **kwargs):
+        return RecallQuery(mode="none")
+
+
+class EmptyMemory:
+    def __init__(self, jobs):
+        self.jobs = jobs
+
+    async def load(self, job):
+        return {"state": {}, "recent": [], "sources": [], "oldest_recent": None}
+
+    async def older(self, job, context):
+        return []
+
+    async def complete(self, job, result, state):
+        await self.jobs.update_status(job_id=job["job_id"], attempt=job["attempt"],
+                                      status=JobStatus.COMPLETED, result=result)
+
 
 def _run(coro):
     return asyncio.run(coro)
@@ -118,6 +140,7 @@ def _worker(
 ):
     monkeypatch.setattr(agent_worker, "JobRepository", lambda _pool: jobs)
     monkeypatch.setattr(agent_worker, "JobRetryRecovery", lambda _pool: recovery)
+    monkeypatch.setattr(agent_worker, "ConversationMemory", lambda _pool: EmptyMemory(jobs))
     return AgentJobWorker(
         object(), snapshot, adapter=adapter, heartbeat_interval=heartbeat_interval,
         pinterest_provider=pinterest_provider,
@@ -138,6 +161,8 @@ def test_worker_runs_claimed_job_through_assembler(monkeypatch, snapshot_factory
     ]
     assert jobs.writes[-1][1].agent_status is AgentStatus.SUCCESS
     assert adapter.calls[0][1] == {
+        "session_context": {"constraints": {}, "pending_question": None, "summary": "",
+                            "summary_sources": [], "recent": [], "sources": [], "summary_incomplete": False},
         "job_id": "job-1",
         "session_id": "session-1",
         "attempt": 2,
