@@ -53,7 +53,9 @@ def test_retry_and_lease_recovery_follow_postgres_contract():
                 await migrate(connection)
                 session_id = str(uuid.uuid4())
                 await connection.execute(
-                    "INSERT INTO sessions (session_id, session_token_hash) VALUES ($1::uuid, $2)",
+                    """WITH owner AS (INSERT INTO anonymous_owners(owner_id, session_token_hash)
+                       VALUES ($1::uuid, $2) RETURNING owner_id)
+                       INSERT INTO sessions(session_id, owner_id) SELECT owner_id,owner_id FROM owner""",
                     session_id,
                     uuid.uuid4().hex,
                 )
@@ -197,6 +199,10 @@ def test_retry_and_lease_recovery_follow_postgres_contract():
             release = asyncio.Event()
 
             class SlowAdapter:
+                async def memory(self, *args, **kwargs):
+                    from backend.schemas.memory import RecallQuery
+                    return RecallQuery(mode="none")
+
                 async def interpret(self, request_text, **kwargs):
                     started.set()
                     await release.wait()

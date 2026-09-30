@@ -9,7 +9,7 @@ from typing import Any
 from backend.schemas import AgentResult, Failure, JobEnvelope
 from backend.schemas.enums import JobStatus
 from backend.schemas.models import PROGRESS_POLL_AFTER_MS, RETRY_COUNT_MAX
-from backend.shared.auth import hash_session_token
+from backend.services.session_repository import SessionRepository
 
 IDEMPOTENCY_TTL_SECONDS = 10 * 60
 
@@ -33,7 +33,7 @@ class StaleJobAttempt(InvalidJobTransition):
 _ALLOWED_PREVIOUS_STATUSES = {
     JobStatus.VALIDATING: [JobStatus.RUNNING.value],
     JobStatus.SEARCHING: [JobStatus.VALIDATING.value],
-    JobStatus.RENDERING: [JobStatus.SEARCHING.value],
+    JobStatus.RENDERING: [JobStatus.SEARCHING.value, JobStatus.VALIDATING.value],
     JobStatus.COMPLETED: [JobStatus.RENDERING.value],
     JobStatus.FAILED: [
         JobStatus.RUNNING.value,
@@ -70,6 +70,8 @@ class JobRepository:
                         SELECT queued.job_id
                         FROM jobs AS queued
                         WHERE queued.status = 'queued'
+                          AND EXISTS (SELECT 1 FROM sessions s WHERE s.session_id=queued.session_id
+                                      AND s.last_activity_at + interval '3 months' > now())
                           AND queued.attempt < queued.max_attempts
                           AND (queued.next_retry_at IS NULL OR queued.next_retry_at <= now())
                           AND NOT EXISTS (
@@ -131,17 +133,9 @@ class JobRepository:
         """Create a session and its first job atomically."""
         if not session_token:
             raise ValueError("session_token must not be empty")
-        session_id = str(uuid.uuid4())
         async with self._pool.acquire() as connection:
             async with connection.transaction():
-                await connection.execute(
-                    """
-                    INSERT INTO sessions (session_id, session_token_hash)
-                    VALUES ($1::uuid, $2)
-                    """,
-                    session_id,
-                    hash_session_token(session_token),
-                )
+                session_id = await SessionRepository.ensure_session(connection, session_token)
                 return await self._submit(
                     connection,
                     session_id=session_id,
@@ -163,6 +157,13 @@ class JobRepository:
             "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
             session_id,
         )
+        live = await connection.fetchval(
+            """UPDATE sessions SET last_activity_at=now()
+               WHERE session_id=$1::uuid AND last_activity_at + interval '3 months' > now()
+               RETURNING session_id""", session_id,
+        )
+        if live is None:
+            raise JobNotFound
         existing = await connection.fetchrow(
             """
             SELECT * FROM jobs
@@ -271,6 +272,15 @@ class JobRepository:
                 raise StaleJobAttempt
             raise InvalidJobTransition
         return _to_envelope(row)
+
+    async def history(self, session_id: str, limit=20, offset=0) -> list[dict]:
+        rows = await self._pool.fetch(
+            """SELECT j.* FROM jobs j JOIN sessions s USING(session_id)
+               WHERE j.session_id=$1::uuid AND s.last_activity_at + interval '3 months' > now()
+               ORDER BY j.created_at,j.job_id LIMIT $2 OFFSET $3""", session_id, limit, offset,
+        )
+        return [dict(_to_envelope(row).model_dump(mode="json"),
+                     request_text=row["request_text"], created_at=row["created_at"]) for row in rows]
 
 
 def _dump(value: AgentResult | Failure) -> str:
