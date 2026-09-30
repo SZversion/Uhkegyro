@@ -5,8 +5,10 @@ import asyncio
 import logging
 from typing import Any, Mapping
 
-from backend.schemas.enums import JobStatus, ReasonCode, Role
+from backend.schemas.enums import AgentStatus, JobStatus, ReasonCode, Role
+from backend.schemas.models import AgentResult
 from backend.services.catalog_repository import CatalogSnapshot
+from backend.services.input_safety import is_unsafe_input
 from backend.services.job_repository import JobRepository, StaleJobAttempt
 from backend.services.job_retry_recovery import JobRetryRecovery
 from backend.services.job_trace import AttemptTrace, JobTracer
@@ -74,6 +76,24 @@ class AgentJobWorker:
                 if not await self._update(job_id, attempt, JobStatus.VALIDATING):
                     trace.stale()
                     return
+                if is_unsafe_input(str(job["request_text"])):
+                    result = AgentResult(
+                        agent_status=AgentStatus.UNSAFE_INPUT,
+                        reason_codes=[ReasonCode.UNSAFE_INPUT],
+                        reference_plan=None,
+                        clarifying_question=None,
+                        user_message=(
+                            "요청하신 내용은 지원할 수 없습니다. "
+                            "캐릭터의 체형·포즈·시점을 텍스트로 설명해 주세요."
+                        ),
+                    )
+                    if await self._update(
+                        job_id, attempt, JobStatus.COMPLETED, result=result
+                    ):
+                        trace.completed(result)
+                    else:
+                        trace.stale()
+                    return
                 if self._adapter is None:
                     self._adapter = LLMInterpretationAdapter()
                 interpretation = await self._adapter.interpret(
@@ -84,7 +104,9 @@ class AgentJobWorker:
                     max_attempts=job["max_attempts"],
                     active_cards_json=format_active_cards_json(self._snapshot),
                 )
-                resolution = resolve(interpretation, self._snapshot)
+                resolution = resolve(
+                    interpretation, self._snapshot, request_text=str(job["request_text"])
+                )
                 if resolution.status == STATUS_ALL_INVALID:
                     raise LLMInvalidStructuredOutput("resolver가 모든 선택 후보를 거부했다")
         except StaleJobAttempt:

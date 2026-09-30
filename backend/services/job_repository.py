@@ -7,7 +7,7 @@ import uuid
 from typing import Any
 
 from backend.schemas import AgentResult, Failure, JobEnvelope
-from backend.schemas.enums import JobStatus
+from backend.schemas.enums import AgentStatus, JobStatus
 from backend.schemas.models import PROGRESS_POLL_AFTER_MS, RETRY_COUNT_MAX
 from backend.shared.auth import hash_session_token
 
@@ -235,6 +235,8 @@ class JobRepository:
             raise ValueError("failed job requires failure and forbids result")
         if not terminal and (result is not None or failure is not None):
             raise ValueError("non-terminal job cannot have result or failure")
+        if status is JobStatus.COMPLETED and result.agent_status is AgentStatus.UNSAFE_INPUT:
+            allowed_previous = [*allowed_previous, JobStatus.VALIDATING.value]
 
         row = await self._pool.fetchrow(
             """
