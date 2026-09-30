@@ -214,7 +214,7 @@ class ApiError(BaseModel):
     """HTTP 오류 응답 본문 — `Failure`와 같은 형태, 코드 네임스페이스만 다르다.
 
     `Failure.failure_code`는 job 종결 실패 전용 13종이고, 요청 단계에서 거부되는
-    코드는 `ApiErrorCode` 4종이다. 본문 형태를 통일해 프론트가 한 가지 모양으로
+    코드는 `ApiErrorCode` 5종이다. 본문 형태를 통일해 프론트가 한 가지 모양으로
     오류를 다루게 한다.
     """
 
