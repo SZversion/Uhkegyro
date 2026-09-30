@@ -12,6 +12,7 @@
 - `request_text`와 활성 TERM_CARD 축약 JSON만 받아 `InterpretationOutput` JSON을 반환한다.
 - 출력 상태는 `select_terms`와 `needs_clarification` 두 가지로 제한한다.
 - 질문 상태는 최종 `reason_code`가 아닌 `clarification_type` 후보 enum 하나를 반환해, resolver가 사유 코드를 결정할 수 있게 한다.
+- 질문 선택지용 제한된 카드 후보는 [선택형 후속 질문 Spec](./clarification-choices.md)의 후속 구현 전까지 출력하지 않는다.
 - System message는 영어로 유지하고, enum·role·`term_id`를 제외한 사람이 읽는 출력 문자열은 한국어로 반환한다.
 - 활성 카드 밖 ID·역할, 자유 검색어·URL, 최종 API 상태·사유 코드, 사용자용 설명문을 LLM 출력에서 제거한다.
 
