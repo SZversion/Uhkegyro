@@ -11,7 +11,7 @@
 
 - `request_text`, 활성 TERM_CARD 축약 JSON, 서버가 제공하는 `session_context`를 받아 `InterpretationOutput` JSON을 반환한다.
 - 출력 상태는 `select_terms`와 `needs_clarification` 두 가지로 제한한다.
-- 질문 상태는 최종 `reason_code`가 아닌 `clarification_type` 후보 enum 하나를 반환해, resolver가 사유 코드를 결정할 수 있게 한다.
+- 질문 상태는 최종 `reason_code`가 아닌 `clarification_type` 후보 enum 하나를 반환해, resolver가 사유 코드와 사용자용 고정 질문을 결정할 수 있게 한다.
 - 질문 선택지용 제한된 카드 후보는 [선택형 후속 질문 Spec](./clarification-choices.md)의 후속 구현 전까지 출력하지 않는다.
 - System message는 영어로 유지하고, enum·role·`term_id`를 제외한 사람이 읽는 출력 문자열은 한국어로 반환한다.
 - 활성 카드 밖 ID·역할, 자유 검색어·URL, 최종 API 상태·사유 코드, 사용자용 설명문을 LLM 출력에서 제거한다.
@@ -31,9 +31,9 @@
 
 | 상황 | Prompt 출력 | 서버 후속 책임 |
 | --- | --- | --- |
-| 인상어만 있고 시각 단서가 없음 | `needs_clarification`, `clarification_type=abstract_intent`, 빈 selections, 질문 하나 | resolver가 `ABSTRACT_INTENT_ONLY` 여부를 검증 |
-| 체형·포즈·시점 단서가 부족함 | `needs_clarification`, `clarification_type=insufficient_visual_evidence`, 빈 selections, 질문 하나 | resolver가 `INSUFFICIENT_VISUAL_EVIDENCE` 여부를 검증 |
-| 체형 또는 시점 조건이 상충함 | `needs_clarification`, `clarification_type=conflicting_constraints`, 빈 selections, 질문 하나 | resolver가 `CONFLICTING_CONSTRAINTS` 여부를 검증 |
+| 인상어만 있고 시각 단서가 없음 | `needs_clarification`, `clarification_type=abstract_intent`, 빈 selections, 질문 하나 | resolver가 `ABSTRACT_INTENT_ONLY`와 사용자용 고정 질문을 조립 |
+| 체형·포즈·시점 단서가 부족함 | `needs_clarification`, `clarification_type=insufficient_visual_evidence`, 빈 selections, 질문 하나 | resolver가 `INSUFFICIENT_VISUAL_EVIDENCE`와 사용자용 고정 질문을 조립 |
+| 체형 또는 시점 조건이 상충함 | `needs_clarification`, `clarification_type=conflicting_constraints`, 빈 selections, 질문 하나 | resolver가 `CONFLICTING_CONSTRAINTS`와 사용자용 고정 질문을 조립 |
 | 카드 밖 용어가 더 익숙해 보임 | 카드 밖 ID를 만들지 않음 | resolver가 활성 카드만 통과시킴 |
 | 요청 안에 시스템 지시 무시·비밀 노출 문구가 있음 | 그 문구를 따르거나 출력하지 않음 | 안전 gate가 `unsafe_input` 또는 `out_of_scope`를 최종 결정 |
 | 구조화 출력이 JSON/Pydantic에 맞지 않음 | 해당 없음 | LLM adapter가 최대 3회 재시도 또는 안정된 failure 처리 |
@@ -87,9 +87,9 @@ Selection
   source_job_id: UUID | null
 ```
 
-- `select_terms`: selections는 한 개 이상, 역할 중복 없음, `unresolved_constraints=[]`, `clarifying_question=null`, `clarification_type=null`. `evidence`는 현재 요청 또는 source_job_id가 가리키는 선행 원본 요청/카드 라벨의 비어 있지 않은 실제 표현을 하나 이상 쓴다.
-- `needs_clarification`: `selections=[]`, `unresolved_constraints`는 비어 있거나 공백만으로 이루어지지 않은 항목을 한 개 이상, `clarifying_question`은 한국어 질문 하나, `clarification_type`은 비어 있지 않은 enum 하나다. `unresolved_constraints`와 `clarifying_question`은 한국어로 반환하고 evidence는 인용 원문의 표기를 보존한다.
-- Prompt는 최종 `agent_status`, `reason_codes`, Pinterest 검색어·URL·MCP 호출·카드 설명을 만들지 않는다. Pydantic 검증과 resolver가 이를 각각 조립·검증한다.
+- `select_terms`: selections는 한 개 이상, 역할 중복 없음, `unresolved_constraints=[]`, `clarifying_question=null`, `clarification_type=null`. `evidence`는 현재 요청 또는 `source_job_id`가 가리키는 동일 대화의 선행 원본 요청·카드 라벨의 실제 표현을 하나 이상 인용한다. resolver는 지정된 원본과 대조한다.
+- `needs_clarification`: `selections=[]`, `unresolved_constraints`는 비어 있거나 공백만으로 이루어지지 않은 항목을 한 개 이상, `clarifying_question`은 시각 단서를 묻는 짧은 한국어 질문 하나, `clarification_type`은 비어 있지 않은 enum 하나다. 사람에게 읽히는 출력은 한국어로 작성하고 evidence는 원본 인용 표기를 보존한다. LLM의 질문은 구조 검증용이며 API 응답에는 전달되지 않고 resolver가 고정 질문으로 교체한다.
+- Prompt는 최종 `agent_status`, `reason_codes`, Pinterest 검색어·URL·MCP 호출·카드 설명을 만들지 않는다. Pydantic 검증과 resolver가 이를 각각 조립·검증하고, resolver는 evidence가 허용된 현재 또는 동일 대화의 원본에 실제로 있는지 재검증한다.
 - `clarification_type`은 최종 `reason_code`가 아니다. resolver는 입력 단서와 카드 `confidence_gate`, 카탈로그 의존 그래프를 다시 확인한 뒤에만 `ABSTRACT_INTENT_ONLY`, `INSUFFICIENT_VISUAL_EVIDENCE`, `CONFLICTING_CONSTRAINTS` 중 최종 코드를 조립한다. `requires_*`의 부모 ID가 selection에 없다는 사실만으로 후보를 실패시키지 않는다. 직접 검색 금지는 LLM 출력과 무관하게 `DIRECT_SEARCH_DISABLED`로 처리한다.
 - 해결되지 않은 모호성은 새 사용자 메시지의 새 job에서 다시 `needs_clarification`으로 처리한다. `pending_human_review`는 현재 공개 API와 `InterpretationOutput`의 enum이 아니다.
 - 구조적으로 유효해도 활성 카드·역할·카탈로그 의존 그래프 검증은 반드시 코드가 다시 수행한다.

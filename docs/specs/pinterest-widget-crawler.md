@@ -1,5 +1,7 @@
 # Pinterest 공개 검색·Widget 조회
 
+Widget 결과 조립과 완료 Job 응답의 세부 계약은 [pinterest-widget-results.md](./pinterest-widget-results.md)를 따른다.
+
 ## Why
 
 Pinterest API 승인이 없는 동안에도, 사전 허가된 범위에서 선택된 TERM_CARD의 검색 조각으로 외부 레퍼런스 링크와 응답 전용 미리보기를 제공해야 한다. 사용자는 역할별 원본 Pin 링크를 열어 레퍼런스를 확인하고, 서비스는 이미지 파일을 보관하지 않는다.
@@ -19,7 +21,7 @@ Pinterest API v5, `GET /v5/pins/{pin_id}`, 브라우저의 직접 크롤링, 이
 3. 수집한 각 Pin ID에 widget endpoint를 요청한다. 응답의 `images` 항목 중 가장 큰 면적의 URL을 `thumbnail_url`로 사용한다.
 4. widget 응답에 이미지 URL이 없거나 widget·원본 Pin에 접근할 수 없으면 해당 결과는 `status="deleted"`, `thumbnail_url=null`이다.
 5. widget 응답의 이미지 URL은 현재 API 응답에만 넣는다. 세션·job 이력, 로그, trace, 카탈로그에는 저장하지 않는다.
-6. 검색 페이지 또는 widget endpoint의 일시 실패는 기존 검색 provider 자동 재시도 대상이다. 재시도 소진 뒤 유효 카드가 있으면 `completed + partial_result`와 `PIN_SEARCH_UNAVAILABLE`을 반환한다.
+6. 검색 페이지의 일시 실패는 작업 13의 검색 provider 재시도 대상이다. 재시도 소진 뒤 유효 카드가 있으면 `completed + partial_result`와 `PIN_SEARCH_UNAVAILABLE`을 반환한다. 개별 widget 조회 실패는 해당 Pin만 `deleted`로 처리한다.
 
 ## How
 
@@ -58,7 +60,7 @@ Pinterest API v5, `GET /v5/pins/{pin_id}`, 브라우저의 직접 크롤링, 이
 
 **AC-03 · 검색 장애**
 
-- GIVEN: 공개 검색 또는 widget 요청이 일시적으로 실패한다.
+- GIVEN: 공개 검색 요청이 일시적으로 실패한다.
 - WHEN: 동일 job의 자동 재시도가 소진된다.
 - THEN: 유효 카드가 있으면 `completed + partial_result`와 `PIN_SEARCH_UNAVAILABLE`을 반환한다.
 

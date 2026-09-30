@@ -16,7 +16,7 @@
 
 - Langfuse web·worker와 구동에 필요한 PostgreSQL, ClickHouse, Redis, MinIO만 로컬 서비스로 실행한다.
 - Langfuse 데이터는 named volume에 보관한다.
-- 애플리케이션 API는 Compose 내부 주소 `http://langfuse-web:3000`을 사용한다.
+- 애플리케이션 API는 Compose 내부 주소 `http://langfuse-web:3000`을 사용한다. Langfuse SDK가 `LANGFUSE_BASE_URL`을 `LANGFUSE_HOST`보다 우선하므로 Compose의 API 서비스에서 두 값 모두 내부 주소로 설정한다.
 
 ## How
 
@@ -30,5 +30,5 @@
 - GIVEN: Docker Compose와 필수 `.env` 값이 준비되어 있다. WHEN: `docker compose config --quiet`를 실행한다. THEN: 구성 검증이 통과한다.
 - GIVEN: Compose 서비스가 정상 기동했다. WHEN: 호스트에서 `http://localhost:3000`을 연다. THEN: Langfuse UI가 표시된다.
 - GIVEN: Compose 서비스가 정상 기동했다. WHEN: web `http://localhost:3000/api/public/health`와 `docker compose exec -T langfuse-worker sh -c 'wget -S -O- "http://$(hostname -i):3030/api/health"'`를 실행한다. THEN: 두 endpoint가 HTTP 200을 반환하고 worker는 `{"status":"ok"}`를 응답한다.
-- GIVEN: Compose의 API 서비스가 실행 중이다. WHEN: API가 `LANGFUSE_HOST`를 읽는다. THEN: `http://langfuse-web:3000`에 연결한다.
+- GIVEN: Compose의 API 서비스가 실행 중이다. WHEN: API가 `LANGFUSE_BASE_URL`과 `LANGFUSE_HOST`를 읽는다. THEN: 두 값 모두 `http://langfuse-web:3000`이고 Langfuse SDK가 이 주소에 연결한다.
 - GIVEN: `docker compose down`으로 서비스를 중지한다. WHEN: named volume을 확인한다. THEN: Langfuse 저장 데이터가 유지된다.

@@ -5,10 +5,12 @@ import asyncio
 import logging
 from typing import Any, Mapping
 
-from backend.schemas.enums import JobStatus, Role
+from backend.schemas.enums import AgentStatus, JobStatus, ReasonCode, Role
+from backend.schemas.models import AgentResult
 from backend.services.catalog_repository import CatalogSnapshot
 from backend.services.conversation_memory import ConversationMemory
 from backend.services import conversation_context
+from backend.services.input_safety import is_unsafe_input
 from backend.services.job_repository import JobRepository, StaleJobAttempt
 from backend.services.job_retry_recovery import JobRetryRecovery
 from backend.services.job_trace import AttemptTrace, JobTracer
@@ -17,11 +19,16 @@ from backend.services.llm import (
     LLMInterpretationAdapter,
 )
 from backend.services.llm import format_active_cards_json
+from backend.services.pinterest_provider import PinterestProvider
+from backend.services.pinterest_public_search import PinterestPublicSearchProvider
+from backend.services.pinterest_widget import PinterestWidgetClient, PinterestWidgetProvider
+from backend.services.resolver import ResolutionResult
 from backend.services.response_assembler import RoleSearchOutcome, assemble
 
 logger = logging.getLogger(__name__)
 WORKER_CONCURRENCY = 5
 POLL_INTERVAL_SECONDS = 1
+SEARCH_RETRY_DELAYS_SECONDS = (1, 2)
 
 
 class AgentJobWorker:
@@ -33,6 +40,7 @@ class AgentJobWorker:
         snapshot: CatalogSnapshot,
         *,
         adapter: AgentInterpretationAdapter | None = None,
+        pinterest_provider: PinterestProvider | None = None,
         heartbeat_interval: float = 10,
         tracer: JobTracer | None = None,
     ) -> None:
@@ -41,6 +49,7 @@ class AgentJobWorker:
         self._recovery = JobRetryRecovery(pool)
         self._snapshot = snapshot
         self._adapter = adapter
+        self._pinterest_provider = pinterest_provider
         self._heartbeat_interval = heartbeat_interval
         self._tracer = tracer if tracer is not None else JobTracer.from_settings()
 
@@ -67,6 +76,22 @@ class AgentJobWorker:
             if not await self._update(job_id, attempt, JobStatus.VALIDATING):
                 trace.stale()
                 return
+            if is_unsafe_input(str(job["request_text"])):
+                result = AgentResult(
+                    agent_status=AgentStatus.UNSAFE_INPUT,
+                    reason_codes=[ReasonCode.UNSAFE_INPUT],
+                    reference_plan=None,
+                    clarifying_question=None,
+                    user_message=(
+                        "요청하신 내용은 지원할 수 없습니다. "
+                        "캐릭터의 체형·포즈·시점을 텍스트로 설명해 주세요."
+                    ),
+                )
+                if await self._update(job_id, attempt, JobStatus.COMPLETED, result=result):
+                    trace.completed(result)
+                else:
+                    trace.stale()
+                return
             if self._adapter is None:
                 self._adapter = LLMInterpretationAdapter()
             with trace.stage("memory-context"):
@@ -89,6 +114,8 @@ class AgentJobWorker:
                     if not await self._update(job_id, attempt, JobStatus.SEARCHING):
                         trace.stale()
                         return
+                    if search_outcomes is None:
+                        search_outcomes = await self._search_outcomes(resolution)
                 result = assemble(resolution, self._snapshot, search_outcomes)
                 if recalled is not None:
                     result.memory_answer, result.sources = recalled.memory_answer, recalled.sources
@@ -103,6 +130,29 @@ class AgentJobWorker:
             trace.stale()
         except Exception as error:
             await self._handle_failure(job, error, trace)
+
+    async def _search_outcomes(
+        self, resolution: ResolutionResult
+    ) -> Mapping[Role, RoleSearchOutcome]:
+        if self._pinterest_provider is None:
+            return {}
+
+        outcomes: dict[Role, RoleSearchOutcome] = {}
+        for term in resolution.terms:
+            role = term.selection.role
+            query_fragments = tuple(term.card["query_fragments"])
+            outcome = await self._pinterest_provider.search(role, query_fragments)
+            if outcome.role is not role:
+                raise ValueError("Pinterest provider 결과 역할이 요청과 다릅니다")
+            for delay in SEARCH_RETRY_DELAYS_SECONDS:
+                if outcome.code is not ReasonCode.PIN_SEARCH_UNAVAILABLE:
+                    break
+                await asyncio.sleep(delay)
+                outcome = await self._pinterest_provider.search(role, query_fragments)
+                if outcome.role is not role:
+                    raise ValueError("Pinterest provider 결과 역할이 요청과 다릅니다")
+            outcomes[role] = outcome
+        return outcomes
 
     async def _with_heartbeat(self, job: Any, operation: Any) -> None:
         stopped = asyncio.Event()
@@ -212,7 +262,12 @@ async def run_worker(snapshot: CatalogSnapshot) -> None:
             if settings.database_url.startswith("sqlite"):
                 return
             pool = await create_pool(settings)
-            await AgentJobWorker(pool, snapshot).run_forever(
+            pinterest_provider = PinterestWidgetProvider(
+                PinterestPublicSearchProvider(), PinterestWidgetClient()
+            )
+            await AgentJobWorker(
+                pool, snapshot, pinterest_provider=pinterest_provider
+            ).run_forever(
                 concurrency=settings.worker_concurrency
             )
         except asyncio.CancelledError:

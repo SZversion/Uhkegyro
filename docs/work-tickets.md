@@ -235,6 +235,16 @@
 - AC: 내부 오류 원문과 secret이 `user_message`에 노출되지 않는다.
 - 의존성: 작업 9, 작업 13
 
+#### 작업 25 · Input safety gate
+
+- 브랜치: `feature/input-safety-gate`
+- Spec: `docs/specs/input-safety-gate.md`, `docs/specs/trust-boundary.md`, `docs/specs/api-contract.md`
+- 작업: worker의 `validating` 단계에서 프롬프트 지시 덮어쓰기, 비밀·타인 데이터 추출, 유해·불법 실행 요청을 판정하고 `unsafe_input`으로 종결한다. literal 그림 문맥 예외는 해당 구간에만 적용한다. `needs_clarification`의 사용자 질문은 LLM 문구를 전달하지 않고 서버가 조립하며, resolver는 evidence가 원문에 실제로 있는지 재검증한다.
+- AC: unsafe 입력은 `completed + UNSAFE_INPUT`을 저장하고 LLM·resolver·Pinterest 검색을 호출하지 않는다. 정상 일러스트 요청은 기존 pipeline을 유지하며, LLM 생성 질문과 원문에 없는 evidence는 사용자 응답에 포함되지 않는다.
+- 의존성: 작업 9
+- 파일 범위: `backend/services/input_safety.py`, `backend/services/agent_worker.py`, `backend/services/job_repository.py`, `backend/services/resolver.py`, `backend/services/response_assembler.py`, 해당 pytest, `prompts/uhkegryo-interpreter-v0.md`, 관련 API·prompt·input-safety Spec과 작업 티켓만 수정한다.
+- 예상 변경량: 코드·테스트 300줄 이하
+
 #### 작업 16 · 외부 MCP client 증거
 
 - 브랜치: `test/mcp-client-evidence`

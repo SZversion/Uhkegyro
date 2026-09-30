@@ -11,8 +11,8 @@ LLM `InterpretationOutput`은 후보일 뿐이며, resolver가 활성 JSON 카�
 - 역할당 최대 1개 후보로 충족(collapse: confidence 최대, 동률은 선발 우선)
 
 `interpretation_state`는 스키마가 `select_terms`/`needs_clarification`으로 강제하며,
-needs_clarification일 때는 `clarification_type`을 `ReasonCode`로 직접 매핑해
-최종 `agent_status`·사유 코드를 만든다 (LLM은 reason_codes를 만들지 않는다).
+needs_clarification일 때는 `clarification_type`을 `ReasonCode`와 서버 고정 질문으로 직접 매핑해
+최종 `agent_status`·사유 코드·질문을 만든다 (LLM은 reason_codes나 사용자용 질문을 만들지 않는다).
 SKILL.md 판단 기준의 `confidence_gate`·`requires_all_of`·`requires_any_of` 의미 충족은
 LLM 판단 몫이며 이 모듈은 재판정하지 않는다. 참조 ID의 구조 무결성은 시작 검증에서 방어한다.
 """
@@ -24,6 +24,7 @@ from dataclasses import dataclass, field
 from backend.schemas.enums import ClarificationType, InterpretationState, ReasonCode, Role
 from backend.schemas.models import InterpretationOutput, InterpretationSelection
 from backend.services.catalog_repository import CatalogSnapshot
+from backend.services.input_safety import normalize_input_text
 
 STATUS_PROCEED = "proceed"
 STATUS_CLARIFY = "clarify"
@@ -38,6 +39,17 @@ _CLARIFICATION_TO_REASON: dict[ClarificationType, ReasonCode] = {
 _DEFAULT_DSD_QUESTION = (
     "검색하기 어려운 표현이에요. 체형·자세·시점 중 하나를 구체적으로 알려주세요."
 )
+_CLARIFICATION_QUESTIONS: dict[ClarificationType, str] = {
+    ClarificationType.ABSTRACT_INTENT: (
+        "원하는 캐릭터의 체형·포즈·시점 중 하나를 구체적으로 설명해 주세요."
+    ),
+    ClarificationType.INSUFFICIENT_VISUAL_EVIDENCE: (
+        "캐릭터의 체형·포즈·시점 중 어떤 정보를 더 알려주실 수 있나요?"
+    ),
+    ClarificationType.CONFLICTING_CONSTRAINTS: (
+        "서로 다른 조건 중 어떤 조건을 우선할지 알려주세요."
+    ),
+}
 
 
 @dataclass
@@ -62,7 +74,7 @@ class ResolutionResult:
 
 
 def resolve(
-    interpretation: InterpretationOutput, snapshot: CatalogSnapshot
+    interpretation: InterpretationOutput, snapshot: CatalogSnapshot, *, request_text: str
 ) -> ResolutionResult:
     """LLM 해석 후보를 카탈로그와 대조해 결정론 검증하고 조정 계층에 넘길 결과를 만든다."""
     if interpretation.interpretation_state is InterpretationState.NEEDS_CLARIFICATION:
@@ -70,14 +82,18 @@ def resolve(
         return ResolutionResult(
             status=STATUS_CLARIFY,
             reason_codes=[code or ReasonCode.INSUFFICIENT_VISUAL_EVIDENCE],
-            clarifying_question=interpretation.clarifying_question,
+            clarifying_question=_CLARIFICATION_QUESTIONS[interpretation.clarification_type],
         )
 
+    normalized_request = normalize_input_text(request_text)
     valid: list[ValidatedTerm] = []
     direct_disabled: list[ValidatedTerm] = []
     invalid: list[InterpretationSelection] = []
 
     for selection in interpretation.selections:
+        if not _has_request_evidence(selection, normalized_request):
+            invalid.append(selection)
+            continue
         card = snapshot.get_active(selection.term_id)
         if card is None or str(card.get("role")) != str(selection.role):
             invalid.append(selection)
@@ -114,6 +130,14 @@ def resolve(
         terms=terms,
         unresolved_roles=unresolved,
         invalid_candidates=invalid,
+    )
+
+
+def _has_request_evidence(selection: InterpretationSelection, normalized_request: str) -> bool:
+    return all(
+        (normalized_evidence := normalize_input_text(evidence))
+        and normalized_evidence in normalized_request
+        for evidence in selection.evidence
     )
 
 
