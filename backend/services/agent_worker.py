@@ -5,7 +5,7 @@ import asyncio
 import logging
 from typing import Any, Mapping
 
-from backend.schemas.enums import JobStatus, Role
+from backend.schemas.enums import JobStatus, ReasonCode, Role
 from backend.services.catalog_repository import CatalogSnapshot
 from backend.services.job_repository import JobRepository, StaleJobAttempt
 from backend.services.job_retry_recovery import JobRetryRecovery
@@ -16,12 +16,16 @@ from backend.services.llm import (
     LLMInvalidStructuredOutput,
 )
 from backend.services.llm import format_active_cards_json
-from backend.services.resolver import STATUS_ALL_INVALID, resolve
+from backend.services.pinterest_provider import PinterestProvider
+from backend.services.pinterest_public_search import PinterestPublicSearchProvider
+from backend.services.pinterest_widget import PinterestWidgetClient, PinterestWidgetProvider
+from backend.services.resolver import STATUS_ALL_INVALID, ResolutionResult, resolve
 from backend.services.response_assembler import RoleSearchOutcome, assemble
 
 logger = logging.getLogger(__name__)
 WORKER_CONCURRENCY = 5
 POLL_INTERVAL_SECONDS = 1
+SEARCH_RETRY_DELAYS_SECONDS = (1, 2)
 
 
 class AgentJobWorker:
@@ -33,6 +37,7 @@ class AgentJobWorker:
         snapshot: CatalogSnapshot,
         *,
         adapter: AgentInterpretationAdapter | None = None,
+        pinterest_provider: PinterestProvider | None = None,
         heartbeat_interval: float = 10,
         tracer: JobTracer | None = None,
     ) -> None:
@@ -40,6 +45,7 @@ class AgentJobWorker:
         self._recovery = JobRetryRecovery(pool)
         self._snapshot = snapshot
         self._adapter = adapter
+        self._pinterest_provider = pinterest_provider
         self._heartbeat_interval = heartbeat_interval
         self._tracer = tracer if tracer is not None else JobTracer.from_settings()
 
@@ -88,11 +94,13 @@ class AgentJobWorker:
             await self._handle_failure(job, error, trace)
             return
 
-        with trace.stage("searching"):
-            if not await self._update(job_id, attempt, JobStatus.SEARCHING):
-                trace.stale()
-                return
         try:
+            with trace.stage("searching"):
+                if not await self._update(job_id, attempt, JobStatus.SEARCHING):
+                    trace.stale()
+                    return
+                if search_outcomes is None:
+                    search_outcomes = await self._search_outcomes(resolution)
             with trace.stage("rendering"):
                 if not await self._update(job_id, attempt, JobStatus.RENDERING):
                     trace.stale()
@@ -105,6 +113,29 @@ class AgentJobWorker:
             trace.completed(result)
         else:
             trace.stale()
+
+    async def _search_outcomes(
+        self, resolution: ResolutionResult
+    ) -> Mapping[Role, RoleSearchOutcome]:
+        if self._pinterest_provider is None:
+            return {}
+
+        outcomes: dict[Role, RoleSearchOutcome] = {}
+        for term in resolution.terms:
+            role = term.selection.role
+            query_fragments = tuple(term.card["query_fragments"])
+            outcome = await self._pinterest_provider.search(role, query_fragments)
+            if outcome.role is not role:
+                raise ValueError("Pinterest provider 결과 역할이 요청과 다릅니다")
+            for delay in SEARCH_RETRY_DELAYS_SECONDS:
+                if outcome.code is not ReasonCode.PIN_SEARCH_UNAVAILABLE:
+                    break
+                await asyncio.sleep(delay)
+                outcome = await self._pinterest_provider.search(role, query_fragments)
+                if outcome.role is not role:
+                    raise ValueError("Pinterest provider 결과 역할이 요청과 다릅니다")
+            outcomes[role] = outcome
+        return outcomes
 
     async def _with_heartbeat(self, job: Any, operation: Any) -> None:
         stopped = asyncio.Event()
@@ -214,7 +245,12 @@ async def run_worker(snapshot: CatalogSnapshot) -> None:
             if settings.database_url.startswith("sqlite"):
                 return
             pool = await create_pool(settings)
-            await AgentJobWorker(pool, snapshot).run_forever(
+            pinterest_provider = PinterestWidgetProvider(
+                PinterestPublicSearchProvider(), PinterestWidgetClient()
+            )
+            await AgentJobWorker(
+                pool, snapshot, pinterest_provider=pinterest_provider
+            ).run_forever(
                 concurrency=settings.worker_concurrency
             )
         except asyncio.CancelledError:
