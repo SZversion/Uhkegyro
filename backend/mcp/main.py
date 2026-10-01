@@ -4,6 +4,6 @@ Cloud Run `mcp` 서비스의 진입점.
 공개 API(/health, /api/*)와 분리되어 배포됨.
 인증: Cloud Run IAM (--no-allow-unauthenticated + roles/run.invoker)
 """
-from backend.mcp.server import app
+from mcp_server.server import app
 
-# uvicorn backend.mcp.main:app --host 0.0.0.0 --port 8000
+# uvicorn mcp_server.server:app --host 0.0.0.0 --port 8000
