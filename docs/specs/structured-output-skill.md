@@ -14,15 +14,16 @@
 
 ## What
 
-- 의미 해석·카드 선택은 기존 `prompts/uhkegryo-interpreter-v1.md`의 규칙을 사용한다. v1의 출력 예제와 대화 기억 지시문도 유지한다.
+- 의미 해석·카드 선택·근거 출처·조건 변경은 `prompts/uhkegryo-interpreter-v1.md`의 규칙을 사용한다. 대화 기억 지시문은 유지하되 출력 필드·타입·상태별 구조·예제는 출력 Skill로 모은다.
 - `skills/structured-output/SKILL.md`는 출력 형태·상태별 규칙·검증 오류의 수정 방식을 설명한다.
-- Skill이 없거나 읽기 불가면 설정 오류로 호출 전에 실패한다.
+- v1에서 Skill이 없거나 읽기 불가면 설정 오류로 호출 전에 실패한다. v0는 Skill을 읽거나 결합하지 않는다.
 - provider가 schema를 지원하지 않으면 기존 upstream 오류 정책을 적용하며 JSON mode로 자동 폴백하지 않는다.
 
 ## How
 
 - `STRUCTURED_OUTPUT_SKILL_PATH` 기본값은 `skills/structured-output/SKILL.md`이다. Docker image에 파일을 포함한다.
-- adapter는 설정된 프롬프트의 System message와 Skill의 `Runtime instructions`를 합쳐 단일 system message로 전달한다. User message에는 기존 요청과 활성 카드만 둔다.
+- `INTERPRETER_PROMPT_VERSION=uhkegryo-interpreter-v1`일 때만 adapter가 해석 System message와 Skill의 `Runtime instructions`를 합친다. v0는 기존 System message, `response_format=json_object`, provider 옵션 부재를 유지하며 검증 피드백도 모델 메시지에 추가하지 않는다.
+- v1 해석 프롬프트에는 JSON 객체·필수 필드·배열/nullable 타입·상태별 구조·출력 예제를 두지 않는다. 이 지시와 예제는 결합된 system message의 출력 Skill에 한 번만 존재하며 필드·enum·범위의 기계 검증은 코드 유래 Schema가 담당한다.
 - `InterpretationOutput.model_json_schema()`로 `response_format={type:json_schema,json_schema:{name:interpretation_output,strict:true,schema:...}}`를 만든다.
 - strict object의 `required`에는 모든 properties를 넣고 `default`는 제거한다. nullable 필드는 null을 유지하며 Pydantic 필드나 모델을 바꾸지 않는다.
 - OpenRouter 요청은 `provider.require_parameters=true`로 schema 지원 endpoint에 한정한다. 호출은 attempt당 1회, SDK 재시도는 0회다.
@@ -35,3 +36,5 @@
 - GIVEN v1 경로·버전과 Skill, WHEN adapter가 호출하면, THEN 하나의 system message에 v1의 지시문과 출력 Skill이 포함되고 JSON Schema는 코드의 필드·enum·범위를 반영하며 trace 버전은 v1이다.
 - GIVEN Skill 파일 부재, WHEN 초기화하면, THEN `CONFIGURATION_ERROR`로 실패하며 LLM을 호출하지 않는다.
 - GIVEN provider schema 응답, WHEN 검증하면, THEN 역할 중복·순서·상태 불변 조건을 계속 검증한다.
+- GIVEN v0 기본 설정과 존재하지 않는 Skill 경로, WHEN 해석하면, THEN 기존 프롬프트와 JSON mode로 한 번 호출하고 Skill·strict schema·provider 옵션·검증 피드백을 추가하지 않는다.
+- GIVEN v1 결합 메시지, WHEN 출력 형식 지시와 두 상태 예제를 검사하면, THEN 출력 Skill에만 각각 한 번 존재하고 예제는 `InterpretationOutput`을 통과한다.
