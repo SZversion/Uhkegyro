@@ -34,6 +34,7 @@ adapter 입력은 사용자 원문과 활성 TERM_CARD 후보 경계다. 현재 
 - OpenRouter HTTP 401·403은 `error_type=configuration`, `CONFIGURATION_ERROR`로 즉시 실패하며 자동 재시도하지 않는다. 예외 원문과 인증 응답 본문은 공개 오류에 포함하지 않는다.
 - API 키는 trace·로그에 기록하지 않는다. 사용자 원문은 Langfuse trace에만 기록하며 LLM 원본 응답은 저장하지 않는다.
 - resolver가 adapter 출력을 JSON 카탈로그와 대조해 활성 term·역할·조건을 검증한다.
+- [v1 출력 구조 전달](./interpreter-json-shape.md)은 JSON 계약·예제를 실제 System message 안에 포함한다. 활성화 시 Prompt 경로와 버전을 함께 v1으로 지정하며 v0도 유지한다.
 
 ## AC
 

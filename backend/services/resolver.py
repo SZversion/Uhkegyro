@@ -20,6 +20,7 @@ LLM 판단 몫이며 이 모듈은 재판정하지 않는다. 참조 ID의 구�
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from collections.abc import Mapping, Sequence
 
 from backend.schemas.enums import ClarificationType, InterpretationState, ReasonCode, Role
 from backend.schemas.models import InterpretationOutput, InterpretationSelection
@@ -74,7 +75,8 @@ class ResolutionResult:
 
 
 def resolve(
-    interpretation: InterpretationOutput, snapshot: CatalogSnapshot, *, request_text: str
+    interpretation: InterpretationOutput, snapshot: CatalogSnapshot, *, request_text: str,
+    verified_source_texts: Mapping[str, Sequence[str]] | None = None,
 ) -> ResolutionResult:
     """LLM 해석 후보를 카탈로그와 대조해 결정론 검증하고 조정 계층에 넘길 결과를 만든다."""
     if interpretation.interpretation_state is InterpretationState.NEEDS_CLARIFICATION:
@@ -91,7 +93,11 @@ def resolve(
     invalid: list[InterpretationSelection] = []
 
     for selection in interpretation.selections:
-        if not _has_request_evidence(selection, normalized_request):
+        sources = [normalized_request] if selection.source_job_id is None else [
+            normalize_input_text(text) for text in
+            (verified_source_texts or {}).get(str(selection.source_job_id), ())
+        ]
+        if not _has_source_evidence(selection, sources):
             invalid.append(selection)
             continue
         card = snapshot.get_active(selection.term_id)
@@ -133,10 +139,10 @@ def resolve(
     )
 
 
-def _has_request_evidence(selection: InterpretationSelection, normalized_request: str) -> bool:
+def _has_source_evidence(selection: InterpretationSelection, normalized_sources: Sequence[str]) -> bool:
     return all(
         (normalized_evidence := normalize_input_text(evidence))
-        and normalized_evidence in normalized_request
+        and any(normalized_evidence in source for source in normalized_sources)
         for evidence in selection.evidence
     )
 
