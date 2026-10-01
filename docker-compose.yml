@@ -20,6 +20,16 @@ x-langfuse-env: &langfuse-env
   LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
 
 services:
+  searxng:
+    image: docker.io/searxng/searxng:latest
+    restart: unless-stopped
+    ports:
+      - 127.0.0.1:8080:8080
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?Set SEARXNG_SECRET in .env}
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+
   langfuse-web:
     image: docker.langfuse.com/langfuse/langfuse:4
     restart: unless-stopped
@@ -121,8 +131,11 @@ services:
     environment:
       LANGFUSE_HOST: http://langfuse-web:3000
       LANGFUSE_BASE_URL: http://langfuse-web:3000
+      SEARXNG_BASE_URL: http://searxng:8080
     depends_on:
       langfuse-web:
+        condition: service_started
+      searxng:
         condition: service_started
 
   mcp:
