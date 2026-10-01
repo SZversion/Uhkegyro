@@ -11,6 +11,7 @@ from backend.tests.test_llm_adapter import (
 )
 
 ROOT = Path(__file__).resolve().parents[2]
+PROMPT = ROOT / "prompts" / "uhkegryo-interpreter-v1.md"
 
 
 def test_schema_preserves_code_types_and_requires_nullable_fields():
@@ -55,23 +56,22 @@ def test_missing_skill_fails_before_call():
     settings = _real_settings().model_copy(update={"structured_output_skill_path": "missing-skill.md"})
     with pytest.raises(llm.PromptConfigurationError):
         llm.LLMInterpretationAdapter(settings=settings, client=object(),
-                                    prompt_path=ROOT / "prompts/uhkegryo-interpreter-v2.md")
+                                    prompt_path=PROMPT)
 
 
-def test_v2_call_combines_semantic_and_output_instructions():
-    settings = _real_settings().model_copy(update={"interpreter_prompt_version": "uhkegryo-interpreter-v2"})
+def test_v1_call_combines_interpreter_and_output_instructions():
+    settings = _real_settings().model_copy(update={
+        "interpreter_prompt_path": str(PROMPT),
+        "interpreter_prompt_version": "uhkegryo-interpreter-v1",
+    })
     completions = _FakeCompletions(responses=[_FakeResponse(SELECT_JSON)])
-    adapter = llm.LLMInterpretationAdapter(settings=settings, client=_FakeClient(completions),
-                                         prompt_path=ROOT / "prompts/uhkegryo-interpreter-v2.md")
+    adapter = llm.LLMInterpretationAdapter(settings=settings, client=_FakeClient(completions))
     asyncio.run(adapter.interpret("반동", job_id="j", session_id="s", attempt=1, max_attempts=3))
-    system = completions.calls[0]["messages"][0]["content"]
-    assert "semantic interpreter" in system and "role_duplicate" in system
-    assert adapter.prompt_version == "uhkegryo-interpreter-v2"
-
-
-def test_v2_preserves_main_memory_instructions():
-    baseline = (ROOT / "prompts/uhkegryo-interpreter-v0.md").read_text(encoding="utf-8")
-    current = (ROOT / "prompts/uhkegryo-interpreter-v2.md").read_text(encoding="utf-8")
-    for operation in ("classify", "summarize", "answer"):
-        heading = "## Memory " + operation
-        assert llm._extract_fenced_block(current, heading) == llm._extract_fenced_block(baseline, heading)
+    call = completions.calls[0]
+    messages = call["messages"]
+    system = messages[0]["content"]
+    assert sum(item["role"] == "system" for item in messages) == 1
+    assert system.startswith(llm.load_interpreter_prompt(PROMPT)[0])
+    assert "role_duplicate" in system
+    assert call["response_format"] == response_format()
+    assert adapter.prompt_version == "uhkegryo-interpreter-v1"

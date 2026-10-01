@@ -13,7 +13,7 @@
 
 ## Target runtime composition
 
-이 v1 System message는 `skills/SKILL.md`의 LLM 선택 규칙을 영어로 반영한 목표 런타임의 유일한 system message다. 구현 시 adapter는 이 System message 뒤에 아래 User message template과 검증된 `active_cards_json`만 전달해야 한다. 한국어 Skill 전문을 별도 system message로 중복 주입하지 않는다.
+이 v1 System message는 `skills/SKILL.md`의 LLM 선택 규칙을 영어로 반영한다. adapter는 `skills/structured-output/SKILL.md`의 출력 규칙을 이 메시지 뒤에 결합해 단일 system message로 전달하고, 아래 User message template과 검증된 `active_cards_json`을 사용한다. 한국어 Skill 전문을 별도 system message로 중복 주입하지 않는다.
 
 최종 `agent_status`, `reason_codes`, `direct_search_disabled_term_ids`, 카드 피드백, Pinterest 검색 계획은 LLM 책임이 아니다. resolver가 TERM_CARD index와 API 계약으로 처리한다.
 

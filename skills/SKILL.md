@@ -1,8 +1,6 @@
 # 캐주얼 캐릭터 일러스트 레퍼런스 해석 Skill
 
-v2 런타임의 의미 해석 원본은 `prompts/uhkegryo-interpreter-v2.md`이다. 출력 규칙은 `skills/structured-output/SKILL.md`에서 별도로 관리하고 adapter가 동일 System message에 결합한다. 스키마는 `InterpretationOutput` 코드에서 생성한다. v0 문서는 기존 버전의 기준으로 유지한다.
-
-> 이 문서는 UH케그려의 고정 도메인 지식·판단 기준이다. LLM이 실제로 받는 영어 System message의 검토 원본은 `prompts/uhkegryo-interpreter-v0.md`이며, 이 Skill의 **LLM 선택 규칙**을 같은 의미로 옮긴다. 런타임은 이 한국어 Skill 전문을 별도 system message로 덧붙이지 않고 v0 System message 하나만 사용한다. 최종 상태·검색·피드백 조립처럼 LLM 선택 밖의 규칙은 resolver가 이 문서와 API 계약을 따라 결정한다. 둘 중 하나를 바꾸면 같은 PR에서 함께 검토한다.
+> 이 문서는 UH케그려의 고정 도메인 지식·판단 기준이다. v1 환경에서는 `prompts/uhkegryo-interpreter-v1.md`가 이 Skill의 **LLM 선택 규칙**을 영어 System message로 전달한다. adapter는 설정된 해석 프롬프트 뒤에 `skills/structured-output/SKILL.md`의 출력 규칙을 결합해 단일 System message로 전달한다. 출력 schema는 `InterpretationOutput` 코드에서 생성하며, 이 한국어 Skill 전문은 별도로 주입하지 않는다. v0는 기존 배포 기본값으로 보존한다. 최종 상태·검색·피드백 조립처럼 LLM 선택 밖의 규칙은 resolver가 이 문서와 API 계약을 따라 결정한다. 해석 규칙을 바꾸면 해당 프롬프트와 함께 검토한다.
 > 카드·문서 조각을 검색해 넣지 않으므로 RAG가 아니다. 정확한 카드 값의 런타임 단일 원천은 팀이 관리하는 TERM_CARD JSON 카탈로그다. `docs/domains/illustration-reference/term-cards/`의 `index.json`과 역할별 JSON을 시작 시 검증해 메모리에 로드하며, 이 문서는 그 값을 대신하거나 새 카드를 만들지 않는다.
 
 ## 이 도메인은 무엇을 다루나
