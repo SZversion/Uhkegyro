@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "node --test tests/agent-submit.test.mjs tests/job-polling.test.mjs tests/term-mind-map.test.mjs tests/result-view.test.mjs tests/recommended-query.test.mjs tests/demo-job.test.mjs tests/term-search.test.mjs"
+    "test": "node --test tests/agent-submit.test.mjs tests/job-polling.test.mjs tests/term-mind-map.test.mjs tests/result-view.test.mjs tests/recommended-query.test.mjs tests/demo-job.test.mjs tests/term-search.test.mjs tests/conversation.test.mjs"
   },
   "dependencies": {
     "next": "16.3.7",
