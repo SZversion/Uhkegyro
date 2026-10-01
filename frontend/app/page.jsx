@@ -6,6 +6,7 @@ import { createJobPoller, STATUS_LABELS } from "../lib/job-polling.mjs";
 import { DEMO_JOB, DEMO_REQUEST_TEXT, uiDemoEnabled } from "../lib/demo-job.mjs";
 import { createMindMapSlots, firstSelectableTermId } from "../lib/term-mind-map.mjs";
 import { getRecommendedSearchQuery } from "../lib/recommended-query.mjs";
+import { searchFixedTerm, searchTermMode } from "../lib/term-search.mjs";
 import { createGalleryRows, resultTerms, roleNotice, showThumbnail } from "../lib/result-view.mjs";
 
 export default function HomePage() {
@@ -20,6 +21,10 @@ export default function HomePage() {
   const [activeGalleryRole, setActiveGalleryRole] = useState(null);
   const [failedThumbnails, setFailedThumbnails] = useState({});
   const [menuOpen, setMenuOpen] = useState(false);
+  const [termSearch, setTermSearch] = useState(null);
+  const termSearchControllerRef = useRef(null);
+  const [sketchSearches, setSketchSearches] = useState({});
+  const sketchControllersRef = useRef(new Map());
   const [previewPin, setPreviewPin] = useState(null);
   const [previewFailed, setPreviewFailed] = useState(false);
   const previewDialogRef = useRef(null);
@@ -45,7 +50,12 @@ export default function HomePage() {
     ? selectedTermId
     : firstSelectableTermId(mindMapSlots);
   const homeTerm = mindMapSlots.flatMap((slot) => slot.terms).find((term) => term.term_id === activeTermId) || null;
-  const galleryRows = useMemo(() => createGalleryRows(mindMapSlots), [mindMapSlots]);
+  const galleryRows = useMemo(() => createGalleryRows(
+    boardView === "term-results" && termSearch ? createMindMapSlots([termSearch.term]) : mindMapSlots
+  ).map((row) => {
+    const replacement = sketchSearches[row.term.term_id]?.term;
+    return replacement ? { ...row, term: replacement, pins: replacement.pins.slice(0, 8) } : row;
+  }), [mindMapSlots, boardView, termSearch, sketchSearches]);
   const hasGalleryRows = galleryRows.length > 0;
   const galleryTerm = galleryRows.find((row) => row.role === activeGalleryRole)?.term || galleryRows[0]?.term || null;
   const queryTerm = ["results", "term-results"].includes(boardView) && hasGalleryRows ? galleryTerm : homeTerm;
@@ -66,6 +76,20 @@ export default function HomePage() {
   }, [submission]);
 
   useEffect(() => () => clearTimeout(copyTimerRef.current), []);
+  useEffect(() => () => termSearchControllerRef.current?.abort(), []);
+  useEffect(() => {
+    function closeHelpOutside(event) {
+      document.querySelectorAll(".category-search-help[open]").forEach((help) => {
+        if (!help.contains(event.target)) help.open = false;
+      });
+    }
+    document.addEventListener("click", closeHelpOutside, true);
+    return () => document.removeEventListener("click", closeHelpOutside, true);
+  }, []);
+  useEffect(() => () => {
+    for (const controller of sketchControllersRef.current.values()) controller.abort();
+  }, []);
+
   useEffect(() => {
     if (previewPin && !previewDialogRef.current.open) previewDialogRef.current.showModal();
   }, [previewPin]);
@@ -75,6 +99,7 @@ export default function HomePage() {
       selectedJobRef.current = job;
       setSelectedTermId(firstSelectableTermId(mindMapSlots));
       setFailedThumbnails({});
+      resetSketchSearches();
     }
   }, [job, mindMapSlots]);
 
@@ -135,10 +160,52 @@ export default function HomePage() {
     setMenuOpen((open) => !open);
   }
 
-  function openTermSearch(term) {
+  async function openTermSearch(term) {
+    resetSketchSearches();
+    termSearchControllerRef.current?.abort();
+    const controller = new AbortController();
+    termSearchControllerRef.current = controller;
     setSelectedTermId(term.term_id);
     setActiveGalleryRole(term.role);
-    setBoardView("results");
+    setFailedThumbnails({});
+    setTermSearch({ term: { ...term, pins: [], reason_codes: [] }, loading: true });
+    setBoardView("term-results");
+    try {
+      const result = uiDemoEnabled ? term : await searchFixedTerm(term, { signal: controller.signal });
+      if (!controller.signal.aborted) setTermSearch({ term: result, loading: false });
+    } catch (error) {
+      if (!controller.signal.aborted) setTermSearch({
+        term: { ...term, pins: [], reason_codes: ["PIN_SEARCH_UNAVAILABLE"] },
+        loading: false, error: error.message,
+      });
+    }
+  }
+
+  function resetSketchSearches() {
+    for (const controller of sketchControllersRef.current.values()) controller.abort();
+    sketchControllersRef.current.clear();
+    setSketchSearches({});
+  }
+
+  async function searchCategory(term, suffix) {
+    if (sketchControllersRef.current.has(term.term_id)) return;
+    const controller = new AbortController();
+    sketchControllersRef.current.set(term.term_id, controller);
+    setSketchSearches((current) => ({ ...current, [term.term_id]: { ...current[term.term_id], loading: true, pendingSuffix: suffix, error: null } }));
+    try {
+      const updatedTerm = await searchTermMode(term, suffix, { signal: controller.signal });
+      if (!controller.signal.aborted) {
+        setSketchSearches((current) => ({ ...current, [term.term_id]: { term: updatedTerm, suffix } }));
+        setFailedThumbnails((current) => Object.fromEntries(Object.entries(current)
+          .filter(([key]) => !key.startsWith(`${term.term_id}:`))));
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) setSketchSearches((current) => ({
+        ...current, [term.term_id]: { ...current[term.term_id], loading: false, pendingSuffix: null, error: error.message },
+      }));
+    } finally {
+      if (sketchControllersRef.current.get(term.term_id) === controller) sketchControllersRef.current.delete(term.term_id);
+    }
   }
 
   async function submit(text) {
@@ -149,6 +216,8 @@ export default function HomePage() {
       setError(validationError);
       return;
     }
+    termSearchControllerRef.current?.abort();
+    resetSketchSearches();
 
     if (uiDemoEnabled) {
       const demoJob = DEMO_JOB;
@@ -220,6 +289,8 @@ export default function HomePage() {
   }
 
   function navigateBoard(view) {
+    resetSketchSearches();
+    termSearchControllerRef.current?.abort();
     setBoardView(view);
     setMenuOpen(false);
     menuButtonRef.current?.focus();
@@ -227,6 +298,8 @@ export default function HomePage() {
 
   function openHistory(entry) {
     if (conversationBusy) return;
+    resetSketchSearches();
+    termSearchControllerRef.current?.abort();
     pollerRef.current?.stop();
     setSubmission(null);
     setPollError("");
@@ -305,9 +378,36 @@ export default function HomePage() {
                   <strong>{term.label_ko}</strong>
                   {term.term_id === galleryTerm?.term_id && <span className="active-term-badge">보고 있는 용어</span>}
                 </button>
+                  <div className="category-search-controls">
+                  <div className="category-search-actions" role="group" aria-label={`${roleLabel} 검색 모드`}>
+                    {[{ suffix: "drawing", label: "일반" }, { suffix: "sketch", label: "스케치" },
+                      { suffix: "mannequinization", label: "도형화" }].map((mode) => (
+                      <button className="sketch-search-button" type="button" key={mode.suffix}
+                        aria-pressed={(sketchSearches[term.term_id]?.suffix || "drawing") === mode.suffix}
+                        aria-busy={Boolean(sketchSearches[term.term_id]?.loading && sketchSearches[term.term_id]?.pendingSuffix === mode.suffix)}
+                        disabled={sketchSearches[term.term_id]?.loading ||
+                          (boardView === "term-results" && termSearch?.loading)}
+                        aria-label={`${roleLabel} ${term.label_ko} ${mode.label} 검색`}
+                        onClick={() => searchCategory(term, mode.suffix)}>
+                        {mode.label}
+                      </button>
+                    ))}
+                  </div>
+                  <details className="category-search-help">
+                    <summary aria-label="도형화란?">?</summary>
+                    <p><strong>도형화란?</strong>몸을 상자·원통·구로 나눈 구조 참고 자료입니다.</p>
+                  </details>
+                  </div>
                 </div>
+                {sketchSearches[term.term_id]?.loading && <p className="sketch-search-notice" role="status">레퍼런스를 찾는 중입니다…</p>}
+                {sketchSearches[term.term_id]?.error && <p className="sketch-search-notice" role="alert">{sketchSearches[term.term_id].error}</p>}
                 <div className="pin-gallery-items">
+                  {boardView === "term-results" && termSearch?.loading && <p className="pin-unavailable" role="status">레퍼런스를 찾는 중입니다…</p>}
+                  {boardView === "term-results" && termSearch?.error && <p className="pin-unavailable" role="alert">{termSearch.error}</p>}
                   {roleNotice(term) && <p className="pin-unavailable" role="status">{roleNotice(term)}</p>}
+                  {boardView === "term-results" && !termSearch?.loading && (termSearch?.error || roleNotice(term)) &&
+                    <button type="button" onClick={() => openTermSearch(term)}>다시 찾기</button>}
+                  {!pins.length && !roleNotice(term) && !(boardView === "term-results" && termSearch?.loading) && <p className="pin-unavailable">표시할 핀이 없습니다.</p>}
                   {pins.map((pin, index) => showThumbnail(pin) && !failedThumbnails[`${term.term_id}:${pin.pin_id}`] ? (
                     <button
                       className="pin-gallery-card"
