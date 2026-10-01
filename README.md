@@ -2,8 +2,8 @@
 
 > 전문 용어가 낯선 초보자가 텍스트로 묘사한 캐주얼 캐릭터의 **체형/소체, 포즈, 구도**를 기초 드로잉 용어와 역할별 Pinterest 탐색 계획으로 바꾸는 Agent입니다.
 
-> **현재 상태: PostgreSQL job 저장과 LLM → resolver → 응답 조립 worker pipeline까지 구현됨**
-> `POST /api/agent`는 세션 쿠키와 queued job을 만들고, `GET /api/jobs/{job_id}`는 동일 세션의 job을 조회합니다. worker는 claim한 job을 LLM 해석·resolver 검증·응답 조립까지 처리하고, 재시도와 lease 복구를 수행합니다. Pinterest 검색의 worker 연결·UI·Agent API 배포는 아직 구현·측정하지 않았습니다. Langfuse adapter의 일부 관측 코드는 구현됐지만, worker trace 운영 검증·원격 Prompt 등록·Dataset 연결·대시보드 측정은 미완료입니다. 별도 MCP 서비스의 `get_active_term_card` FastMCP 도구는 Cloud Run IAM으로 배포됐으며, 로컬·운영 MCP client 호출을 검증했습니다. 아래의 목표 구조와 계획 항목은 완료 기능으로 해석하면 안 됩니다.
+> **현재 상태: PostgreSQL job 저장, LLM → resolver → Pinterest provider → 응답 조립 worker, frontend 입력·polling까지 구현됨**
+> `POST /api/agent`는 세션 쿠키와 queued job을 만들고, `GET /api/jobs/{job_id}`는 동일 세션의 job을 조회합니다. worker는 claim한 job을 LLM 해석·resolver 검증·Pinterest 검색·응답 조립까지 처리하고, 재시도와 lease 복구를 수행합니다. frontend는 입력·제출·job polling 상태를 표시하지만, 완료된 용어·Pin 결과를 화면에 표시하는 UI는 아직 병합되지 않았습니다. Langfuse adapter의 일부 관측 코드는 구현됐지만, worker trace 운영 검증·원격 Prompt 등록·Dataset 연결·대시보드 측정은 미완료입니다. 별도 MCP 서비스의 `get_active_term_card` FastMCP 도구는 Cloud Run IAM으로 배포됐으며, 로컬·운영 MCP client 호출을 검증했습니다. 아래의 목표 구조와 계획 항목은 완료 기능으로 해석하면 안 됩니다.
 
 ## 한눈에 보기
 
@@ -73,7 +73,7 @@
 사용자 UI
   -> POST /api/agent (PostgreSQL에 세션·queued job 저장, 서버 세션 쿠키 발급·재사용, 202 + job_id)
   -> GET /api/jobs/{job_id} polling (PostgreSQL에서 소유권 확인 후 상태·결과 조회)
-Job worker / retry·lease recovery (LLM → resolver → response assembly 구현, Pinterest 검색 연결 미구현)
+Job worker / retry·lease recovery (LLM → resolver → Pinterest provider → response assembly 구현, 외부 E2E 미측정)
   -> LLM: 일상어를 허용된 term_id와 역할로 구조화
   -> 결정론 코드: Pydantic 검증, 역할 순서, 허용 ID, URL 인코딩
   -> FastMCP: TERM_CARD JSON 카탈로그의 활성 카드 정보를 구조화 조회
@@ -104,11 +104,12 @@ PinterestCrawlerProvider와 widget 기반 Pin 미리보기·보관 경계는 [Pi
 | 항목 | 현재 상태 | 최종 목표 |
 | --- | --- | --- |
 | `GET /health` | 구현됨. `{"status":"ok"}` 반환 | Cloud Run 상태 확인 |
-| `POST /api/agent` | PostgreSQL 영속화 구현됨. 세션 쿠키 발급·재사용, `202 + job_id` 반환 | Pinterest 검색 단계 연결 |
-| `GET /api/jobs/{job_id}` | PostgreSQL 영속화 구현됨. 소유 job의 상태·완료 결과·실패 조회 | Pinterest thumbnail 응답 조립 |
-| DB 영속화·실제 worker | 구현됨. PostgreSQL job claim, LLM adapter·resolver·response assembler pipeline, retry·lease recovery | Pinterest 검색 단계 연결 |
-| LLM 해석·resolver 연동 | 구현됨. worker가 활성 TERM_CARD를 LLM에 전달하고 resolver·response assembler 결과를 저장 | Pinterest 검색 결과 연결 |
-| Pinterest 검색 실행 | 미구현 | 역할별 검색 결과 |
+| `POST /api/agent` | PostgreSQL 영속화 구현됨. 세션 쿠키 발급·재사용, `202 + job_id` 반환 | 실제 환경 요청 증거 |
+| `GET /api/jobs/{job_id}` | PostgreSQL 영속화 구현됨. 소유 job의 상태·완료 결과·실패 조회 | frontend 결과 UI 연결 |
+| DB 영속화·실제 worker | 구현됨. PostgreSQL job claim, LLM adapter·resolver·Pinterest provider·response assembler pipeline, retry·lease recovery | 실제 환경 실행 증거 |
+| LLM 해석·resolver 연동 | 구현됨. worker가 활성 TERM_CARD를 LLM에 전달하고 resolver·검색 결과를 조립해 저장 | 실제 모델 품질 평가 |
+| Pinterest 검색 실행 | worker 연결 구현됨. 서버 Playwright 공개 검색·widget enrichment 코드와 단위 테스트 존재 | 실제 환경 검색 결과 검증 |
+| Next.js UI | 입력·제출·polling 구현됨 | 완료 결과·질문·Pin 링크 표시 |
 | `/docs` | FastAPI 기본 문서에서 확인 가능 | 요청·응답 모델 및 오류 응답 확인 |
 | `/mcp` | `backend.mcp.main:app`에 마운트된 Streamable HTTP endpoint를 Cloud Run IAM으로 배포함. 무인증 `403`, 인증된 도구 목록·`found`·`not_found` 호출을 검증함. [호출 증거](docs/mcp-client-evidence.md) | Streamable HTTP endpoint와 도구 호출 증거 |
 | TERM_CARD JSON 카탈로그 | 구현됨. API·MCP 시작 시 검증 후 역할별 활성 카드를 메모리에 로드 | 요청 중 재읽기·DB 적재 없이 활성 카드를 조회 |
@@ -118,23 +119,51 @@ PinterestCrawlerProvider와 widget 기반 Pin 미리보기·보관 경계는 [Pi
 
 ## 로컬 실행
 
+현재 재현 절차의 계약은 [로컬 개발 재현 Spec](./docs/specs/local-development-reproduction.md)을 기준으로 합니다. 아래 절차는 API health와 frontend 입력·제출·polling까지의 현재 구현 범위를 실행합니다. **완료 결과를 화면에 표시하는 UI와 외부 Pinterest·LLM의 실제 E2E 성공은 아직 이 절차로 보장하지 않습니다.**
+
 ### 사전 준비
 
-- Docker Desktop 또는 Docker Engine과 Docker Compose
+- Docker Desktop 또는 Docker Engine과 Docker Compose v2
 - Git
+- Node.js **20.9 이상**과 npm (frontend 실행용)
+- Neon 개발 DB의 `DATABASE_URL`과 OpenRouter `OPENROUTER_API_KEY`를 본인의 `.env`에 준비합니다. 실제 URL·key를 저장소에 넣지 않습니다.
 - 로컬 Langfuse 실행을 위해 `.env.example`의 Langfuse 내부 비밀값을 설정합니다. 저장 서비스별 비밀번호는 서로 다른 임의 hex 값으로 생성하고, `LANGFUSE_ENCRYPTION_KEY`는 64자리 hex 값으로 지정합니다.
-- 앱의 `DATABASE_URL`은 Neon 개발 DB를 사용하며, Langfuse는 별도 Compose PostgreSQL을 사용합니다.
+- 앱의 `DATABASE_URL`은 Neon 개발 DB를 사용하며, Langfuse는 별도 Compose PostgreSQL을 사용합니다. migration은 API startup에서 자동 실행되지 않습니다.
 
 ### PowerShell
 
 ```powershell
-git clone <팀-저장소-URL>
+git clone https://github.com/aihuman-7th/proj2-4.git
 cd proj2-4
 Copy-Item .env.example .env
-docker compose up --build
+# .env에 DATABASE_URL, OPENROUTER_API_KEY, Langfuse 내부 비밀값을 채운 뒤 실행
+docker compose up --build -d
 ```
 
-실행 뒤 다음 주소를 확인합니다.
+Compose가 기동된 뒤, **job을 제출하기 전에** API 컨테이너에서 migration을 한 번 실행합니다. 이 명령은 `.env`의 `DATABASE_URL`에 연결하며, 값을 출력하지 않습니다.
+
+```powershell
+@'
+import asyncio
+import asyncpg
+
+from backend.db.migrate import migrate
+from backend.shared.config import get_settings
+
+
+async def main():
+    connection = await asyncpg.connect(get_settings().database_url)
+    try:
+        await migrate(connection)
+    finally:
+        await connection.close()
+
+
+asyncio.run(main())
+'@ | docker compose exec -T api python -
+```
+
+다음으로 API와 Langfuse health를 확인합니다.
 
 | 주소 | 현재 기대 결과 |
 | --- | --- |
@@ -142,17 +171,28 @@ docker compose up --build
 | `http://localhost:8000/docs` | FastAPI 자동 문서 |
 | `http://localhost:3000` | 로컬 Langfuse UI. 가입 후 organization/project를 만들고 API key를 `.env`의 `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`에 입력 |
 
-Compose API 컨테이너는 Langfuse에 `http://langfuse-web:3000`으로 연결하며, 이 구성은 로컬 Langfuse 인프라 준비를 제공합니다. 실제 LLM 관측 데이터 확인은 이번 범위의 완료 조건이 아닙니다. Worker root trace 생성과 job trace lifecycle 연결은 [관측 Spec](./docs/specs/observability-and-prompt-versioning.md)을 기준으로 별도 PR에서 진행합니다.
+Compose API 컨테이너는 Langfuse에 `http://langfuse-web:3000`으로 연결하며, 이 구성은 로컬 Langfuse 인프라 준비를 제공합니다. worker의 job trace lifecycle 코드는 구현됐지만, 실제 LLM 관측 데이터·원격 Prompt 등록·Dataset 연결·대시보드 측정은 별도 검증 대상입니다.
 
 기동 후 PowerShell에서 설정과 health를 확인합니다. worker는 호스트 포트를 공개하지 않으므로 컨테이너 내부에서 검사합니다.
 
 ```powershell
 docker compose config --quiet
+(Invoke-RestMethod -Uri 'http://localhost:8000/health')
 (Invoke-WebRequest -Uri 'http://localhost:3000/api/public/health').StatusCode
 docker compose exec -T langfuse-worker sh -c 'wget -S -O- "http://$(hostname -i):3030/api/health"'
 ```
 
-두 health endpoint는 `200`을 반환해야 합니다. Worker 검사 응답 본문은 `{"status":"ok"}`입니다.
+API health의 기대 본문은 `{"status":"ok"}`입니다. 두 Langfuse health endpoint는 `200`을 반환해야 하며, worker 검사 응답 본문은 `{"status":"ok"}`입니다. `/health`는 API liveness 확인이며 Neon DB migration, OpenRouter 호출, Pinterest 검색, Langfuse trace 기록까지 검증하지는 않습니다.
+
+API와 별도로, 새 PowerShell 창에서 frontend를 시작합니다. Langfuse UI가 3000을 사용하므로 Next.js는 **3001** 포트를 사용합니다.
+
+```powershell
+cd proj2-4\frontend
+npm ci
+npm run dev -- --port 3001
+```
+
+브라우저에서 `http://localhost:3001`을 열어 1~500자 입력의 유효성 검사, `POST /api/agent` 제출, job polling 상태 표시까지 확인합니다. 현재 main의 UI는 완료 상태만 표시하며, 결과 카드·Pin 링크 표시는 후속 UI 작업이 병합된 뒤에 확인합니다.
 
 종료는 다음 명령으로 합니다.
 
@@ -160,7 +200,9 @@ docker compose exec -T langfuse-worker sh -c 'wget -S -O- "http://$(hostname -i)
 docker compose down
 ```
 
-> 아직 전체 MVP를 10분 안에 재현하는 실측은 수행하지 않았습니다. Langfuse 인프라 기동 확인은 LLM trace 기록 확인과 별개입니다. [관측 Spec](./docs/specs/observability-and-prompt-versioning.md)의 worker root trace lifecycle 연결, 원격 Prompt 등록·Dataset 연결·대시보드 측정과 UI 구현 후 새 환경에서 절차를 검증하고 결과를 갱신합니다.
+frontend 개발 서버도 해당 PowerShell 창에서 `Ctrl+C`로 중지합니다. `docker compose down`은 named volume을 삭제하지 않습니다.
+
+> 아직 새 환경에서 이 전체 절차를 끝까지 실행한 실측은 없습니다. 특히 실제 LLM·Pinterest 결과와 완료 결과 UI는 별도 검증 대상입니다. Langfuse 인프라 기동 확인은 LLM trace 기록 확인과 별개입니다. 원격 Prompt 등록·Dataset 연결·대시보드 측정과 결과 UI 구현 후 새 환경에서 절차를 다시 검증하고 결과를 갱신합니다.
 
 ## 환경 변수와 보안
 
@@ -194,6 +236,7 @@ docker compose down
 | [경쟁 서비스 분석](./docs/domains/illustration-reference/competitive-analysis.md) | 실제 시작 흐름 비교, 차별점과 조사 한계 |
 | [설계 문서](./docs/domains/illustration-reference/design.md) | LLM·결정론 코드·MCP의 책임 분리와 폴백 설계 |
 | [API 계약](./docs/specs/api-contract.md) | `POST /api/agent`, 비동기 job 상태, 완료 결과, worker 실패·재시도 및 LLM JSON 계약 |
+| [로컬 개발 재현](./docs/specs/local-development-reproduction.md) | clone 뒤 API·migration·frontend를 현재 구현 범위까지 시작하는 절차 |
 | [로컬 Langfuse Compose](./docs/specs/local-langfuse-compose.md) | 로컬 Langfuse와 필수 저장 서비스 구성 |
 | [MCP 계약](./docs/specs/mcp-contract.md) | JSON 카탈로그 기반 `get_active_term_card` 도구의 입력·출력·접근 제어 |
 | [NOT_BUILD.md](./NOT_BUILD.md) | MVP에서 의도적으로 만들지 않는 기능과 이유 |
