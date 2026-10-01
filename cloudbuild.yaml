@@ -2,7 +2,7 @@
 # 트리거: GitHub main 브랜치 push, backend/** 경로 변경 감지
 # 무료 티어: Cloud Run min-instances=0, Neon PostgreSQL (Free Tier), VPC 커넥터 없음
 # Neon: 0.5GB 스토리지, 5분 유휴 시 자동 일시정지, 브랜칭 기능 포함
-# 배포: 단일 이미지, 두 서비스(api, mcp) — 진입점만 다름
+# 배포: API + SearXNG sidecar, 별도 MCP 서비스
 steps:
   # 1. Docker 이미지 빌드
   - name: "gcr.io/cloud-builders/docker"
@@ -21,6 +21,20 @@ steps:
       - "--all-tags"
       - "${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/${_API_SERVICE_NAME}"
 
+  - name: "gcr.io/cloud-builders/docker"
+    id: "build-searxng-image"
+    args:
+      - "build"
+      - "--tag=${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/searxng:${SHORT_SHA}"
+      - "--file=searxng/Dockerfile"
+      - "searxng"
+
+  - name: "gcr.io/cloud-builders/docker"
+    id: "push-searxng-image"
+    args:
+      - "push"
+      - "${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/searxng:${SHORT_SHA}"
+
   # 3a. 공개 API Cloud Run 서비스 배포 (인증 불필요)
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
     id: "deploy-api"
@@ -29,6 +43,7 @@ steps:
       - "run"
       - "deploy"
       - "${_API_SERVICE_NAME}"
+      - "--container=api"
       - "--image=${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/${_API_SERVICE_NAME}:${SHORT_SHA}"
       - "--region=${_REGION}"
       - "--platform=managed"
@@ -40,12 +55,17 @@ steps:
       - "--max-instances=3"
       - "--concurrency=80"
       - "--timeout=300"
-      - "--set-env-vars=ENVIRONMENT=production,INTERPRETER_PROMPT_PATH=/app/prompts/uhkegryo-interpreter-v0.md,LLM_MODEL=openai/gpt-4o-mini,LLM_TIMEOUT_SECONDS=180"
+      - "--set-env-vars=ENVIRONMENT=production,INTERPRETER_PROMPT_PATH=/app/prompts/uhkegryo-interpreter-v0.md,LLM_MODEL=openai/gpt-4o-mini,LLM_TIMEOUT_SECONDS=180,SEARXNG_BASE_URL=http://localhost:8080"
       - "--set-secrets=OPENROUTER_API_KEY=OPENROUTER_API_KEY:latest"
       - "--set-secrets=LANGFUSE_PUBLIC_KEY=LANGFUSE_PUBLIC_KEY:latest"
       - "--set-secrets=LANGFUSE_SECRET_KEY=LANGFUSE_SECRET_KEY:latest"
       - "--set-secrets=DATABASE_URL=DATABASE_URL:latest"
       - "--set-secrets=SESSION_SECRET=SESSION_SECRET:latest"
+      - "--container=searxng"
+      - "--image=${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/searxng:${SHORT_SHA}"
+      - "--cpu=1"
+      - "--memory=512Mi"
+      - "--set-secrets=SEARXNG_SECRET=SEARXNG_SECRET:latest"
 
   # 3b. 내부 MCP Cloud Run 서비스 배포 (인증 필요, IAM으로 보호)
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
@@ -104,5 +124,5 @@ options:
 
 # 트리거 조건 (GitHub 웹훅에서 설정):
 # - 브랜치: ^main$
-# - 포함된 파일 경로: backend/**, Dockerfile, cloudbuild.yaml, .env.example
+# - 포함된 파일 경로: backend/**, searxng/**, Dockerfile, cloudbuild.yaml, .env.example
 # - 저장소: aihuman-7th/proj2-4

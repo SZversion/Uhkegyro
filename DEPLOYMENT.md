@@ -6,6 +6,7 @@
 ┌─────────────┐     HTTPS      ┌──────────────────┐
 │   Vercel    │ ─────────────► │  Cloud Run (api) │  --min-instances=0 (유휴 시 $0)
 │  (Frontend) │   REST API     │  FastAPI (공개)  │  --max-instances=3
+                               │  + SearXNG sidecar│  (내부 localhost)
 └─────────────┘                └────────┬─────────┘
                                         │
                                         │ Internal (OIDC 토큰)
@@ -29,7 +30,7 @@
 - **시크릿**: Secret Manager
 - **CI/CD**: Cloud Build (GitHub push → 빌드 → 배포)
 - **MCP 인증**: Cloud Run IAM (서비스 간 호출만 허용, 브라우저 직접 접근 차단)
-- **이미지**: **단일 Docker 이미지** 사용, 진입점만 다름 (`backend.main:app` vs `backend.mcp.main:app`)
+- **이미지**: API와 MCP는 앱 이미지를 공유하고, API 서비스는 SearXNG sidecar 컨테이너도 함께 실행합니다.
 - **예상 월 비용**: **$0** (무료 할당량 내, 초과 시 과금 가능)
 
 ---
@@ -72,14 +73,15 @@ bash scripts/gcp-setup-free.sh
 스크립트가 생성하는 리소스:
 - Artifact Registry: `asia-northeast3-docker.pkg.dev/proj2-509406/docker-repo`
 - **Cloud SQL 없음, VPC 커넥터 없음** (비용 절감)
-- Secret Manager: 5개 시크릿 생성 안내 (직접 값 입력 필요)
+- Secret Manager: 6개 시크릿 생성 안내 (직접 값 입력 필요)
 
-**수동 입력 필요 시크릿 5개** (Secret Manager 콘솔 또는 CLI):
+**수동 입력 필요 시크릿 6개** (Secret Manager 콘솔 또는 CLI):
 1. `OPENROUTER_API_KEY` — OpenRouter 키
 2. `LANGFUSE_PUBLIC_KEY` — Langfuse 공개 키
 3. `LANGFUSE_SECRET_KEY` — Langfuse 비밀 키
 4. `SESSION_SECRET` — 임의 32자 문자열 (`openssl rand -base64 32 | tr -d "=+/" | cut -c1-32`)
 5. `DATABASE_URL` — **Neon 연결 문자열** (`postgresql://...`)
+6. `SEARXNG_SECRET` — SearXNG 설정용 임의의 긴 비밀값
 
 **프롬프트 파일 환경변수** (API 서비스 전용, MCP 서비스 불필요):
 - `INTERPRETER_PROMPT_PATH=/app/prompts/uhkegryo-interpreter-v0.md`
@@ -100,6 +102,7 @@ gcloud secrets create LANGFUSE_PUBLIC_KEY --data-file=- --project=proj2-509406 <
 gcloud secrets create LANGFUSE_SECRET_KEY --data-file=- --project=proj2-509406 <<< 'sk-lf-xxx'
 gcloud secrets create SESSION_SECRET --data-file=- --project=proj2-509406 <<< 'your-32-char-secret'
 gcloud secrets create DATABASE_URL --data-file=- --project=proj2-509406 <<< 'postgresql://user:pwd@ep-xxx.neon.tech/db?sslmode=require'
+gcloud secrets create SEARXNG_SECRET --data-file=- --project=proj2-509406 <<< 'replace-with-a-long-random-value'
 ```
 
 ---
@@ -127,7 +130,7 @@ gcloud secrets create DATABASE_URL --data-file=- --project=proj2-509406 <<< 'pos
 | 설정 항목 | 값 |
 |---|---|
 | **브랜치** | `^main$` |
-| **포함된 파일 필터** | `backend/**`, `Dockerfile`, `cloudbuild.yaml`, `.env.example` |
+| **포함된 파일 필터** | `backend/**`, `searxng/**`, `Dockerfile`, `cloudbuild.yaml`, `.env.example` |
 | **빌드 구성** | `cloudbuild.yaml` (레포 루트) |
 | **Substitutions** | `_REGION=asia-northeast3`, `_ARTIFACT_REGISTRY=asia-northeast3-docker.pkg.dev`, `_ARTIFACT_REPO=docker-repo`, `_API_SERVICE_NAME=api`, `_MCP_SERVICE_NAME=mcp`, `_MCP_CALLER_SA=mcp-caller` |
 
