@@ -21,7 +21,7 @@ from backend.services.llm import (
 )
 from backend.services.llm import format_active_cards_json
 from backend.services.pinterest_provider import PinterestProvider
-from backend.services.pinterest_public_search import PinterestPublicSearchProvider
+from backend.services.pinterest_public_search import SearXNGPinterestSearchProvider
 from backend.services.pinterest_widget import PinterestWidgetClient, PinterestWidgetProvider
 from backend.services.resolver import ResolutionResult
 from backend.services.response_assembler import RoleSearchOutcome, assemble
@@ -280,7 +280,8 @@ async def run_worker(snapshot: CatalogSnapshot) -> None:
                 return
             pool = await create_pool(settings)
             pinterest_provider = PinterestWidgetProvider(
-                PinterestPublicSearchProvider(), PinterestWidgetClient()
+                SearXNGPinterestSearchProvider(base_url=settings.searxng_base_url),
+                PinterestWidgetClient(),
             )
             await AgentJobWorker(
                 pool, snapshot, pinterest_provider=pinterest_provider

@@ -28,7 +28,7 @@
 - `backend/services/failure_mapping.py`를 단일 분류 경계로 사용한다. 임의 예외의 `failure_code` 속성이나 메시지 문자열을 신뢰하지 않는다.
 - `LLMError`와 명시적인 운영 오류 wrapper의 enum 코드, `CatalogLoadError`, asyncpg의 인증·스키마·연결 예외 타입을 분류한다. 일반 `OSError`·`TimeoutError`는 DB 호출 경계에서만 DB 장애다.
 - 접속 준비 전 `asyncpg.CannotConnectNowError`와 연결 포화 `asyncpg.TooManyConnectionsError`도 `DATABASE_UNAVAILABLE`이다. API는 HTTP 503과 고정 안내를 반환하고 Worker heartbeat·실패 저장 경계는 같은 코드로 trace한다.
-- 검색 loader 경계는 httpx·Playwright timeout과 HTTP 상태로 분류한다. 오류 원문을 로그에 넣지 않고 `failure_code`만 기록한다.
+- SearXNG HTTP loader 경계는 httpx timeout과 HTTP 상태로 분류한다. 오류 원문을 로그에 넣지 않고 `failure_code`만 기록한다.
 - migration wrapper는 transaction rollback 이후 `DATABASE_MIGRATION_ERROR` 운영 오류를 전달한다. 연결·인증 오류는 해당 분류를 유지한다.
 - `JobRetryRecovery`와 `AttemptTrace.failed`는 같은 분류 함수를 쓴다. 기존 LLM 재시도 정책을 유지하고 DB·설정·코드 오류를 자동 재시도하지 않는다.
 - `/api` 예외 응답은 알려진 DB·설정 장애에 HTTP 503, 예상하지 않은 코드 오류에 HTTP 500과 동일한 세 필드 `Failure`를 반환한다. 기존 401·404·409·422 요청 오류 계약은 유지한다.

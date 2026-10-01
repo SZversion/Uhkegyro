@@ -45,8 +45,11 @@ class Settings(BaseSettings):
     # PostgreSQL Job worker
     worker_concurrency: int = Field(default=5, ge=1)
 
-    # Pinterest 검색 URL 기본 템플릿 (provider 계약 확정 전 결정론 기본값, T16에서 교체)
+    # Pinterest 탐색 링크 (사용자에게 보여주는 링크)
     pinterest_search_base_url: str = "https://www.pinterest.com/search/pins/"
+
+    # Self-hosted SearXNG Search API
+    searxng_base_url: str = ""
 
 
 @lru_cache

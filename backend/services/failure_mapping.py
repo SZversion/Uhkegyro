@@ -49,12 +49,6 @@ def classify_failure(
             return FailureCode.CONFIGURATION_ERROR
         if isinstance(error, (TimeoutError, httpx.TimeoutException)):
             return FailureCode.SEARCH_TIMEOUT
-        try:
-            from playwright.async_api import TimeoutError as PlaywrightTimeout
-        except ImportError:
-            PlaywrightTimeout = ()
-        if isinstance(error, PlaywrightTimeout):
-            return FailureCode.SEARCH_TIMEOUT
         if isinstance(error, httpx.HTTPStatusError) and error.response.status_code == 429:
             return FailureCode.SEARCH_RATE_LIMITED
         return FailureCode.SEARCH_UPSTREAM_UNAVAILABLE
