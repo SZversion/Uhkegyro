@@ -121,6 +121,59 @@ def test_v1_path_and_trace_version_can_be_activated_together():
     assert "COPY prompts/uhkegryo-interpreter-v1.md /app/prompts/uhkegryo-interpreter-v1.md" in dockerfile
 
 
+def _historical_selection_case(snapshot_factory, card_factory, evidence):
+    source_id = "00000000-0000-0000-0000-000000000001"
+    job = {"request_text": "같은 구도를 다시 찾아줘"}
+    memory = AsyncMock()
+    memory.records.return_value = [{
+        "job_id": source_id, "request_text": "Prior Low Angle",
+        "terms": [{"label_ko": "이전 로우 앵글", "label_en": "low angle"}],
+    }]
+    output = InterpretationOutput(interpretation_state="select_terms", selections=[
+        InterpretationSelection(role="view", term_id="view_low_angle", evidence=[evidence],
+                                confidence=0.9, source_job_id=source_id),
+    ])
+    snapshot = snapshot_factory([card_factory("view_low_angle", role="view")])
+    return memory, job, output, snapshot
+
+
+@pytest.mark.parametrize("evidence", ["Prior Low Angle", "이전 로우 앵글", "low angle"])
+def test_historical_selection_accepts_evidence_absent_from_current_request(snapshot_factory, card_factory, evidence):
+    memory, job, output, snapshot = _historical_selection_case(snapshot_factory, card_factory, evidence)
+    assert evidence not in job["request_text"]
+    result = asyncio.run(conversation_context.validate(memory, job, output, snapshot))
+    assert result.status == "proceed"
+    assert result.terms[0].selection.evidence == [evidence]
+    assert result.terms[0].selection.source_job_id == output.selections[0].source_job_id
+    memory.records.assert_awaited_once_with(job, [output.selections[0].source_job_id])
+
+
+@pytest.mark.parametrize("invalid", ["missing_source", "unknown_evidence", "inactive", "wrong_role", "no_source"])
+def test_historical_selection_keeps_source_and_card_guards(snapshot_factory, card_factory, invalid):
+    memory, job, output, snapshot = _historical_selection_case(snapshot_factory, card_factory, "Prior Low Angle")
+    if invalid == "missing_source":
+        memory.records.return_value[0]["job_id"] = "00000000-0000-0000-0000-000000000002"
+    elif invalid == "unknown_evidence":
+        output.selections[0].evidence = ["Not cited"]
+    elif invalid == "inactive":
+        snapshot = snapshot_factory([])
+    elif invalid == "wrong_role":
+        snapshot = snapshot_factory([card_factory("view_low_angle", role="pose")])
+    else:
+        output.selections[0].source_job_id = None
+    with pytest.raises(LLMInvalidStructuredOutput) as raised:
+        asyncio.run(conversation_context.validate(memory, job, output, snapshot))
+    assert raised.value.failure_code.value == "LLM_INVALID_STRUCTURED_OUTPUT"
+
+
+def test_resolver_requires_verified_texts_for_the_selected_source(snapshot_factory, card_factory):
+    from backend.services.resolver import resolve
+    _, job, output, snapshot = _historical_selection_case(snapshot_factory, card_factory, "Prior Low Angle")
+    for sources in (None, {"00000000-0000-0000-0000-000000000002": ["Prior Low Angle"]}):
+        result = resolve(output, snapshot, request_text=job["request_text"], verified_source_texts=sources)
+        assert result.status == "all_invalid"
+
+
 def test_v1_preserves_main_memory_instructions():
     from backend.services.llm import _extract_fenced_block
     baseline = (ROOT / "prompts/uhkegryo-interpreter-v0.md").read_text(encoding="utf-8")

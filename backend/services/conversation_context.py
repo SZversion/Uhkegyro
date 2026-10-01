@@ -82,14 +82,19 @@ async def validate(memory, job, interpretation, snapshot):
     ids = [item.source_job_id for item in interpretation.selections if item.source_job_id]
     originals = await memory.records(job, ids) if ids else []
     by_id = {item["job_id"]: item for item in originals}
+    verified_source_texts = {}
     for selection in interpretation.selections:
         if selection.source_job_id:
-            original = by_id[str(selection.source_job_id)]
+            original = by_id.get(str(selection.source_job_id))
+            if original is None:
+                raise LLMInvalidStructuredOutput("선택 출처가 검증된 선행 기록에 없습니다")
             allowed = [original["request_text"]] + [t[k] for t in original["terms"] for k in ("label_ko", "label_en")]
         else:
             allowed = [job["request_text"]]
         if any(not any(phrase in text for text in allowed) for phrase in selection.evidence):
             raise LLMInvalidStructuredOutput("선택 근거가 실제 요청 또는 원본 카드 라벨에 없습니다")
+        if selection.source_job_id:
+            verified_source_texts[str(selection.source_job_id)] = tuple(allowed)
     seen = set()
     for update in interpretation.context_updates:
         if update.role in seen or not update.evidence.strip() or update.evidence not in job["request_text"]:
@@ -101,7 +106,8 @@ async def validate(memory, job, interpretation, snapshot):
                                         evidence=[update.evidence], confidence=1)])
             if resolve(candidate, snapshot, request_text=str(job["request_text"])).status == STATUS_ALL_INVALID:
                 raise LLMInvalidStructuredOutput("기억할 조건의 카드가 유효하지 않습니다")
-    resolution = resolve(interpretation, snapshot, request_text=str(job["request_text"]))
+    resolution = resolve(interpretation, snapshot, request_text=str(job["request_text"]),
+                         verified_source_texts=verified_source_texts)
     if resolution.status == STATUS_ALL_INVALID or resolution.invalid_candidates:
         raise LLMInvalidStructuredOutput("선택 카드가 현재 카탈로그에서 유효하지 않습니다")
     return resolution

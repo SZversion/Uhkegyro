@@ -28,6 +28,7 @@
 - Docker image에 v0와 v1을 모두 포함한다.
 - 최신 main의 `session_context`, `source_job_id`, `context_updates` 계약과 Memory classify·summarize·answer 지시문을 유지한다. v1의 출력 예제에도 nullable 출처와 조건 변경 배열을 포함한다.
 - 서버의 조건 변경 카드 검증은 resolver에 현재 `request_text`를 전달한다. 선택 항목의 선행 출처를 조건 변경 근거로 사용하지 않는다.
+- 선행 출처 검증을 통과한 selection은 [대화 맥락 계약](./conversation-context.md)에 따라 출처별 원본 텍스트를 resolver에 전달해 검사한다. 현재 요청에 해당 인용이 없어도 활성·역할 검증을 통과하면 허용한다.
 - v1은 비활성 준비용 프롬프트다. 이 PR은 `.env.example`과 배포 설정을 v0에서 변경하지 않는다. 평가와 팀 검토 뒤 별도 활성화 변경에서 Prompt 경로와 버전을 함께 v1로 지정한다.
 - v1 활성화 시 `INTERPRETER_PROMPT_PATH=./prompts/uhkegryo-interpreter-v1.md`, `INTERPRETER_PROMPT_VERSION=uhkegryo-interpreter-v1`을 함께 지정한다.
 - v1 단계에서는 기존 `response_format=json_object`, SDK 내부 재시도 0회, `InterpretationOutput` 및 resolver 검증을 유지한다. 코드 유래 strict schema로의 전환은 [구조화 출력 Skill Spec](./structured-output-skill.md)에 기록한다.
@@ -40,6 +41,7 @@
 - GIVEN 현재 요청 또는 유효한 `source_job_id`의 선행 원본·카드 라벨에 영어 단서가 있다, WHEN v1의 `selections[].evidence`로 인용하면, THEN 대소문자를 포함한 원문 철자를 유지한 채 구조 검증을 통과한다.
 - GIVEN 현재 요청에 영어 조건 변경이 명시돼 있다, WHEN 해당 원문을 `context_updates[].evidence`로 반환하면, THEN `conversation_context.validate()`를 통과한다.
 - GIVEN 조건 변경 근거가 선행 원본 요청·카드 라벨에만 존재하고 현재 요청에는 없다, WHEN `context_updates[].evidence`로 반환하면, THEN 서버 검증은 `LLM_INVALID_STRUCTURED_OUTPUT`으로 거부한다.
+- GIVEN 현재 요청에는 없고 유효한 선행 요청·카드 라벨에만 있는 selection 근거, WHEN `conversation_context.validate()`를 실행하면, THEN 출처 검증과 resolver를 통과한다. 없는 출처·인용·비활성 카드·역할 불일치는 계속 거부한다.
 - GIVEN v1 문서의 출력 계약 표와 예제, WHEN 현재 Pydantic 모델 필드와 비교하면, THEN `source_job_id`와 `context_updates`를 포함해 필드가 일치한다.
 - GIVEN `selections=null` 또는 객체, WHEN 기존 출력 검증을 수행하면, THEN `LLM_INVALID_STRUCTURED_OUTPUT`으로 거부한다.
 - GIVEN Docker image, WHEN v1 경로를 설정하면, THEN 해당 파일을 읽고 v1을 trace 버전으로 사용한다.
