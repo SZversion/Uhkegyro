@@ -1,5 +1,5 @@
 # Cloud Build 설정: backend/ 변경 시 Docker 빌드 → Artifact Registry → Cloud Run 배포
-# 트리거: GitHub main 브랜치 push, backend/** 경로 변경 감지
+# 트리거: GitHub main 브랜치 push, backend/**·searxng/** 경로 변경 감지
 # 무료 티어: Cloud Run min-instances=0, Neon PostgreSQL (Free Tier), VPC 커넥터 없음
 # Neon: 0.5GB 스토리지, 5분 유휴 시 자동 일시정지, 브랜칭 기능 포함
 # 배포: API + SearXNG sidecar, 별도 MCP 서비스

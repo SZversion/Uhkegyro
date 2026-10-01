@@ -115,11 +115,11 @@ gcloud secrets create SEARXNG_SECRET --data-file=- --project=proj2-509406 <<< 'r
    - **이름**: `deploy-api`
    - **이벤트**: 브랜치 푸시
    - **브랜치 정규식**: `^main$`
-   - **포함된 파일 필터**: `backend/**`
+   - **포함된 파일 필터**: `backend/**`, `searxng/**`, `Dockerfile`, `cloudbuild.yaml`, `.env.example`
    - **빌드 구성**: `cloudbuild.yaml` (레포 루트)
 4. **만들기** 클릭
 
-이제 `main` 브랜치에 `backend/`, `Dockerfile`, `cloudbuild.yaml`, `.env.example` 변경사항을 푸시하면 자동 빌드·배포 실행.
+이제 `main` 브랜치에 `backend/`, `searxng/`, `Dockerfile`, `cloudbuild.yaml`, `.env.example` 변경사항을 푸시하면 자동 빌드·배포 실행.
 
 ---
 
@@ -280,7 +280,7 @@ gcloud run services get-iam-policy mcp --region=asia-northeast3 --project=proj2-
 
 | 증상 | 원인 | 해결 |
 |---|---|---|
-| 배포 후 500 에러 | 시크릿 누락 | Secret Manager에 5개 시크릿 모두 버전 확인 |
+| 배포 후 500 에러 | 시크릿 누락 | Secret Manager에 6개 시크릿 모두 버전 확인 |
 | DB 연결 실패 | Neon 일시정지 | Neon 콘솔에서 프로젝트 'Resume' 클릭 또는 연결 문자열 재확인 |
 | CORS 에러 | ALLOWED_ORIGINS 불일치 | Vercel 도메인 정확히 추가 (프로토콜 `https://` 포함) |
 | MCP 엔드포인트 401/403 | 인증 없음/권한 없음 | `mcp-caller` 서비스 계정에 `roles/run.invoker` 부여 확인 |
