@@ -42,7 +42,7 @@ steps:
       - "-ceu"
       - |
         if gcloud run services describe "${_API_SERVICE_NAME}" --region="${_REGION}" --project="${PROJECT_ID}" --format=json > /workspace/api-service.json 2>/dev/null; then
-          python -c 'import json,sys; service=json.load(open(sys.argv[1])); template=service.get("spec",{}).get("template",{}).get("spec",{}); containers=template.get("containers",[]); ingress=next((c for c in containers if c.get("ports")), containers[0]); print(ingress["name"])' /workspace/api-service.json > /workspace/api-ingress-container
+          python -c 'import json,sys; service=json.load(open(sys.argv[1])); template=service.get("spec",{}).get("template",{}).get("spec",{}); containers=template.get("containers",[]); ingress=next((c for c in containers if c.get("ports")), None); name=ingress.get("name") if ingress else None; print(name) if name else sys.exit("Cloud Run service has no ingress container with a configured port")' /workspace/api-service.json > /workspace/api-ingress-container
         else
           printf 'api' > /workspace/api-ingress-container
         fi
