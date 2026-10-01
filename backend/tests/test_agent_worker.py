@@ -1,6 +1,7 @@
 """Worker pipeline tests for the task 9 job contract."""
 
 import asyncio
+import json
 
 import pytest
 
@@ -172,6 +173,16 @@ def test_worker_runs_claimed_job_through_assembler(monkeypatch, snapshot_factory
         '"do_not_infer_from": ["단서 B"]}, "requires_all_of": [], "requires_any_of": []}]}',
     }
     assert recovery.failures == []
+
+
+def test_worker_passes_persisted_validation_feedback(monkeypatch, snapshot_factory, card_factory):
+    feedback = [{"path": [], "code": "role_duplicate"}]
+    job = {**JOB, "validation_feedback_json": json.dumps(feedback)}
+    jobs, recovery, adapter = FakeJobs(job), FakeRecovery(), FakeAdapter()
+    snapshot = snapshot_factory([card_factory("pose_shift", role="pose")])
+    _run(_worker(monkeypatch, jobs, recovery, snapshot, adapter).run_once())
+    assert adapter.calls[0][1]["validation_feedback"] == feedback
+    assert jobs.writes[-1][0] is JobStatus.COMPLETED
 
 
 def test_worker_completes_unsafe_input_without_creating_or_calling_adapter(

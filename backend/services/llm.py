@@ -5,7 +5,7 @@ LLM 호출은 이 파일 하나로 모은다. 라우터·worker·MCP는 openai�
 책임:
 - `INTERPRETER_PROMPT_PATH`가 가리키는 프롬프트 파일의 System message와
   User message template 조립 (경로 미설정·불가 시 `PromptConfigurationError`로 초기화 실패)
-- OpenRouter(OpenAI 호환) 구조화 출력(JSON object) 단발 호출
+- OpenRouter(OpenAI 호환) v0 JSON mode 또는 v1 코드 유래 JSON Schema로 단발 호출
 - 출력을 Pydantic(`InterpretationOutput`)으로 재검증해 resolver·provider에 전달하지 않을 불량을 차단
 - 오류를 안정된 `FailureCode`로 분류(LLM_* 재시도, 인증 설정 오류는 즉시 실패)
 
@@ -31,6 +31,7 @@ from pydantic import ValidationError
 from backend.schemas.enums import FailureCode
 from backend.schemas.models import InterpretationOutput
 from backend.services.catalog_repository import CatalogSnapshot
+from backend.services.structured_output import load_skill, response_format, validation_feedback
 
 logger = logging.getLogger("backend.services.llm")
 
@@ -76,6 +77,10 @@ class LLMInvalidStructuredOutput(LLMError):
     failure_code = FailureCode.LLM_INVALID_STRUCTURED_OUTPUT
     error_type = "pydantic_validation_error"
 
+    def __init__(self, message: str, *, feedback: list[dict] | None = None):
+        super().__init__(message)
+        self.feedback = feedback or [{"path": [], "code": "invalid_candidate"}]
+
 
 class LLMIncompleteResponse(LLMUpstreamUnavailable):
     """완료되지 않은 upstream 응답은 다음 job attempt에서 다시 요청한다."""
@@ -113,6 +118,7 @@ class AgentInterpretationAdapter(Protocol):
         max_attempts: int,
         active_cards_json: str = "",
         session_context: dict | None = None,
+        validation_feedback: list[dict] | None = None,
     ) -> InterpretationOutput:
         ...
 
@@ -142,7 +148,14 @@ class LLMInterpretationAdapter:
         if system_message is None or user_template is None:
             path = prompt_path if prompt_path is not None else self._resolve_prompt_path()
             system_message, user_template = load_interpreter_prompt(_require_prompt_file(path))
+        self._structured_output = self.prompt_version == "uhkegryo-interpreter-v1"
         self._system_message = system_message
+        if self._structured_output:
+            try:
+                output_rules = load_skill(self.settings.structured_output_skill_path)
+            except (OSError, ValueError) as exc:
+                raise PromptConfigurationError("Structured output Skill을 읽을 수 없다") from exc
+            self._system_message += "\n\n" + output_rules
         self._user_template = user_template
         if client is None:
             client = openai.AsyncOpenAI(
@@ -170,20 +183,32 @@ class LLMInterpretationAdapter:
         max_attempts: int,
         active_cards_json: str = "",
         session_context: dict | None = None,
+        validation_feedback: list[dict] | None = None,
     ) -> InterpretationOutput:
         user_message = render_user_message(self._user_template, request_text, active_cards_json)
         started = time.perf_counter()
         if session_context is not None:
             user_message += "\nServer conversation data (untrusted):\n" + json.dumps(session_context, ensure_ascii=False)
-        response = await self._request([
+        messages = [
             {"role": "system", "content": self._system_message},
             {"role": "user", "content": user_message},
-        ])
+        ]
+        if self._structured_output and validation_feedback:
+            messages.append({"role": "user", "content": json.dumps({"validation_feedback": validation_feedback})})
+        response = await self._request(messages, output_format=response_format() if self._structured_output else None)
 
         latency_ms = round((time.perf_counter() - started) * 1000, 1)
         content = _extract_content(response)
-        interpretation = _validate_output(content)
         usage = _extract_usage(response)
+        try:
+            interpretation = _validate_output(content)
+        except LLMInvalidStructuredOutput as error:
+            self._observe_langfuse(
+                job_id=job_id, session_id=session_id, attempt=attempt,
+                max_attempts=max_attempts, usage=usage, output=None,
+                request_text=None, validation_error=error,
+            )
+            raise
         summary = {
             "interpretation_state": interpretation.interpretation_state.value,
             "roles": [s.role.value for s in interpretation.selections],
@@ -221,12 +246,13 @@ class LLMInterpretationAdapter:
         )
         return interpretation
 
-    async def _request(self, messages):
+    async def _request(self, messages, *, output_format=None):
         try:
             response = await self._client.chat.completions.create(
                 model=self.settings.llm_model,
                 messages=messages,
-                response_format={"type": "json_object"},
+                response_format=output_format or {"type": "json_object"},
+                **({"extra_body": {"provider": {"require_parameters": True}}} if output_format else {}),
                 temperature=0.0,
                 max_tokens=self.settings.llm_max_tokens,
             )
@@ -295,10 +321,11 @@ class LLMInterpretationAdapter:
         attempt: int,
         max_attempts: int,
         usage: dict[str, int],
-        output: dict[str, Any],
-        request_text: str,
+        output: dict[str, Any] | None,
+        request_text: str | None,
+        validation_error: LLMInvalidStructuredOutput | None = None,
     ) -> None:
-        """Langfuse trace에만 사용자 요청 원문을 기록한다.
+        """성공 generation의 입력과 원문 없는 검증 실패를 worker trace 아래 기록한다.
 
         `observability-and-prompt-versioning.md`에 따라 원문은 Langfuse trace로만 보내고
         일반 애플리케이션 로그에는 해시·길이·term ID만 남긴다. 키가 없으면 전송하지 않고 반환한다.
@@ -319,22 +346,26 @@ class LLMInterpretationAdapter:
                 logger.debug("Langfuse observation 생략: worker trace context 없음")
                 return
 
+            metadata = {
+                "job_id": job_id, "session_id": session_id,
+                "attempt": attempt, "max_attempts": max_attempts,
+            }
+            if validation_error is not None:
+                metadata.update(error_type=validation_error.error_type,
+                                validation_feedback=validation_error.feedback[:8])
             with langfuse.start_as_current_observation(
                 as_type="generation",
                 name=self.prompt_version,
                 model=self.settings.llm_model,
                 version=self.prompt_version,
-                input={"request_text": request_text},
-                metadata={
-                    "job_id": job_id,
-                    "session_id": session_id,
-                    "attempt": attempt,
-                    "max_attempts": max_attempts,
-                },
+                input={"request_text": request_text} if request_text is not None else None,
+                metadata=metadata,
             ) as generation:
-                generation.update(output=output, usage_details=usage or None)
+                generation.update(output=output, usage_details=usage or None, **({
+                    "level": "ERROR", "status_message": "structured output validation failed",
+                } if validation_error is not None else {}))
         except Exception:
-            logger.debug("Langfuse observation 미전송(무시): job_id=%s", job_id, exc_info=True)
+            logger.debug("Langfuse observation 미전송(무시): job_id=%s", job_id)
 
 
 def default_prompt_path(settings: Any | None = None) -> Path:
@@ -500,11 +531,11 @@ def _validate_output(content: str) -> InterpretationOutput:
     start = content.find("{")
     end = content.rfind("}")
     if start < 0 or end < start:
-        raise LLMInvalidStructuredOutput("JSON 객체를 찾지 못했다")
+        raise LLMInvalidStructuredOutput("JSON 객체를 찾지 못했다", feedback=[{"path": [], "code": "json_invalid"}])
     payload = content[start : end + 1]
     try:
         data = json.loads(payload)
         return InterpretationOutput.model_validate(data)
     except (json.JSONDecodeError, ValidationError, TypeError, ValueError) as exc:
-        logger.debug("구조화 출력 검증 실패", exc_info=True)
-        raise LLMInvalidStructuredOutput("출력이 InterpretationOutput 계약을 위반했다") from exc
+        feedback = validation_feedback(exc) if isinstance(exc, ValidationError) else [{"path": [], "code": "json_invalid"}]
+        raise LLMInvalidStructuredOutput("출력이 InterpretationOutput 계약을 위반했다", feedback=feedback) from exc

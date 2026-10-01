@@ -250,6 +250,7 @@ class JobRepository:
                     WHEN $2 = 'failed' THEN $4::jsonb ELSE NULL END,
                 updated_at = now(),
                 completed_at = CASE WHEN $5 THEN now() ELSE NULL END,
+                validation_feedback_json = CASE WHEN $5 THEN NULL ELSE validation_feedback_json END,
                 lease_expires_at = CASE WHEN $5 THEN NULL ELSE lease_expires_at END
             WHERE job_id = $1::uuid
               AND status = ANY($6::text[])

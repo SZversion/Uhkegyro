@@ -236,9 +236,10 @@ def test_interpret_passes_system_and_user_messages():
     call = completions.calls[0]
     assert call["model"] == "openai/gpt-4o-mini"
     assert call["response_format"] == {"type": "json_object"}
+    assert "extra_body" not in call
     messages = call["messages"]
     assert messages[0]["role"] == "system"
-    assert SYSTEM_EXAMPLE in messages[0]["content"]
+    assert SYSTEM_EXAMPLE == messages[0]["content"]
     assert messages[1]["role"] == "user"
     assert "반동" in messages[1]["content"]
     assert '{"active_cards": []}' in messages[1]["content"]
@@ -630,8 +631,7 @@ def test_adapter_uses_prompt_file_configured_by_env(tmp_path):
         )
     _run(adapter.interpret("반동", job_id="r1", session_id="session-1", attempt=1, max_attempts=3))
     sent = completions.calls[0]["messages"][0]["content"]
-    assert "ADAPTER ENV MARKER" in sent
-    assert sent.strip() == "ADAPTER ENV MARKER"
+    assert sent == "ADAPTER ENV MARKER"
 
 
 def test_openai_client_has_max_retries_zero():

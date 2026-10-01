@@ -17,7 +17,7 @@
 ## What
 
 1. Worker가 Job을 claim하면 Job ID에서 결정론 trace ID를 만들고 attempt span을 연다.
-2. `validating`, `searching`, `rendering` 단계별 span을 기록하고 기존 LLM 성공 generation을 현재 trace의 자식으로 둔다. 실패한 LLM 호출은 attempt의 오류 필드로 기록한다.
+2. `validating`, `searching`, `rendering` 단계별 span을 기록하고 LLM generation을 현재 trace의 자식으로 둔다. JSON·Pydantic 검증 실패 generation도 원문 없이 안전한 오류 metadata만 기록한다. 다른 실패한 LLM 호출은 attempt의 오류 필드로 기록한다.
 3. 재시도 가능 오류는 `error_type`과 실제 `backoff_ms`를 남긴다. 최종 실패는 공개 `failure_code`를 남긴다.
 4. 완료는 `agent_status`와 검색 사유 코드만 남긴다. 민감한 검색 결과 본문은 보내지 않는다.
 5. Langfuse 키가 없으면 Job 처리를 그대로 수행하고 trace를 만들지 않는다.

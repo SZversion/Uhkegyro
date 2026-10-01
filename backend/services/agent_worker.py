@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from typing import Any, Mapping
 
@@ -107,10 +108,14 @@ class AgentJobWorker:
                 result = recalled
             else:
                 with trace.stage("validating"):
+                    feedback = job.get("validation_feedback_json")
+                    if isinstance(feedback, str):
+                        feedback = json.loads(feedback)
                     interpretation = await self._adapter.interpret(
                         job["request_text"], **conversation_context.trace_args(job),
                         active_cards_json=format_active_cards_json(self._snapshot),
                         session_context=conversation_context.prompt_context(context),
+                        **({"validation_feedback": feedback} if feedback else {}),
                     )
                     resolution = await conversation_context.validate(
                         self._memory, job, interpretation, self._snapshot)

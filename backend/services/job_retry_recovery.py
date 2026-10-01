@@ -6,7 +6,7 @@ from typing import Any
 
 from backend.schemas import Failure
 from backend.schemas.enums import FailureCode, JobStatus
-from backend.services.llm import LLMError
+from backend.services.llm import LLMError, LLMInvalidStructuredOutput
 from backend.services.failure_mapping import FAILURE_MESSAGE, public_failure
 
 _ACTIVE_STATUSES = [
@@ -73,6 +73,7 @@ class JobRetryRecovery:
                         lease_expires_at = NULL,
                         succeeded = NULL,
                         final_payload_json = NULL,
+                        validation_feedback_json = $6::jsonb,
                         completed_at = NULL,
                         updated_at = now()
                     WHERE job_id = $1::uuid
@@ -87,6 +88,7 @@ class JobRetryRecovery:
                     max_attempts,
                     retry_delay_ms(attempt, error),
                     _ACTIVE_STATUSES,
+                    json.dumps(error.feedback) if isinstance(error, LLMInvalidStructuredOutput) else None,
                 )
             else:
                 failure = _failure(error)
@@ -98,6 +100,7 @@ class JobRetryRecovery:
                         lease_expires_at = NULL,
                         succeeded = FALSE,
                         final_payload_json = $4::jsonb,
+                        validation_feedback_json = NULL,
                         completed_at = now(),
                         updated_at = now()
                     WHERE job_id = $1::uuid
@@ -129,6 +132,7 @@ class JobRetryRecovery:
                         lease_expires_at = NULL,
                         succeeded = FALSE,
                         final_payload_json = $1::jsonb,
+                        validation_feedback_json = NULL,
                         completed_at = now(),
                         updated_at = now()
                     WHERE status = ANY($2::text[])
