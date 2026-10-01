@@ -68,6 +68,20 @@ def test_provider_marks_successful_empty_search():
     assert outcome.code is ReasonCode.PIN_RESULTS_EMPTY
 
 
+@pytest.mark.parametrize("engine_error", ["timeout", "CAPTCHA", "too many requests"])
+def test_provider_marks_google_images_engine_error_unavailable(engine_error, caplog):
+    async def load(url, params):
+        return {"results": [], "unresponsive_engines": [["google images", engine_error]]}
+
+    outcome = asyncio.run(SearXNGPinterestSearchProvider(
+        base_url="http://searxng:8080", json_loader=load,
+    ).search(Role.POSE, ("standing",)))
+
+    assert outcome.pins == []
+    assert outcome.code is ReasonCode.PIN_SEARCH_UNAVAILABLE
+    assert engine_error not in caplog.text
+
+
 def test_provider_marks_missing_endpoint_unavailable():
     with pytest.raises(OperationalFailure) as error:
         asyncio.run(SearXNGPinterestSearchProvider(base_url="").search(

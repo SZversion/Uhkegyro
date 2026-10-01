@@ -63,6 +63,22 @@ class SearXNGPinterestSearchProvider:
             )
             return RoleSearchOutcome(role=role, pins=[], code=ReasonCode.PIN_SEARCH_UNAVAILABLE)
         pins = parse_search_results(payload)
+        engine_errors = payload.get("unresponsive_engines", [])
+        google_images_unresponsive = isinstance(engine_errors, list) and any(
+            isinstance(engine_error, (list, tuple))
+            and engine_error
+            and isinstance(engine_error[0], str)
+            and engine_error[0].casefold() == "google images"
+            for engine_error in engine_errors
+        )
+        if google_images_unresponsive:
+            logger.warning(
+                "SearXNG Google Images engine unavailable",
+                extra={"failure_code": FailureCode.SEARCH_UPSTREAM_UNAVAILABLE.value},
+            )
+            return RoleSearchOutcome(
+                role=role, pins=pins, code=ReasonCode.PIN_SEARCH_UNAVAILABLE
+            )
         return RoleSearchOutcome(
             role=role,
             pins=pins,
