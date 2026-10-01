@@ -99,7 +99,7 @@ async def validate(memory, job, interpretation, snapshot):
             candidate = InterpretationOutput(interpretation_state="select_terms", selections=[
                 InterpretationSelection(role=update.role, term_id=update.term_id,
                                         evidence=[update.evidence], confidence=1)])
-            if resolve(candidate, snapshot).status == STATUS_ALL_INVALID:
+            if resolve(candidate, snapshot, request_text=str(job["request_text"])).status == STATUS_ALL_INVALID:
                 raise LLMInvalidStructuredOutput("기억할 조건의 카드가 유효하지 않습니다")
     resolution = resolve(interpretation, snapshot, request_text=str(job["request_text"]))
     if resolution.status == STATUS_ALL_INVALID or resolution.invalid_candidates:
