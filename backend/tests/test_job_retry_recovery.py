@@ -15,7 +15,7 @@ from backend.services.agent_worker import AgentJobWorker
 from backend.services.catalog_repository import CatalogSnapshot
 from backend.services.job_repository import JobRepository, StaleJobAttempt
 from backend.services.job_retry_recovery import JobRetryRecovery, retry_delay_ms
-from backend.services.llm import LLMRateLimited, LLMTimeout, PromptConfigurationError
+from backend.services.llm import LLMInvalidStructuredOutput, LLMRateLimited, LLMTimeout, PromptConfigurationError
 
 
 @pytest.mark.parametrize(
@@ -130,6 +130,43 @@ def test_retry_and_lease_recovery_follow_postgres_contract():
             assert payload["failure_code"] == FailureCode.LLM_TIMEOUT.value
             assert await repository.claim_next() is None
 
+            feedback = [{"path": [], "code": "role_duplicate"}]
+            feedback_job, _ = await repository.submit(
+                session_id=session_id, request_text="feedback", idempotency_key=str(uuid.uuid4())
+            )
+            await repository.claim_next()
+            invalid = LLMInvalidStructuredOutput("invalid", feedback=feedback)
+            assert await recovery.handle_attempt_failure(
+                job_id=feedback_job.job_id, attempt=1, max_attempts=3, error=invalid
+            )
+            async with pool.acquire() as connection:
+                await connection.execute(
+                    "UPDATE jobs SET next_retry_at=now()-interval '1 second' WHERE job_id=$1::uuid",
+                    feedback_job.job_id,
+                )
+            claimed = await repository.claim_next()
+            assert json.loads(claimed["validation_feedback_json"]) == feedback
+            assert not await recovery.handle_attempt_failure(
+                job_id=feedback_job.job_id, attempt=1, max_attempts=3, error=invalid
+            )
+            async with pool.acquire() as connection:
+                saved = await connection.fetchval("SELECT validation_feedback_json FROM jobs WHERE job_id=$1::uuid", feedback_job.job_id)
+            assert json.loads(saved) == feedback
+            assert await recovery.handle_attempt_failure(
+                job_id=feedback_job.job_id, attempt=2, max_attempts=3, error=LLMTimeout("timeout")
+            )
+            async with pool.acquire() as connection:
+                saved = await connection.fetchval("SELECT validation_feedback_json FROM jobs WHERE job_id=$1::uuid", feedback_job.job_id)
+            assert saved is None
+            async with pool.acquire() as connection:
+                await connection.execute("UPDATE jobs SET next_retry_at=now()-interval '1 second' WHERE job_id=$1::uuid", feedback_job.job_id)
+            await repository.claim_next()
+            assert await recovery.handle_attempt_failure(
+                job_id=feedback_job.job_id, attempt=3, max_attempts=3, error=invalid
+            )
+            async with pool.acquire() as connection:
+                assert await connection.fetchval("SELECT validation_feedback_json FROM jobs WHERE job_id=$1::uuid", feedback_job.job_id) is None
+
             config_job, _ = await repository.submit(
                 session_id=session_id, request_text="configuration", idempotency_key=str(uuid.uuid4())
             )
@@ -195,6 +232,11 @@ def test_retry_and_lease_recovery_follow_postgres_contract():
             heartbeat_job, _ = await repository.submit(
                 session_id=session_id, request_text="heartbeat", idempotency_key=str(uuid.uuid4())
             )
+            async with pool.acquire() as connection:
+                await connection.execute(
+                    "UPDATE jobs SET validation_feedback_json=$2::jsonb WHERE job_id=$1::uuid",
+                    heartbeat_job.job_id, json.dumps(feedback),
+                )
             started = asyncio.Event()
             release = asyncio.Event()
 
@@ -204,6 +246,7 @@ def test_retry_and_lease_recovery_follow_postgres_contract():
                     return RecallQuery(mode="none")
 
                 async def interpret(self, request_text, **kwargs):
+                    assert kwargs["validation_feedback"] == feedback
                     started.set()
                     await release.wait()
                     return InterpretationOutput(
@@ -240,11 +283,12 @@ def test_retry_and_lease_recovery_follow_postgres_contract():
             await asyncio.wait_for(running, timeout=2)
             async with pool.acquire() as connection:
                 row = await connection.fetchrow(
-                    "SELECT status, attempt, lease_expires_at FROM jobs WHERE job_id=$1::uuid",
+                    "SELECT status, attempt, lease_expires_at, validation_feedback_json FROM jobs WHERE job_id=$1::uuid",
                     heartbeat_job.job_id,
                 )
             assert row["status"] == "completed" and row["attempt"] == 1
             assert row["lease_expires_at"] is None
+            assert row["validation_feedback_json"] is None
         finally:
             if pool is not None:
                 await pool.close()

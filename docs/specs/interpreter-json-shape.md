@@ -24,24 +24,24 @@
 
 ## How
 
-- 새 파일 `prompts/uhkegryo-interpreter-v1.md`의 `System message` 코드 펜스 안에 출력 구조와 예제를 둔다. loader는 기존 두 메시지 추출 방식을 유지한다.
+- `prompts/uhkegryo-interpreter-v1.md`는 의미 해석과 근거 출처 규칙만 담당한다. 출력 구조와 예제는 [출력 Skill](./structured-output-skill.md)의 Runtime instructions에 한 번만 두며, adapter가 v1에서 이를 결합한다. loader는 기존 두 메시지 추출 방식을 유지한다.
 - Docker image에 v0와 v1을 모두 포함한다.
 - 최신 main의 `session_context`, `source_job_id`, `context_updates` 계약과 Memory classify·summarize·answer 지시문을 유지한다. v1의 출력 예제에도 nullable 출처와 조건 변경 배열을 포함한다.
 - 서버의 조건 변경 카드 검증은 resolver에 현재 `request_text`를 전달한다. 선택 항목의 선행 출처를 조건 변경 근거로 사용하지 않는다.
 - 선행 출처 검증을 통과한 selection은 [대화 맥락 계약](./conversation-context.md)에 따라 출처별 원본 텍스트를 resolver에 전달해 검사한다. 현재 요청에 해당 인용이 없어도 활성·역할 검증을 통과하면 허용한다.
 - v1은 비활성 준비용 프롬프트다. 이 PR은 `.env.example`과 배포 설정을 v0에서 변경하지 않는다. 평가와 팀 검토 뒤 별도 활성화 변경에서 Prompt 경로와 버전을 함께 v1로 지정한다.
 - v1 활성화 시 `INTERPRETER_PROMPT_PATH=./prompts/uhkegryo-interpreter-v1.md`, `INTERPRETER_PROMPT_VERSION=uhkegryo-interpreter-v1`을 함께 지정한다.
-- `response_format=json_object`, SDK 내부 재시도 0회, `InterpretationOutput` 및 resolver 검증은 유지한다. JSON mode가 schema 일치를 강제한다고 가정하지 않는다.
+- v1은 [구조화 출력 Skill Spec](./structured-output-skill.md)의 코드 유래 strict schema를 사용한다. v0의 `response_format=json_object`는 유지하며 두 버전 모두 SDK 내부 재시도 0회, `InterpretationOutput` 및 resolver 검증을 유지한다.
 - 원본 모델 출력은 영구 저장하지 않는다. 로컬 검증에서는 오류 위치와 타입만 출력한다.
 
 ## AC
 
-- GIVEN v1 파일, WHEN loader가 System message를 읽으면, THEN 현재 `InterpretationOutput`의 최상위 6개 필드와 selection의 5개 필드, 배열 타입 및 두 상태 예제가 실제 메시지에 포함된다.
+- GIVEN v1 파일과 출력 Skill, WHEN adapter가 System message를 결합하면, THEN 현재 `InterpretationOutput`의 출력 구조와 두 상태 예제가 Skill에서 한 번만 포함된다.
 - GIVEN System message 안의 선택·질문 예제, WHEN 예제 JSON을 검증하면, THEN 모두 `InterpretationOutput`을 통과한다.
 - GIVEN 현재 요청 또는 유효한 `source_job_id`의 선행 원본·카드 라벨에 영어 단서가 있다, WHEN v1의 `selections[].evidence`로 인용하면, THEN 대소문자를 포함한 원문 철자를 유지한 채 구조 검증을 통과한다.
 - GIVEN 현재 요청에 영어 조건 변경이 명시돼 있다, WHEN 해당 원문을 `context_updates[].evidence`로 반환하면, THEN `conversation_context.validate()`를 통과한다.
 - GIVEN 조건 변경 근거가 선행 원본 요청·카드 라벨에만 존재하고 현재 요청에는 없다, WHEN `context_updates[].evidence`로 반환하면, THEN 서버 검증은 `LLM_INVALID_STRUCTURED_OUTPUT`으로 거부한다.
 - GIVEN 현재 요청에는 없고 유효한 선행 요청·카드 라벨에만 있는 selection 근거, WHEN `conversation_context.validate()`를 실행하면, THEN 출처 검증과 resolver를 통과한다. 없는 출처·인용·비활성 카드·역할 불일치는 계속 거부한다.
-- GIVEN v1 문서의 출력 계약 표와 예제, WHEN 현재 Pydantic 모델 필드와 비교하면, THEN `source_job_id`와 `context_updates`를 포함해 필드가 일치한다.
+- GIVEN 출력 Skill의 예제와 코드 유래 Schema, WHEN 현재 Pydantic 모델 필드와 비교하면, THEN `source_job_id`와 `context_updates`를 포함해 필드가 일치한다.
 - GIVEN `selections=null` 또는 객체, WHEN 기존 출력 검증을 수행하면, THEN `LLM_INVALID_STRUCTURED_OUTPUT`으로 거부한다.
 - GIVEN Docker image, WHEN v1 경로를 설정하면, THEN 해당 파일을 읽고 v1을 trace 버전으로 사용한다.
