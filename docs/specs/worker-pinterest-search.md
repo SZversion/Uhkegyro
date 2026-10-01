@@ -25,7 +25,7 @@
 
 ## How
 
-- Worker 생성자에 `PinterestProvider` 선택적 의존성을 주입한다. 실제 `run_worker`는 `PinterestWidgetProvider(PinterestPublicSearchProvider(), PinterestWidgetClient())`를 구성한다.
+- Worker 생성자에 `PinterestProvider` 선택적 의존성을 주입한다. 실제 `run_worker`는 [SearXNG 검색 provider](./searxng-pinterest-search.md)를 `PinterestWidgetProvider`로 감싼다.
 - 역할 검색 순서는 resolver가 반환한 카드 순서를 따른다. provider 입력은 `ValidatedTerm.selection.role` 및 `tuple(ValidatedTerm.card["query_fragments"])`다. LLM 원문이나 추가 free-text는 입력하지 않는다.
 - 역할당 최대 검색 호출은 3회다. retryable outcome은 `code == ReasonCode.PIN_SEARCH_UNAVAILABLE`일 때뿐이며 backoff는 호출 후 1,000ms, 2,000ms다. `PIN_RESULTS_EMPTY` 및 Pin별 Widget 접근 불가(`deleted`)는 재시도하지 않는다.
 - `run_once(search_outcomes=...)`에 결과가 직접 주어진 경우 기존 테스트 seam과 호출 계약을 유지하고 provider를 다시 호출하지 않는다.
