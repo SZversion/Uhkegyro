@@ -10,6 +10,7 @@ import { searchFixedTerm, searchTermMode } from "../lib/term-search.mjs";
 import { createGalleryRows, resultTerms, roleNotice, showThumbnail } from "../lib/result-view.mjs";
 import { demoReplyJob, readDemoTurns, saveDemoTurns, upsertTurn } from "../lib/conversation.mjs";
 import ConversationPanel from "../components/ConversationPanel";
+import { ImageSearchLoading, LoadingImage, LoadingIndicator } from "../components/LoadingIndicator.mjs";
 
 export default function HomePage() {
   const [requestText, setRequestText] = useState("");
@@ -398,6 +399,8 @@ export default function HomePage() {
               </button>
             )) : <p>아직 검색 기록이 없습니다.</p>}
           </section>
+        ) : boardView === "results" && conversationBusy && conversationReady ? (
+          <div className="board-search-loading"><ImageSearchLoading label="요청을 처리하는 중입니다…" /></div>
         ) : ["results", "term-results"].includes(boardView) && hasGalleryRows ? (
           <div className="pin-gallery" ref={galleryRef} data-single={galleryRows.length === 1}
             aria-label="카테고리별 Pinterest 핀 썸네일" onScroll={handleGalleryScroll}>
@@ -434,10 +437,10 @@ export default function HomePage() {
                   </details>
                   </div>
                 </div>
-                {sketchSearches[term.term_id]?.loading && <p className="sketch-search-notice" role="status">레퍼런스를 찾는 중입니다…</p>}
+                {sketchSearches[term.term_id]?.loading && <LoadingIndicator size="small" label={`${({ drawing: "일반", sketch: "스케치", mannequinization: "도형화" })[sketchSearches[term.term_id]?.pendingSuffix]} 레퍼런스를 찾는 중입니다…`} />}
                 {sketchSearches[term.term_id]?.error && <p className="sketch-search-notice" role="alert">{sketchSearches[term.term_id].error}</p>}
                 <div className="pin-gallery-items">
-                  {boardView === "term-results" && termSearch?.loading && <p className="pin-unavailable" role="status">레퍼런스를 찾는 중입니다…</p>}
+                  {boardView === "term-results" && termSearch?.loading && <ImageSearchLoading />}
                   {boardView === "term-results" && termSearch?.error && <p className="pin-unavailable" role="alert">{termSearch.error}</p>}
                   {roleNotice(term) && <p className="pin-unavailable" role="status">{roleNotice(term)}</p>}
                   {boardView === "term-results" && !termSearch?.loading && (termSearch?.error || roleNotice(term)) &&
@@ -455,7 +458,7 @@ export default function HomePage() {
                         setPreviewPin({ ...pin, label: `${roleLabel} · ${term.label_ko}` });
                       }}
                     >
-                      <img
+                      <LoadingImage
                         key={pin.thumbnail_url}
                         src={pin.thumbnail_url}
                         alt={`${term.label_ko} 레퍼런스 ${index + 1}`}
@@ -526,6 +529,8 @@ export default function HomePage() {
             : "현재 탭에서 대화를 확인할 수 있습니다. 이전 맥락·재접속 복원은 백엔드 연결 예정입니다."}</p>
           {storageFailed && <p className="form-error" role="status">브라우저 저장을 사용할 수 없어 새로고침 후 더미 대화가 유지되지 않습니다.</p>}
           <ConversationPanel turns={turns} onChoice={fillInput} pausedTurnId={pollError ? submission?.jobId : null} />
+          {(!conversationReady || isSubmitting) && <div className="receipt"><LoadingIndicator
+            label={!conversationReady ? "대화를 불러오는 중…" : "요청을 보내는 중…"} /></div>}
           {pollError && <p className="form-error" role="alert">{pollError}</p>}
         </div>
 
@@ -570,7 +575,7 @@ export default function HomePage() {
             <button type="button" autoFocus onClick={() => previewDialogRef.current.close()}>닫기</button>
           </header>
           {previewFailed ? <p role="status">이미지를 표시할 수 없습니다. 핀 원본에서 확인해 주세요.</p>
-            : <img key={previewPin.thumbnail_url} src={previewPin.thumbnail_url} alt={`${previewPin.label} 확대 레퍼런스`}
+            : <LoadingImage key={previewPin.thumbnail_url} size="medium" src={previewPin.thumbnail_url} alt={`${previewPin.label} 확대 레퍼런스`}
                 referrerPolicy="no-referrer" onError={() => setPreviewFailed(true)} />}
           <footer><span>썸네일 확대 보기 · 원본 해상도는 핀에서 확인하세요.</span>
             <a href={previewPin.pin_url} target="_blank" rel="noopener noreferrer">핀 원본 열기 ↗</a>

@@ -86,6 +86,29 @@ button, textarea { font: inherit; }
 .pin-gallery-card:hover, .pin-gallery-card:focus-visible { transform: translateY(-3px); box-shadow: 0 8px 0 rgba(228, 75, 101, .16); }
 .pin-gallery-card:focus-visible { outline: 3px solid #542630; outline-offset: 3px; }
 .pin-gallery-card img { display: block; width: 100%; height: auto; padding: 4px; }
+.brand-loading { display: flex; align-items: center; gap: 12px; color: #9b3042; font-size: 14px; font-weight: 400; }
+.brand-loading-dots { display: inline-flex; flex-shrink: 0; align-items: center; gap: 5px; height: 24px; }
+.brand-loading-dots i { width: 8px; height: 8px; border-radius: 50%; background: #e44b65; animation: brand-dot-wave 1.2s ease-in-out infinite; }
+.brand-loading-dots i:nth-child(2) { animation-delay: .15s; }
+.brand-loading-dots i:nth-child(3) { animation-delay: .3s; }
+.brand-loading[data-size="small"] { gap: 8px; font-size: 12px; }
+.brand-loading[data-size="small"] .brand-loading-dots i { width: 5px; height: 5px; }
+.brand-loading[data-size="large"] .brand-loading-dots i { width: 11px; height: 11px; }
+.image-search-loading { width: 100%; min-width: 0; display: grid; gap: 24px; }
+.pin-skeletons { display: flex; gap: 10px; overflow: hidden; }
+.pin-skeleton { flex: 1 0 90px; height: 156px; border: 3px solid #eac7cf; border-radius: 16px; background: linear-gradient(100deg, #f7e3e7 25%, #fff5f7 50%, #f7e3e7 75%); background-size: 200% 100%; animation: brand-skeleton 1.8s ease-in-out infinite; }
+.pin-skeleton:nth-child(even) { height: 190px; }
+.board-search-loading { padding: 48px 32px; }
+.loading-image { display: block; position: relative; }
+.loading-image[data-loading="true"] { min-height: 150px; background: #f7e3e7; }
+.loading-image[data-loading="true"] > img { opacity: 0; }
+.loading-image > .brand-loading { position: absolute; inset: 0; justify-content: center; flex-direction: column; gap: 4px; text-align: center; padding: 8px; }
+.loading-image[data-size="medium"][data-loading="true"] { min-height: 260px; }
+@keyframes brand-dot-wave { 0%, 60%, 100% { transform: translateY(0); opacity: .45; } 30% { transform: translateY(-4px); opacity: 1; } }
+@keyframes brand-skeleton { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .brand-loading-dots i, .pin-skeleton { animation: none; }
+}
 .mind-map-stage { position: relative; display: grid; min-height: calc(100vh - 72px); place-items: center; overflow: hidden; padding: 32px; }
 .mind-map-guide { position: absolute; top: 20px; left: 0; width: 100%; margin: 0; padding: 0 20px; text-align: center; color: #84676d; font-size: 14px; font-weight: 400; }
 .mind-map { position: relative; width: min(92%, 1200px); height: calc(100vh - 72px); }
