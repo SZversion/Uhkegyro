@@ -1,6 +1,8 @@
 """실제 loader가 전달하는 v1 출력 계약의 회귀 검증."""
+import asyncio
 import json
 from pathlib import Path
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -13,6 +15,7 @@ from backend.services.llm import (
     load_interpreter_prompt,
 )
 from backend.shared.config import Settings
+from backend.services import conversation_context
 
 ROOT = Path(__file__).resolve().parents[2]
 PROMPT = ROOT / "prompts" / "uhkegryo-interpreter-v1.md"
@@ -62,6 +65,44 @@ def test_english_original_evidence_preserves_spelling(source_job_id):
     example["selections"][0]["source_job_id"] = source_job_id
     result = _validate_output(json.dumps(example, ensure_ascii=False))
     assert result.selections[0].evidence == ["Low Angle 3/4"]
+
+
+def test_loaded_system_separates_selection_and_context_update_sources():
+    system, _ = load_interpreter_prompt(PROMPT)
+    assert "selections[].evidence must preserve the original spelling and case, including English" in system
+    assert "identified by a valid source_job_id" in system
+    assert "context_updates[].evidence must preserve the original spelling and case, including English, from the current request only" in system
+    assert "context_updates has no source_job_id field" in system
+    assert "evidence and context_updates evidence" not in system
+
+
+@pytest.mark.parametrize("update_evidence", ["High Angle", "Low Angle", "low angle"])
+def test_context_update_uses_current_english_request_only(snapshot_factory, card_factory, update_evidence):
+    source_id = "00000000-0000-0000-0000-000000000001"
+    job = {"request_text": "Change the view to High Angle"}
+    memory = AsyncMock()
+    memory.records.return_value = [{
+        "job_id": source_id, "request_text": "High Angle or Low Angle",
+        "terms": [{"label_ko": "로우 앵글", "label_en": "low angle"}],
+    }]
+    snapshot = snapshot_factory([
+        card_factory("view_low_angle", role="view"),
+        card_factory("view_high_angle", role="view"),
+    ])
+    output = InterpretationOutput(
+        interpretation_state="select_terms",
+        selections=[InterpretationSelection(role="view", term_id="view_high_angle",
+            evidence=["High Angle"], confidence=0.9, source_job_id=source_id)],
+        context_updates=[ContextUpdate(role="view", term_id="view_high_angle", evidence=update_evidence)],
+    )
+    if update_evidence == "High Angle":
+        asyncio.run(conversation_context.validate(memory, job, output, snapshot))
+        assert output.context_updates[0].evidence == "High Angle"
+    else:
+        with pytest.raises(LLMInvalidStructuredOutput, match="조건 변경에 현재 요청의 명시적 근거가 필요합니다") as raised:
+            asyncio.run(conversation_context.validate(memory, job, output, snapshot))
+        assert raised.value.failure_code.value == "LLM_INVALID_STRUCTURED_OUTPUT"
+    memory.records.assert_awaited_once_with(job, [output.selections[0].source_job_id])
 
 
 @pytest.mark.parametrize("selections", [None, {}, "pose"])
