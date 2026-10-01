@@ -11,6 +11,7 @@ from backend.schemas.models import AgentResult, JobEnvelope, PinResult, Referenc
 from backend.services.job_repository import _dump
 from backend.services.pinterest_widget import PinterestWidgetClient, PinterestWidgetProvider, WIDGET_URL
 from backend.services.pinterest_provider import FakePinterestProvider
+from backend.services.searxng_pinterest_search import SearXNGPinterestSearchProvider
 from backend.services.response_assembler import RoleSearchOutcome
 from backend.shared.auth import SESSION_COOKIE_NAME
 
@@ -77,6 +78,30 @@ def test_widget_provider_preserves_search_contract():
     result = asyncio.run(provider.search(Role.VIEW, ("low angle",)))
     assert source.calls[0].query_fragments == ("low angle",)
     assert result.pins[0].thumbnail_url == "https://i.pinimg.com/7.jpg"
+
+
+def test_searxng_search_returns_thumbnail_and_original_pin_url_together():
+    search_calls = []
+
+    async def search_load(url, params):
+        search_calls.append((url, params))
+        return {"results": [{"url": "https://www.pinterest.com/pin/77/"}]}
+
+    async def widget_load(url):
+        return _payload("77", {"image": {
+            "url": "https://i.pinimg.com/77.jpg", "width": 200, "height": 100,
+        }})
+
+    source = SearXNGPinterestSearchProvider(
+        base_url="http://searxng:8080", json_loader=search_load,
+    )
+    provider = PinterestWidgetProvider(source, PinterestWidgetClient(json_loader=widget_load))
+    outcome = asyncio.run(provider.search(Role.POSE, ("standing pose",)))
+    pin = outcome.pins[0]
+
+    assert search_calls[0][1]["q"] == "!goi standing pose drawing site:pinterest.com/pin"
+    assert pin.pin_url == "https://www.pinterest.com/pin/77/"
+    assert pin.thumbnail_url == "https://i.pinimg.com/77.jpg"
 
 
 def _completed_job() -> JobEnvelope:
