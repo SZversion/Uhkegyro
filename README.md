@@ -128,6 +128,7 @@ PinterestCrawlerProvider와 widget 기반 Pin 미리보기·보관 경계는 [Pi
 - Node.js **20.9 이상**과 npm (frontend 실행용)
 - Neon 개발 DB의 `DATABASE_URL`과 OpenRouter `OPENROUTER_API_KEY`를 본인의 `.env`에 준비합니다. 실제 URL·key를 저장소에 넣지 않습니다.
 - 로컬 Langfuse 실행을 위해 `.env.example`의 Langfuse 내부 비밀값을 설정합니다. 저장 서비스별 비밀번호는 서로 다른 임의 hex 값으로 생성하고, `LANGFUSE_ENCRYPTION_KEY`는 64자리 hex 값으로 지정합니다.
+- 로컬 SearXNG 실행을 위해 `SEARXNG_SECRET`에 임의의 긴 값을 설정합니다. API 내부 주소는 `http://searxng:8080`, 호스트 접근 주소는 `http://localhost:8080`입니다. 자세한 계약은 [로컬 SearXNG Compose Spec](./docs/specs/local-searxng-compose.md)을 참고합니다.
 - 앱의 `DATABASE_URL`은 Neon 개발 DB를 사용하며, Langfuse는 별도 Compose PostgreSQL을 사용합니다. migration은 API startup에서 자동 실행되지 않습니다.
 
 ### PowerShell
@@ -238,6 +239,7 @@ frontend 개발 서버도 해당 PowerShell 창에서 `Ctrl+C`로 중지합니�
 | [API 계약](./docs/specs/api-contract.md) | `POST /api/agent`, 비동기 job 상태, 완료 결과, worker 실패·재시도 및 LLM JSON 계약 |
 | [로컬 개발 재현](./docs/specs/local-development-reproduction.md) | clone 뒤 API·migration·frontend를 현재 구현 범위까지 시작하는 절차 |
 | [로컬 Langfuse Compose](./docs/specs/local-langfuse-compose.md) | 로컬 Langfuse와 필수 저장 서비스 구성 |
+| [로컬 SearXNG Compose](./docs/specs/local-searxng-compose.md) | 로컬 SearXNG 서비스·JSON API 설정 |
 | [MCP 계약](./docs/specs/mcp-contract.md) | JSON 카탈로그 기반 `get_active_term_card` 도구의 입력·출력·접근 제어 |
 | [NOT_BUILD.md](./NOT_BUILD.md) | MVP에서 의도적으로 만들지 않는 기능과 이유 |
 | [EVAL_REPORT.md](./EVAL_REPORT.md) | 관측, 프롬프트 운영, 평가, 비용·지연, 출시 게이트 |
