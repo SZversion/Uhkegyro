@@ -35,6 +35,18 @@ steps:
       - "push"
       - "${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/searxng:${SHORT_SHA}"
 
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
+    id: "get-api-ingress-container"
+    entrypoint: "bash"
+    args:
+      - "-ceu"
+      - |
+        if gcloud run services describe "${_API_SERVICE_NAME}" --region="${_REGION}" --project="${PROJECT_ID}" --format=json > /workspace/api-service.json 2>/dev/null; then
+          python -c 'import json,sys; service=json.load(open(sys.argv[1])); template=service.get("spec",{}).get("template",{}).get("spec",{}); containers=template.get("containers",[]); ingress=template.get("container",{}); print(ingress.get("name") or containers[0]["name"])' /workspace/api-service.json > /workspace/api-ingress-container
+        else
+          printf 'api' > /workspace/api-ingress-container
+        fi
+
   # 3a. 공개 API Cloud Run 서비스 배포 (인증 불필요)
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
     id: "deploy-api"
@@ -43,7 +55,7 @@ steps:
       - "run"
       - "deploy"
       - "${_API_SERVICE_NAME}"
-      - "--container=api"
+      - "--container=$(cat /workspace/api-ingress-container)"
       - "--image=${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/${_API_SERVICE_NAME}:${SHORT_SHA}"
       - "--region=${_REGION}"
       - "--platform=managed"
