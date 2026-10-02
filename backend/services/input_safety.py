@@ -76,6 +76,21 @@ _SENSITIVE_COREFERENCE_DISCLOSURE = re.compile(
     r"(?:it|that|this|the\s+(?:key|token|credential|secret))\b"
 )
 
+_OUT_OF_SCOPE_INPUT = re.compile(
+    r"이미지.{0,12}(?:생성|그려|편집)|(?:생성|그려|편집).{0,12}이미지|"
+    r"(?:올린|첨부한|업로드한).{0,16}(?:그림|이미지).{0,18}(?:분석|판정|읽어)|"
+    r"(?:그림|이미지).{0,16}(?:분석|판정|읽어).{0,18}(?:올린|첨부|업로드)|"
+    r"(?:현존|특정).{0,16}(?:일러스트레이터|작가|화가).{0,18}(?:화풍|스타일)|"
+    r"(?:화풍|스타일).{0,18}(?:그대로|복제|따라).{0,16}(?:그려|생성)|"
+    r"pinterest.{0,40}(?:100개|모아서|크롤링|내려받|다운로드|저장)|"
+    r"(?:핀|이미지).{0,24}(?:대량으로|100개).{0,24}(?:다운로드|내려받|저장)"
+)
+_SCOPE_CLAUSE_SEPARATOR = re.compile(r"[.!?。！？,;]+")
+_NEGATED_SCOPE_ACTION = re.compile(
+    r"^\s*(?:(?:은|는|을|를|이|가)\s*)?(?:하지\s*(?:말고|않고|마|않)|"
+    r"안\s*(?:해도|하고|할|하는|함)|지\s*(?:말고|않고|않)|필요\s*없|원하지\s*않|(?:말고|없이)(?=\s|$))"
+)
+
 
 def normalize_input_text(request_text: str) -> str:
     """Normalize user text for deterministic safety and evidence checks."""
@@ -139,4 +154,13 @@ def is_unsafe_input(request_text: str) -> bool:
         or _ENGLISH_OVERRIDE.search(text)
         or _requests_sensitive_disclosure(text)
         or _requests_harmful_execution(text)
+    )
+
+
+def is_out_of_scope_input(request_text: str) -> bool:
+    """Return whether a request asks for a deterministic unsupported operation."""
+    clauses = _SCOPE_CLAUSE_SEPARATOR.split(normalize_input_text(request_text))
+    return any(
+        not _NEGATED_SCOPE_ACTION.match(clause[match.end():])
+        for clause in clauses for match in _OUT_OF_SCOPE_INPUT.finditer(clause)
     )
