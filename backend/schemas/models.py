@@ -140,6 +140,7 @@ class AgentResult(BaseModel):
     reference_plan: ReferencePlan | None = None
     clarifying_question: str | None = None
     user_message: str = ""
+    answer_text: Annotated[str, Field(strict=True, max_length=4000)] = ""
     memory_answer: str | None = Field(default=None, min_length=1, max_length=2000)
     sources: list[MemorySource] = Field(default_factory=list, max_length=20)
 
@@ -310,6 +311,7 @@ class InterpretationOutput(BaseModel):
     clarifying_question: str | None = None
     clarification_type: ClarificationType | None = None
     context_updates: list[ContextUpdate] = Field(default_factory=list, max_length=5)
+    answer_text: Annotated[str, Field(strict=True, max_length=4000)] = ""
 
     @model_validator(mode="after")
     def _validate_unresolved_constraints(self) -> "InterpretationOutput":

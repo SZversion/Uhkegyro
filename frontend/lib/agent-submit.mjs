@@ -30,7 +30,7 @@ export async function submitAgentRequest(requestText, options = {}) {
         "Content-Type": "application/json",
         "Idempotency-Key": createId(),
       },
-      body: JSON.stringify({ request_text: requestText }),
+      body: JSON.stringify({ request_text: requestText, ...(options.sessionId ? { session_id: options.sessionId } : {}) }),
     });
     const payload = await response.json();
     if (response.status !== 202) {

@@ -96,7 +96,8 @@ def test_v0_keeps_json_mode_without_skill_or_feedback():
                                   validation_feedback=[{"path": [], "code": "role_duplicate"}]))
     call = completions.calls[0]
     assert adapter.prompt_version == "uhkegryo-interpreter-v0"
-    assert call["messages"][0]["content"] == llm.load_interpreter_prompt(prompt)[0]
+    assert call["messages"][0]["content"].startswith(llm.load_interpreter_prompt(prompt)[0] + "\n")
+    assert "Include answer_text" in call["messages"][0]["content"]
     assert len(call["messages"]) == 2 and len(completions.calls) == 1
     assert call["response_format"] == {"type": "json_object"} and "extra_body" not in call
 

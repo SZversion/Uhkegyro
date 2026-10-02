@@ -30,7 +30,7 @@ def test_loaded_system_contains_complete_selection_shape_and_valid_examples():
     selected, clarification = [InterpretationOutput.model_validate(item) for item in examples]
     top_fields = set(InterpretationOutput.model_fields)
     selection_fields = set(InterpretationSelection.model_fields)
-    assert len(top_fields) == 6
+    assert len(top_fields) == 7
     assert "Include every field" in system
     assert all(set(example) == top_fields for example in examples)
     assert set(examples[0]["selections"][0]) == selection_fields

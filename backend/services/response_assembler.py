@@ -1,6 +1,7 @@
 """최종 응답 조립 (api-contract AC-07, term-card-catalog.md 피드백 매핑).
 
-화면 문구는 JSON에서만 조립하며 LLM이 만들지 않는다.
+개별 용어 피드백은 JSON에서만 조립하며 LLM이 만들지 않는다.
+일반/부분 결과의 통합 answer_text는 검증된 해석에서 별도로 전달한다.
 - 피드백 우선: `active_term_feedback[term_id]`가 있으면
   `plain_meaning_ko / selection_reason_template_ko / reference_checkpoints_ko`를 사용한다.
 - 폴백: `source_answer_draft -> plain_meaning_ko`, `selection_reason=null`,
@@ -49,6 +50,7 @@ def assemble(
     resolution: ResolutionResult,
     snapshot: CatalogSnapshot,
     search_outcomes: Mapping[Role, RoleSearchOutcome] | None = None,
+    *, answer_text: str = "",
 ) -> AgentResult:
     """resolution과 카탈로그·검색 결과를 조합해 최종 `AgentResult`를 만든다."""
     if resolution.status == STATUS_CLARIFY:
@@ -78,6 +80,7 @@ def assemble(
         agent_status=agent_status,
         reason_codes=agent_codes,
         reference_plan=plan,
+        answer_text=answer_text,
     )
 
 

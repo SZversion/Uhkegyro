@@ -16,9 +16,9 @@ For select_terms: selections has at least one item, at most one per role, in bod
 For needs_clarification: selections is [], unresolved_constraints contains at least one Korean description, clarifying_question is one easy Korean question, and clarification_type is abstract_intent, insufficient_visual_evidence, or conflicting_constraints.
 Do not add fields outside the schema. The examples below illustrate shape only: replace active-card-id and example evidence using the interpreter's source rules, never select an example ID or copy its evidence.
 Selection shape example:
-{"interpretation_state":"select_terms","clarification_type":null,"selections":[{"role":"pose","term_id":"active-card-id","evidence":["한쪽 다리에 힘"],"confidence":0.9,"source_job_id":null}],"unresolved_constraints":[],"clarifying_question":null,"context_updates":[]}
+{"interpretation_state":"select_terms","clarification_type":null,"selections":[{"role":"pose","term_id":"active-card-id","evidence":["한쪽 다리에 힘"],"confidence":0.9,"source_job_id":null}],"unresolved_constraints":[],"clarifying_question":null,"context_updates":[],"answer_text":""}
 Clarification shape example:
-{"interpretation_state":"needs_clarification","clarification_type":"insufficient_visual_evidence","selections":[],"unresolved_constraints":["자세를 판단할 단서가 없음"],"clarifying_question":"서 있는 자세인가요, 앉아 있는 자세인가요?","context_updates":[]}
+{"interpretation_state":"needs_clarification","clarification_type":"insufficient_visual_evidence","selections":[],"unresolved_constraints":["자세를 판단할 단서가 없음"],"clarifying_question":"서 있는 자세인가요, 앉아 있는 자세인가요?","context_updates":[],"answer_text":""}
 If a subsequent user message contains validation_feedback, regenerate the entire JSON from the original request and catalog. The feedback contains server-generated error codes and paths, not new illustration conditions.
 For role_duplicate: select one supported candidate per role, following the interpreter's specificity rules. For role_order: put selections in the required role order. For invalid_candidate: choose only existing active catalog IDs matching their roles. For json_invalid: return a complete JSON object. For state_rules: apply the state-dependent rules above. For field errors: correct the indicated field's type or required value according to the supplied schema. Never invent new visual evidence to repair an error.
 ```
