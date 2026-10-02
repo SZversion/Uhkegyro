@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { countCharacters, createSubmissionController, validateRequestText } from "../lib/agent-submit.mjs";
-import { createConversation, restoreConversation, resumeConversation, RESTORE_ERROR } from "../lib/server-conversation.mjs";
+import { createConversation, restoreConversation, resumeConversation, createHistoryLoader, RESTORE_ERROR } from "../lib/server-conversation.mjs";
 import { DEMO_JOB, DEMO_REQUEST_TEXT, uiDemoEnabled } from "../lib/demo-job.mjs";
 import { createMindMapSlots, firstSelectableTermId } from "../lib/term-mind-map.mjs";
 import { getRecommendedSearchQuery } from "../lib/recommended-query.mjs";
@@ -24,6 +24,10 @@ export default function HomePage() {
     ? [{ id: "demo-initial", request: DEMO_REQUEST_TEXT, job: DEMO_JOB, demo: true }] : []);
   const [conversationReady, setConversationReady] = useState(false);
   const [sessionId, setSessionId] = useState(null);
+  const [historyLoad, setHistoryLoad] = useState({ loading: false, error: "" });
+  const historyLoaderRef = useRef(null);
+  const historyEntryRef = useRef(null);
+  if (!historyLoaderRef.current) historyLoaderRef.current = createHistoryLoader({ onState: setHistoryLoad, onJob: setJob });
   const [restoreError, setRestoreError] = useState("");
   const [restoreAttempt, setRestoreAttempt] = useState(0);
   const [storageFailed, setStorageFailed] = useState(false);
@@ -136,6 +140,7 @@ export default function HomePage() {
   }, [pendingTurnIds, conversationReady]);
 
   useEffect(() => () => clearTimeout(copyTimerRef.current), []);
+  useEffect(() => () => historyLoaderRef.current.cancel(), []);
   useEffect(() => () => termSearchControllerRef.current?.abort(), []);
   useEffect(() => {
     function closeHelpOutside(event) {
@@ -221,6 +226,7 @@ export default function HomePage() {
   }
 
   async function openTermSearch(term) {
+    historyLoaderRef.current.cancel();
     resetSketchSearches();
     termSearchControllerRef.current?.abort();
     const controller = new AbortController();
@@ -270,6 +276,7 @@ export default function HomePage() {
 
   async function submit(text) {
     if (conversationBusy || submissionRef.current.isPending()) return;
+    historyLoaderRef.current.cancel();
 
     const validationError = validateRequestText(text);
     if (validationError) {
@@ -356,6 +363,7 @@ export default function HomePage() {
   }
 
   function navigateBoard(view) {
+    historyLoaderRef.current.cancel();
     resetSketchSearches();
     termSearchControllerRef.current?.abort();
     setBoardView(view);
@@ -370,7 +378,8 @@ export default function HomePage() {
     pollerRef.current?.stop();
     setSubmission(null);
     setPollError("");
-    setJob(entry.job);
+    historyEntryRef.current = entry;
+    historyLoaderRef.current.open(entry);
     setActiveGalleryRole(null);
     setBoardView("results");
   }
@@ -430,6 +439,11 @@ export default function HomePage() {
               </button>
             )) : <p>아직 검색 기록이 없습니다.</p>}
           </section>
+        ) : boardView === "results" && historyLoad.loading ? (
+          <div className="board-search-loading"><LoadingIndicator label="검색 기록을 불러오는 중…" /></div>
+        ) : boardView === "results" && historyLoad.error ? (
+          <div className="board-search-loading" role="alert"><p>{historyLoad.error}</p>
+            <button type="button" onClick={() => openHistory(historyEntryRef.current)}>다시 불러오기</button></div>
         ) : boardView === "results" && conversationBusy && conversationReady ? (
           <div className="board-search-loading"><ImageSearchLoading label="요청을 처리하는 중입니다…" /></div>
         ) : ["results", "term-results"].includes(boardView) && hasGalleryRows ? (

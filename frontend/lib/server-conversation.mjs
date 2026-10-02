@@ -62,3 +62,25 @@ export function resumeConversation(turns, options) {
   });
   return { stop: () => pollers.forEach((poller) => poller.stop()) };
 }
+
+export function createHistoryLoader(options) {
+  let controller;
+  const cancel = () => { controller?.abort(); options.onState({ loading: false, error: "" }); };
+  return { cancel, async open(entry) {
+    cancel();
+    if (entry.demo) { options.onJob(entry.job); return; }
+    controller = new AbortController();
+    const signal = controller.signal;
+    options.onState({ loading: true, error: "" });
+    try {
+      const job = await read(`/api/jobs/${encodeURIComponent(entry.id)}`, { ...options, signal });
+      if (signal.aborted) return;
+      if (job.job_id !== entry.id || job.session_id !== entry.job.session_id
+        || !["completed", "failed"].includes(job.job_status)) throw new Error("invalid history job");
+      options.onJob(job);
+      options.onState({ loading: false, error: "" });
+    } catch {
+      if (!signal.aborted) options.onState({ loading: false, error: "검색 기록을 불러오지 못했습니다. 다시 시도해 주세요." });
+    }
+  } };
+}

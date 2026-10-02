@@ -1,12 +1,46 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { restoreConversation, createConversation, resumeConversation } from "../lib/server-conversation.mjs";
+import { restoreConversation, createConversation, resumeConversation, createHistoryLoader } from "../lib/server-conversation.mjs";
+import { showThumbnail } from "../lib/result-view.mjs";
 import { submitAgentRequest } from "../lib/agent-submit.mjs";
 import { answerForJob, upsertTurn, stopTurnPolling } from "../lib/conversation.mjs";
 const sid = "00000000-0000-0000-0000-000000000001";
 const job = (id, status = "completed") => ({ job_id: id, session_id: sid, job_status: status,
   request_text: `요청 ${id}`, result: status === "completed" ? { agent_status: "partial_result", answer_text: "통합 설명", reason_codes: ["PIN_SEARCH_UNAVAILABLE"] } : null });
 const response = (body, status = 200) => ({ ok: status < 400, status, json: async () => body });
+
+test("완료 2건 복원 후 이전 기록만 재조회해 정상 썸네일을 표시하고 더미는 즉시 연다", async () => {
+  const pin = { status: "available", pin_url: "https://www.pinterest.com/pin/123/" };
+  const stored = [job("old"), job("latest")].map((j) => ({ ...j, result: { reference_plan: { terms: [{ pins: [pin] }] } } }));
+  const enriched = (j) => ({ ...j, result: { reference_plan: { terms: [{ pins: [{ ...pin, thumbnail_url: "https://i.pinimg.com/fixture.jpg" }] }] } } });
+  const calls = [], fetchImpl = async (url, options) => {
+    calls.push(url); assert.equal(options.credentials, "include"); assert.equal(options.cache, "no-store");
+    return response(url.includes("offset=") ? { items: stored } : url.includes("/api/jobs/")
+      ? enriched(stored.find((j) => url.endsWith(j.job_id))) : { items: [{ session_id: sid }], session_id: sid });
+  };
+  const { turns } = await restoreConversation({ fetchImpl });
+  assert.equal(showThumbnail(turns[0].job.result.reference_plan.terms[0].pins[0]), false);
+  let selected; const states = [];
+  const loader = createHistoryLoader({ fetchImpl, onJob: (j) => { selected = j; }, onState: (s) => states.push(s) });
+  await loader.open(turns[0]); assert.equal(calls.at(-1), "/api/jobs/old");
+  assert.equal(showThumbnail(selected.result.reference_plan.terms[0].pins[0]), true);
+  assert.equal(states.some((s) => s.loading), true); assert.equal(states.at(-1).loading, false);
+  const count = calls.length; await loader.open({ ...turns[0], demo: true }); assert.equal(calls.length, count);
+});
+
+test("기록 조회 오류는 Pin 상태를 바꾸지 않고 다른 선택·정리 후 늦은 응답을 차단", async () => {
+  const releases = [], states = [], selected = [], signals = [];
+  const loader = createHistoryLoader({ onState: (s) => states.push(s), onJob: (j) => selected.push(j.job_id),
+    fetchImpl: (_, options) => { signals.push(options.signal); return new Promise((resolve) => releases.push(resolve)); } });
+  const entry = (id) => ({ id, job: job(id) });
+  const failed = loader.open(entry("bad")); releases[0](response({}, 503)); await failed;
+  assert.match(states.at(-1).error, /검색 기록/); assert.equal(states.at(-1).loading, false); assert.deepEqual(selected, []);
+  const old = loader.open(entry("old")), next = loader.open(entry("next"));
+  releases[2](response(job("next"))); await next; releases[1](response(job("old"))); await old;
+  assert.equal(signals[1].aborted, true); assert.deepEqual(selected, ["next"]);
+  const removed = loader.open(entry("removed")); loader.cancel(); releases[3](response(job("removed"))); await removed;
+  assert.equal(signals[3].aborted, true); assert.deepEqual(selected, ["next"]);
+});
 
 test("서버 페이지 전체 복원, 중복 제거, 마지막 결과 enrichment, 쿠키와 취소 signal", async () => {
   const calls = [], controller = new AbortController();
