@@ -142,7 +142,7 @@ class AgentJobWorker:
                         trace.stale()
                         return
                     if search_outcomes is None:
-search_outcomes = await self._search_outcomes(
+                        search_outcomes = await self._search_outcomes(
                             resolution, request_text=str(job["request_text"])
                         )
                 result = assemble(resolution, self._snapshot, search_outcomes,

@@ -95,11 +95,12 @@ class FakeAdapter:
     async def memory(self, *args, **kwargs):
         return RecallQuery(mode="none")
 
-search_outcomes = await self._search_outcomes(
-                            resolution, request_text=str(job["request_text"])
-                        )
-                result = assemble(resolution, self._snapshot, search_outcomes,
-                                  answer_text=interpretation.answer_text)
+    def record_validation_failure(self, error, *, attempt):
+        self.diagnostics = (error, attempt)
+
+    async def request_mcp_tool_calls(self, messages, tools, *, required):
+        self.tool_requests.append((messages, tools, required))
+        return self.tool_calls.pop(0) if self.tool_calls else []
 
 
 class FakeMcpGateway:
