@@ -115,6 +115,14 @@ class FixtureSearch:
         return RoleSearchOutcome(role, pins)
 
 
+class FixtureSearchWorker(AgentJobWorker):
+    """Keep production job execution; exclude MCP tool selection from this eval."""
+    async def _search_outcomes(self, resolution, *, request_text):
+        return {term.selection.role: await self.fixture_search.search(
+            term.selection.role, term.card["query_fragments"])
+            for term in resolution.terms}
+
+
 def question_addresses(contract, question):
     """Bounded cue checks, not a semantic-quality grade."""
     clues = contract.get("must_address", "") + " ".join(contract.get("must_address_any_of", []))
@@ -177,7 +185,8 @@ async def execute(case, pool, snapshot, adapter):
     submitted, _ = await jobs.submit(session_id=sid, request_text=case["input"], idempotency_key=uuid.uuid4().hex)
     adapter.reset(case)
     search = FixtureSearch(case["runtime_fixture"])
-    worker = AgentJobWorker(pool, snapshot, adapter=adapter, pinterest_provider=search, tracer=JobTracer())
+    worker = FixtureSearchWorker(pool, snapshot, adapter=adapter, tracer=JobTracer())
+    worker.fixture_search = search
     recovery = JobRetryRecovery(pool)
     started = time.monotonic()
     while True:
@@ -212,7 +221,7 @@ def report(directory, metadata, rows):
              f"- 검사한 기대값 일치: **{passed}/{len(rows)}**", f"- 실제 모델 응답: {len(calls)}회 / 총 토큰: {total_tokens}",
              f"- 문항 지연 p50/p95: {latency[(len(rows)-1)//2]/1000:.2f}s / {latency[math.ceil(len(rows)*0.95)-1]/1000:.2f}s",
              "- 정성 점수: 지정 도메인 평가자와 독립 검토자 검토 전, 미산정.",
-             "- 실제 PostgreSQL·worker·adapter·resolver·assembler 실행. 검색은 fixture.",
+             "- 실제 PostgreSQL·worker·adapter·resolver·assembler 실행. 검색 단계는 평가 subclass의 fixture이며 MCP tool 선택은 미검사.",
              "- 질문 도메인 단서는 최종 서버 질문의 제한된 단어 조합으로 검사한다. 의미 품질·쉬운 언어는 별도 검토한다.",
              "- 미검사: HTTP 202·cookie 인증·MCP 네트워크/provenance·실제 Pinterest·Langfuse 전송·정성 품질. 전체 계약 준수율이 아님.",
              "", "| 문항 | 판정 | 실제 상태 | 불일치 검사 |", "|---|---|---|---|"]
@@ -263,7 +272,8 @@ async def main():
                 "git_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
                 "working_tree_dirty": bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT)),
                 "temperature": 0, "max_tokens": settings.llm_max_tokens, "timeout_seconds": settings.llm_timeout_seconds,
-                "langfuse": "disabled", "search": "fixture", "http": "not tested"}
+                "langfuse": "disabled", "search": "fixture", "http": "not tested",
+                "mcp_tool_selection": "not tested; evaluation worker overrides search stage"}
     sources = [p for folder in ("backend", "prompts", "skills", "scripts") for p in (ROOT / folder).rglob("*")
                if p.suffix in (".py", ".sql", ".md") and "__pycache__" not in p.parts]
     sources += [dataset, extra_dataset] if os.getenv("LIVE_EVAL_INCLUDE_AMBIGUITY") == "1" else [dataset]
