@@ -3,7 +3,7 @@ import os
 import warnings
 from functools import lru_cache
 from pathlib import Path
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,7 +27,10 @@ class Settings(BaseSettings):
     # Langfuse
     langfuse_public_key: str = ""
     langfuse_secret_key: str = ""
-    langfuse_host: str = "http://localhost:3000"
+    langfuse_host: str = Field(
+        default="http://localhost:3000",
+        validation_alias=AliasChoices("LANGFUSE_BASE_URL", "LANGFUSE_HOST", "langfuse_host"),
+    )
 
     # DB (필수, 기본값 없음 — Neon PostgreSQL 사용)
     database_url: str
