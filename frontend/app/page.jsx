@@ -2,14 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { countCharacters, createSubmissionController, validateRequestText } from "../lib/agent-submit.mjs";
-import { createJobPoller } from "../lib/job-polling.mjs";
+import { createConversation, restoreConversation, resumeConversation, createHistoryLoader, RESTORE_ERROR } from "../lib/server-conversation.mjs";
 import { DEMO_JOB, DEMO_REQUEST_TEXT, uiDemoEnabled } from "../lib/demo-job.mjs";
 import { HOME_TERMS } from "../lib/home-catalog.mjs";
 import { createMindMapSlots, firstSelectableTermId } from "../lib/term-mind-map.mjs";
 import { getRecommendedSearchQuery } from "../lib/recommended-query.mjs";
 import { searchFixedTerm, searchTermMode } from "../lib/term-search.mjs";
 import { createGalleryRows, resultTerms, roleNotice, showThumbnail } from "../lib/result-view.mjs";
-import { demoReplyJob, readDemoTurns, saveDemoTurns, stopTurnPolling, upsertTurn } from "../lib/conversation.mjs";
+import { demoReplyJob, readDemoTurns, saveDemoTurns, stopTurnPolling, upsertTurn, isTurnPending } from "../lib/conversation.mjs";
 import ConversationPanel from "../components/ConversationPanel";
 import { ImageSearchLoading, LoadingImage, LoadingIndicator } from "../components/LoadingIndicator.mjs";
 
@@ -25,7 +25,14 @@ export default function HomePage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [turns, setTurns] = useState(() => uiDemoEnabled
     ? [{ id: "demo-initial", request: DEMO_REQUEST_TEXT, job: DEMO_JOB, demo: true }] : []);
-  const [conversationReady, setConversationReady] = useState(!uiDemoEnabled);
+  const [conversationReady, setConversationReady] = useState(false);
+  const [sessionId, setSessionId] = useState(null);
+  const [historyLoad, setHistoryLoad] = useState({ loading: false, error: "" });
+  const historyLoaderRef = useRef(null);
+  const historyEntryRef = useRef(null);
+  if (!historyLoaderRef.current) historyLoaderRef.current = createHistoryLoader({ onState: setHistoryLoad, onJob: setJob });
+  const [restoreError, setRestoreError] = useState("");
+  const [restoreAttempt, setRestoreAttempt] = useState(0);
   const [storageFailed, setStorageFailed] = useState(false);
   const chatScrollRef = useRef(null);
   const [copiedTermId, setCopiedTermId] = useState(null);
@@ -71,8 +78,8 @@ export default function HomePage() {
   const galleryTerm = galleryRows.find((row) => row.role === activeGalleryRole)?.term || galleryRows[0]?.term || null;
   const queryTerm = ["results", "term-results"].includes(boardView) && hasGalleryRows ? galleryTerm : homeTerm;
   const recommendedSearchQuery = getRecommendedSearchQuery(queryTerm);
-  const conversationBusy = !conversationReady || isSubmitting || Boolean(submission && !pollError
-    && !["completed", "failed"].includes(job?.job_status));
+  const pendingTurnIds = turns.filter(isTurnPending).map((turn) => turn.id).join(",");
+  const conversationBusy = !conversationReady || isSubmitting || Boolean(pendingTurnIds);
   if (!submissionRef.current) submissionRef.current = createSubmissionController();
 
   useEffect(() => {
@@ -83,6 +90,22 @@ export default function HomePage() {
     } catch { setStorageFailed(true); }
     setConversationReady(true);
   }, []);
+
+  useEffect(() => {
+    if (uiDemoEnabled) return;
+    const controller = new AbortController();
+    setRestoreError("");
+    setConversationReady(false);
+    restoreConversation({ signal: controller.signal }).then((restored) => {
+      if (controller.signal.aborted) return;
+      setSessionId(restored.sessionId);
+      setTurns(restored.turns);
+      setJob(restored.turns.at(-1)?.job || null);
+      setSearchHistory(restored.turns.filter((turn) => !isTurnPending(turn)).reverse());
+      setConversationReady(true);
+    }).catch(() => { if (!controller.signal.aborted) setRestoreError(RESTORE_ERROR); });
+    return () => controller.abort();
+  }, [restoreAttempt]);
 
   useEffect(() => {
     if (!uiDemoEnabled || !conversationReady) return;
@@ -102,20 +125,25 @@ export default function HomePage() {
   }, [turns]);
 
   useEffect(() => {
-    if (!submission) return;
-    const poller = createJobPoller(submission.jobId, { onUpdate: setJob, onError: (message) => {
+    if (uiDemoEnabled || !conversationReady || !pendingTurnIds) return;
+    const latestId = turns.at(-1)?.id;
+    const poller = resumeConversation(turns, { onUpdate: (turn) => {
+      setTurns((entries) => upsertTurn(entries, turn));
+      if (turn.id === latestId) setJob(turn.job);
+      if (!isTurnPending(turn)) setSearchHistory((entries) => [turn, ...entries.filter((entry) => entry.id !== turn.id)]);
+    }, onError: (id, message) => {
       setPollError(message);
-      setTurns((entries) => stopTurnPolling(entries, submission.jobId));
+      setTurns((entries) => stopTurnPolling(entries, id));
     } });
     pollerRef.current = poller;
-    poller.start(submission.pollAfterMs);
     return () => {
       poller.stop();
       if (pollerRef.current === poller) pollerRef.current = null;
     };
-  }, [submission]);
+  }, [pendingTurnIds, conversationReady]);
 
   useEffect(() => () => clearTimeout(copyTimerRef.current), []);
+  useEffect(() => () => historyLoaderRef.current.cancel(), []);
   useEffect(() => () => termSearchControllerRef.current?.abort(), []);
   useEffect(() => {
     function closeHelpOutside(event) {
@@ -201,6 +229,7 @@ export default function HomePage() {
   }
 
   async function openTermSearch(term) {
+    historyLoaderRef.current.cancel();
     resetSketchSearches();
     termSearchControllerRef.current?.abort();
     const controller = new AbortController();
@@ -252,6 +281,7 @@ export default function HomePage() {
 
   async function submit(text) {
     if (conversationBusy || submissionRef.current.isPending()) return;
+    historyLoaderRef.current.cancel();
 
     const validationError = validateRequestText(text);
     if (validationError) {
@@ -285,13 +315,18 @@ export default function HomePage() {
     setSelectedTermId(null);
     selectedJobRef.current = null;
     try {
-      const result = await submissionRef.current.submit(text);
+      const activeSession = sessionId || await createConversation();
+      setSessionId(activeSession);
+      const result = await submissionRef.current.submit(text, { sessionId: activeSession });
       if (result.ok) {
-        setTurns((entries) => upsertTurn(entries, { id: result.jobId, request: text, job: { job_status: "queued" }, demo: false }));
+        setTurns((entries) => upsertTurn(entries, { id: result.jobId, request: text,
+          job: { job_status: "queued", poll_after_ms: result.pollAfterMs }, demo: false }));
         setSubmission({ ...result, requestText: text });
         setRequestText("");
       }
       else setError(result.error);
+    } catch {
+      setError("대화 요청을 접수하지 못했습니다. 잠시 후 다시 시도해 주세요.");
     } finally {
       setIsSubmitting(false);
     }
@@ -333,6 +368,7 @@ export default function HomePage() {
   }
 
   function navigateBoard(view) {
+    historyLoaderRef.current.cancel();
     resetSketchSearches();
     termSearchControllerRef.current?.abort();
     setBoardView(view);
@@ -347,7 +383,8 @@ export default function HomePage() {
     pollerRef.current?.stop();
     setSubmission(null);
     setPollError("");
-    setJob(entry.job);
+    historyEntryRef.current = entry;
+    historyLoaderRef.current.open(entry);
     setActiveGalleryRole(null);
     setBoardView("results");
   }
@@ -407,6 +444,11 @@ export default function HomePage() {
               </button>
             )) : <p>아직 검색 기록이 없습니다.</p>}
           </section>
+        ) : boardView === "results" && historyLoad.loading ? (
+          <div className="board-search-loading"><LoadingIndicator label="검색 기록을 불러오는 중…" /></div>
+        ) : boardView === "results" && historyLoad.error ? (
+          <div className="board-search-loading" role="alert"><p>{historyLoad.error}</p>
+            <button type="button" onClick={() => openHistory(historyEntryRef.current)}>다시 불러오기</button></div>
         ) : boardView === "results" && conversationBusy && conversationReady ? (
           <div className="board-search-loading"><ImageSearchLoading label="요청을 처리하는 중입니다…" /></div>
         ) : ["results", "term-results"].includes(boardView) && hasGalleryRows ? (
@@ -534,10 +576,12 @@ export default function HomePage() {
           <h2 id="prompt-title">UH케 그릴 건가요?</h2>
           <p className="conversation-notice">{uiDemoEnabled
             ? "더미 대화만 이 브라우저에 저장됩니다. 개인·민감 정보는 입력하지 마세요."
-            : "현재 탭에서 대화를 확인할 수 있습니다. 이전 맥락·재접속 복원은 백엔드 연결 예정입니다."}</p>
+            : "같은 브라우저의 쿠키로 최근 대화를 복원합니다. 쿠키 삭제·대화 만료 후에는 복원되지 않습니다."}</p>
+          {restoreError && <div role="alert"><p>{restoreError}</p>
+            <button type="button" onClick={() => setRestoreAttempt((value) => value + 1)}>대화 다시 불러오기</button></div>}
           {storageFailed && <p className="form-error" role="status">브라우저 저장을 사용할 수 없어 새로고침 후 더미 대화가 유지되지 않습니다.</p>}
           <ConversationPanel turns={turns} onChoice={fillInput} />
-          {(!conversationReady || isSubmitting) && <div className="receipt"><LoadingIndicator
+          {((!conversationReady && !restoreError) || isSubmitting) && <div className="receipt"><LoadingIndicator
             label={!conversationReady ? "대화를 불러오는 중…" : "요청을 보내는 중…"} /></div>}
           {pollError && <p className="form-error" role="alert">{pollError}</p>}
         </div>

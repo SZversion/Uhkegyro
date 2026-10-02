@@ -139,7 +139,8 @@ class AgentJobWorker:
                         return
                     if search_outcomes is None:
                         search_outcomes = await self._search_outcomes(resolution)
-                result = assemble(resolution, self._snapshot, search_outcomes)
+                result = assemble(resolution, self._snapshot, search_outcomes,
+                                  answer_text=interpretation.answer_text)
                 if recalled is not None:
                     result.memory_answer, result.sources = recalled.memory_answer, recalled.sources
                 state = conversation_context.next_state(context, job, interpretation, result)

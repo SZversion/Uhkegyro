@@ -203,6 +203,12 @@ def test_format_active_cards_json_keeps_only_contract_fields(snapshot_factory, c
     assert "query_fragments" not in item
     assert "look_for" not in item
     assert "source_answer_draft" not in item
+    assert item["plain_meaning_ko"] == "초안 설명"
+    assert item["reference_checkpoints_ko"] == ["라벨 관찰 지점"]
+    snapshot.feedback["pose_contrapposto"] = {"plain_meaning_ko": "검수된 의미", "reference_checkpoints_ko": ["검수 지점"]}
+    updated = json.loads(llm.format_active_cards_json(snapshot))["active_cards"][0]
+    assert updated["plain_meaning_ko"] == "검수된 의미"
+    assert updated["reference_checkpoints_ko"] == ["검수 지점"]
 
 
 # --- 정상 출력 ---------------------------------------------------------------
@@ -239,7 +245,8 @@ def test_interpret_passes_system_and_user_messages():
     assert "extra_body" not in call
     messages = call["messages"]
     assert messages[0]["role"] == "system"
-    assert SYSTEM_EXAMPLE == messages[0]["content"]
+    assert messages[0]["content"].startswith(SYSTEM_EXAMPLE + "\n")
+    assert "Include answer_text" in messages[0]["content"]
     assert messages[1]["role"] == "user"
     assert "반동" in messages[1]["content"]
     assert '{"active_cards": []}' in messages[1]["content"]
@@ -640,7 +647,8 @@ def test_adapter_uses_prompt_file_configured_by_env(tmp_path):
         )
     _run(adapter.interpret("반동", job_id="r1", session_id="session-1", attempt=1, max_attempts=3))
     sent = completions.calls[0]["messages"][0]["content"]
-    assert sent == "ADAPTER ENV MARKER"
+    assert sent.startswith("ADAPTER ENV MARKER\n")
+    assert "Include answer_text" in sent
 
 
 def test_openai_client_has_max_retries_zero():

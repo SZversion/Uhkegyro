@@ -15,6 +15,14 @@ from backend.services.resolver import resolve
 BASE = "https://www.pinterest.com/search/pins/"
 
 
+def test_clarification_does_not_expose_model_answer(snapshot_factory):
+    from backend.services.resolver import ResolutionResult, STATUS_CLARIFY
+    result = assemble(ResolutionResult(status=STATUS_CLARIFY,
+        reason_codes=[ReasonCode.INSUFFICIENT_VISUAL_EVIDENCE], clarifying_question="어떤 자세인가요?"),
+        snapshot_factory([]), answer_text="검증되지 않은 설명")
+    assert result.answer_text == ""
+
+
 def _interpretation(selections):
     return InterpretationOutput(
         interpretation_state=InterpretationState.SELECT_TERMS,

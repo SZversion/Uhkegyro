@@ -174,8 +174,22 @@ def test_worker_runs_claimed_job_through_assembler(monkeypatch, snapshot_factory
         "max_attempts": 3,
         "active_cards_json": '{"active_cards": [{"role": "pose", "term_id": "pose_shift", '
         '"label_ko": "라벨", "confidence_gate": {"require_any": ["단서 A"], '
-        '"do_not_infer_from": ["단서 B"]}, "requires_all_of": [], "requires_any_of": []}]}',
+        '"do_not_infer_from": ["단서 B"]}, "requires_all_of": [], "requires_any_of": [], '
+        '"plain_meaning_ko": "초안 설명", "reference_checkpoints_ko": ["라벨 관찰 지점"]}]}',
     }
+    assert recovery.failures == []
+
+
+@pytest.mark.parametrize("code", [None, ReasonCode.PIN_SEARCH_UNAVAILABLE])
+def test_worker_preserves_integrated_answer(monkeypatch, snapshot_factory, card_factory, code):
+    snapshot = snapshot_factory([card_factory("pose_shift", role="pose")])
+    output = _selected().model_copy(update={"answer_text": "한쪽 다리에 힘을 실은 자세입니다."})
+    jobs, recovery = FakeJobs(), FakeRecovery()
+    worker = _worker(monkeypatch, jobs, recovery, snapshot, FakeAdapter(output))
+    _run(worker.run_once(search_outcomes={Role.POSE: RoleSearchOutcome(role=Role.POSE, code=code)}))
+    result = jobs.writes[-1][1]
+    assert result.answer_text == output.answer_text
+    assert result.model_dump(mode="json")["answer_text"] == output.answer_text
     assert recovery.failures == []
 
 

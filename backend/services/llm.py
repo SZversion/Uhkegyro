@@ -156,6 +156,12 @@ class LLMInterpretationAdapter:
             except (OSError, ValueError) as exc:
                 raise PromptConfigurationError("Structured output Skill을 읽을 수 없다") from exc
             self._system_message += "\n\n" + output_rules
+        self._system_message += (
+            "\nInclude answer_text in the output JSON: a Korean integrated explanation "
+            "of the selected active terms, their plain meanings, selection reasons and cautions, "
+            "at most 4000 characters. Use only the supplied catalog and supported evidence. "
+            "Do not invent URLs, Pins or facts. For needs_clarification use an empty string."
+        )
         self._user_template = user_template
         if client is None:
             client = openai.AsyncOpenAI(
@@ -456,12 +462,13 @@ def render_user_message(template: str, request_text: str, active_cards_json: str
 def format_active_cards_json(snapshot: CatalogSnapshot) -> str:
     """prompt-interpreter-v0.md §65: 활성 카드의 계약 필드만 담은 JSON.
 
-    role, term_id, label_ko, confidence_gate, requires_all_of, requires_any_of만 포함한다.
+    후보 검증 필드와 통합 답변용 정적 의미·주의점만 포함한다. 검색 데이터는 제외한다.
     """
     active_cards: list[dict[str, Any]] = []
     for role in snapshot.roles_order:
         for term_id in snapshot.role_terms.get(role, []):
             card = snapshot.active_cards.get(term_id, {})
+            feedback = snapshot.feedback.get(term_id, {})
             active_cards.append(
                 {
                     "role": card.get("role"),
@@ -470,6 +477,8 @@ def format_active_cards_json(snapshot: CatalogSnapshot) -> str:
                     "confidence_gate": card.get("confidence_gate"),
                     "requires_all_of": card.get("requires_all_of") or [],
                     "requires_any_of": card.get("requires_any_of") or [],
+                    "plain_meaning_ko": feedback.get("plain_meaning_ko", card.get("source_answer_draft", "")),
+                    "reference_checkpoints_ko": feedback.get("reference_checkpoints_ko", card.get("look_for", [])),
                 }
             )
     return json.dumps({"active_cards": active_cards}, ensure_ascii=False)

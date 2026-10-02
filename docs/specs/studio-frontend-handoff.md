@@ -23,4 +23,4 @@ NEXT_PUBLIC_UI_DEMO=0, NEXT_PUBLIC_API_BASE_URL=/api, AGENT_API_ORIGIN=<팀 백�
 - Given 새로고침, When 실제 이력 복원, Then 서버 이력 API를 추가 연결한 뒤 검증한다.
 
 ## 현재 미완료 경계
-프론트의 메시지 누적은 LLM 기억이 아니다. 실제 대화는 현재 탭에만 누적되며 서버 이력 복원 API는 아직 UI에 연결하지 않았다. 개발 더미만 localStorage에 텍스트를 저장한다. 입력을 실제 서버 맥락에 연결하는 기능은 팀 백엔드와 함께 별도 작업해야 한다. 검색 공급자와 term-search 엔드포인트는 이 프론트 변경에 포함하지 않는다.
+실제 대화의 answer_text 전달·서버 이력 복원·명시적 session_id 제출은 `studio-conversation-connection.md`로 연결한다. 개발 더미만 localStorage에 텍스트를 저장한다. 실제 모델의 답변 의미 품질과 운영 환경의 쿠키·DB 연결은 별도 QA로 확인한다. 검색 공급자와 term-search 엔드포인트는 이 연결 변경에 포함하지 않는다.
