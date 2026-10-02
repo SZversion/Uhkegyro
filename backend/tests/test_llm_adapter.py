@@ -725,3 +725,17 @@ def test_docker_deploy_path_consistency():
     env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
     assert f"{PROMPT_ENV_VAR}=" in env_example
     assert "./prompts/uhkegryo-interpreter-v0.md" in env_example
+
+
+def test_cloudbuild_hosts_mcp_next_to_searxng_and_grants_api_invoker():
+    cloudbuild = (REPO_ROOT / "cloudbuild.yaml").read_text(encoding="utf-8")
+    api_deploy, mcp_deploy = cloudbuild.split('id: "deploy-mcp"', maxsplit=1)
+
+    assert "--service-account=${_MCP_CALLER_SA}@${PROJECT_ID}.iam.gserviceaccount.com" in api_deploy
+    assert "--container=searxng" in mcp_deploy
+    assert "--container=mcp" in mcp_deploy
+    assert "--depends-on=searxng" in mcp_deploy
+    assert "SEARXNG_BASE_URL=http://localhost:8080" in mcp_deploy
+    assert 'id: "allow-mcp-cloud-run-host"' in mcp_deploy
+    assert "value(status.url)" in mcp_deploy
+    assert "MCP_ALLOWED_HOST=${mcp_host}" in mcp_deploy

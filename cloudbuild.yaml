@@ -63,6 +63,7 @@ steps:
           --max-instances=3 \
           --concurrency=80 \
           --timeout=300 \
+          --service-account=${_MCP_CALLER_SA}@${PROJECT_ID}.iam.gserviceaccount.com \
           --container=searxng \
           --image=${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/searxng:${SHORT_SHA} \
           --cpu=1 \
@@ -90,25 +91,44 @@ steps:
       - "run"
       - "deploy"
       - "${_MCP_SERVICE_NAME}"
-      - "--image=${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/${_API_SERVICE_NAME}:${SHORT_SHA}"
       - "--region=${_REGION}"
       - "--platform=managed"
       - "--no-allow-unauthenticated"
-      - "--port=8000"
-      - "--cpu=1"
-      - "--memory=512Mi"
       - "--min-instances=0"
       - "--max-instances=3"
       - "--concurrency=80"
       - "--timeout=300"
+      - "--container=searxng"
+      - "--image=${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/searxng:${SHORT_SHA}"
+      - "--cpu=1"
+      - "--memory=512Mi"
+      - "--set-secrets=SEARXNG_SECRET=SEARXNG_SECRET:latest"
+      - "--startup-probe=tcpSocket.port=8080,periodSeconds=2,timeoutSeconds=2,failureThreshold=30"
+      - "--container=mcp"
+      - "--image=${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/${_API_SERVICE_NAME}:${SHORT_SHA}"
+      - "--port=8000"
+      - "--cpu=1"
+      - "--memory=512Mi"
+      - "--depends-on=searxng"
       - "--command=uvicorn"
       - "--args=mcp_server.server:app,--host,0.0.0.0,--port,8000"
-      - "--set-env-vars=ENVIRONMENT=production"
+      - "--set-env-vars=ENVIRONMENT=production,SEARXNG_BASE_URL=http://localhost:8080"
       - "--set-secrets=OPENROUTER_API_KEY=OPENROUTER_API_KEY:latest"
       - "--set-secrets=LANGFUSE_PUBLIC_KEY=LANGFUSE_PUBLIC_KEY:latest"
       - "--set-secrets=LANGFUSE_SECRET_KEY=LANGFUSE_SECRET_KEY:latest"
       - "--set-secrets=DATABASE_URL=DATABASE_URL:latest"
       - "--set-secrets=SESSION_SECRET=SESSION_SECRET:latest"
+
+  # FastMCP의 Host 허용 목록에 Cloud Run 서비스 주소를 등록
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
+    id: "allow-mcp-cloud-run-host"
+    entrypoint: "bash"
+    args:
+      - "-ceu"
+      - |
+        mcp_url="$(gcloud run services describe "${_MCP_SERVICE_NAME}" --region="${_REGION}" --project="${PROJECT_ID}" --format='value(status.url)')"
+        mcp_host="${mcp_url#https://}"
+        gcloud run services update "${_MCP_SERVICE_NAME}" --region="${_REGION}" --project="${PROJECT_ID}" --container=mcp --update-env-vars="MCP_ALLOWED_HOST=${mcp_host}"
 
   # 4. MCP 서비스에 호출자 서비스 계정 권한 부여 (mcp-caller)
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
