@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { countCharacters, createSubmissionController, validateRequestText } from "../lib/agent-submit.mjs";
 import { createJobPoller } from "../lib/job-polling.mjs";
 import { DEMO_JOB, DEMO_REQUEST_TEXT, uiDemoEnabled } from "../lib/demo-job.mjs";
+import { HOME_TERMS } from "../lib/home-catalog.mjs";
 import { createMindMapSlots, firstSelectableTermId } from "../lib/term-mind-map.mjs";
 import { getRecommendedSearchQuery } from "../lib/recommended-query.mjs";
 import { searchFixedTerm, searchTermMode } from "../lib/term-search.mjs";
@@ -11,6 +12,8 @@ import { createGalleryRows, resultTerms, roleNotice, showThumbnail } from "../li
 import { demoReplyJob, readDemoTurns, saveDemoTurns, stopTurnPolling, upsertTurn } from "../lib/conversation.mjs";
 import ConversationPanel from "../components/ConversationPanel";
 import { ImageSearchLoading, LoadingImage, LoadingIndicator } from "../components/LoadingIndicator.mjs";
+
+const homeSlots = createMindMapSlots(HOME_TERMS);
 
 export default function HomePage() {
   const [requestText, setRequestText] = useState("");
@@ -53,11 +56,11 @@ export default function HomePage() {
     () => createMindMapSlots(resultTerms(job)),
     [job],
   );
-  const hasTerms = mindMapSlots.some((slot) => slot.terms.length > 0);
-  const activeTermId = mindMapSlots.some((slot) => slot.terms.some((term) => term.term_id === selectedTermId))
+  const hasTerms = homeSlots.some((slot) => slot.terms.length > 0);
+  const activeTermId = homeSlots.some((slot) => slot.terms.some((term) => term.term_id === selectedTermId))
     ? selectedTermId
-    : firstSelectableTermId(mindMapSlots);
-  const homeTerm = mindMapSlots.flatMap((slot) => slot.terms).find((term) => term.term_id === activeTermId) || null;
+    : firstSelectableTermId(homeSlots);
+  const homeTerm = homeSlots.flatMap((slot) => slot.terms).find((term) => term.term_id === activeTermId) || null;
   const galleryRows = useMemo(() => createGalleryRows(
     boardView === "term-results" && termSearch ? createMindMapSlots([termSearch.term]) : mindMapSlots
   ).map((row) => {
@@ -208,7 +211,9 @@ export default function HomePage() {
     setTermSearch({ term: { ...term, pins: [], reason_codes: [] }, loading: true });
     setBoardView("term-results");
     try {
-      const result = uiDemoEnabled ? term : await searchFixedTerm(term, { signal: controller.signal });
+      const result = uiDemoEnabled
+        ? DEMO_JOB.result.reference_plan.terms.find((entry) => entry.term_id === term.term_id) || term
+        : await searchFixedTerm(term, { signal: controller.signal });
       if (!controller.signal.aborted) setTermSearch({ term: result, loading: false });
     } catch (error) {
       if (!controller.signal.aborted) setTermSearch({
@@ -476,8 +481,8 @@ export default function HomePage() {
             ))}
           </div>
         ) : hasTerms ? (
-          <div className="mind-map-stage" aria-label="해석된 용어 관계도">
-            <p className="mind-map-guide">용어를 누르면 레퍼런스를 볼 수 있어요.</p>
+          <div className="mind-map-stage" aria-label="예시 용어 관계도">
+            <p className="mind-map-guide">검수된 예시 용어 · 용어를 누르면 레퍼런스를 검색해요.</p>
             <div className="mind-map">
               <svg className="mind-map-connectors" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                 <line x1="50" y1="61.2" x2="50" y2="29" />
@@ -491,7 +496,7 @@ export default function HomePage() {
                 <span aria-hidden="true">UH</span>
                 <span id="hub-menu-tip" className="hub-menu-tip" role="tooltip">홈·기록 메뉴</span>
               </button>
-              {mindMapSlots.map((slot, index) => (
+              {homeSlots.map((slot, index) => (
                 <section className={`mind-map-group mind-map-group-${index}`} key={slot.role} aria-label={`${slot.roleLabel} TERM_CARD`}>
                   <span className="mind-map-group-role">{slot.roleLabel}</span>
                   <div className="mind-map-group-cards">

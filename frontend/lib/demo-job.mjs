@@ -1,31 +1,9 @@
-import catalogIndex from "../../docs/domains/illustration-reference/term-cards/index.json" with { type: "json" };
-import bodyCatalog from "../../docs/domains/illustration-reference/term-cards/body.json" with { type: "json" };
-import poseCatalog from "../../docs/domains/illustration-reference/term-cards/pose.json" with { type: "json" };
-import viewCatalog from "../../docs/domains/illustration-reference/term-cards/view.json" with { type: "json" };
-import perspectiveCatalog from "../../docs/domains/illustration-reference/term-cards/perspective.json" with { type: "json" };
-import layoutCatalog from "../../docs/domains/illustration-reference/term-cards/layout.json" with { type: "json" };
+import { HOME_TERMS } from "./home-catalog.mjs";
 
 export const uiDemoEnabled = process.env.NODE_ENV === "development"
   && process.env.NEXT_PUBLIC_UI_DEMO === "1";
 
 export const DEMO_REQUEST_TEXT = "어깨와 골반 폭이 비슷하고 허리가 들어간 캐릭터를 그리고 싶어요.";
-
-const DEMO_TERM_IDS = [
-  "body_hourglass",
-  "body_inverted_triangle",
-  "body_triangle",
-  "pose_contrapposto",
-  "pose_weight_shift",
-  "pose_s_curve",
-  "view_front",
-  "view_three_quarter",
-  "view_high_angle",
-  "perspective_three_point",
-  "perspective_foreshortening",
-  "perspective_vanishing_point",
-  "composition_rule_of_thirds",
-  "layout_composition",
-];
 
 // UI 레이아웃 확인용 더미 Pin 결과입니다. 실제 검색·저장 경로에는 사용하지 않습니다.
 const DEMO_PINS = [
@@ -44,36 +22,13 @@ const DEMO_PINS = [
   status: "available",
 }));
 
-const cardsById = new Map(
-  [bodyCatalog, poseCatalog, viewCatalog, perspectiveCatalog, layoutCatalog]
-    .flatMap((catalog) => catalog.cards)
-    .map((card) => [card.term_id, card]),
-);
-
-function createDemoTerm(termId) {
-  const card = cardsById.get(termId);
-  const feedback = catalogIndex.active_term_feedback[termId];
-  if (!card || !feedback) throw new Error(`검수 완료 TERM_CARD를 찾을 수 없습니다: ${termId}`);
-
-  return {
-    role: card.role,
-    term_id: card.term_id,
-    label_ko: card.label_ko,
-    plain_meaning_ko: feedback.plain_meaning_ko,
-    selection_reason: null,
-    reference_checkpoints: feedback.reference_checkpoints_ko,
-    recommended_search_query: [...card.query_fragments, "drawing"].join(" "),
-    pins: DEMO_PINS,
-  };
-}
-
 export const DEMO_JOB = {
   job_status: "completed",
   result: {
     agent_status: "success",
     answer_text: "예시 캐릭터의 ‘어깨와 골반 폭이 비슷하고 허리가 들어간 체형’은 모래시계형으로 설명할 수 있습니다.\n\n포즈와 시점은 체형과 별개의 조건입니다. 한쪽 다리에 체중을 싣는 자세를 원한다면 콘트라포스토를, 정면에서 보이는 모습을 원한다면 정면 시점을 참고할 수 있습니다. 이것들은 아직 사용자가 지정한 조건이 아니라 탐색 예시입니다.\n\n왼쪽 카테고리에서 레퍼런스를 둘러보고, 바꾸고 싶은 부분을 아래에 이어서 적어 보세요.",
     reference_plan: {
-      terms: DEMO_TERM_IDS.map(createDemoTerm),
+      terms: HOME_TERMS.map((term) => ({ ...term, pins: DEMO_PINS })),
     },
   },
 };
