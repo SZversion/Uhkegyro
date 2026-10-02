@@ -698,7 +698,8 @@ def test_openrouter_spec_and_deployment_use_llm_model_and_180_second_timeout():
     assert "LLM_TIMEOUT_SECONDS=180" in env_example
     assert "LLM_MODEL=openai/gpt-4o-mini" in deployment
     assert "LLM_TIMEOUT_SECONDS=180" in deployment
-    api_deploy, mcp_deploy = cloudbuild.split('id: "deploy-mcp"', maxsplit=1)
+    api_deploy = cloudbuild.split('id: "deploy-api"', maxsplit=1)[1].split('\n\n  # 5.', maxsplit=1)[0]
+    mcp_deploy = cloudbuild.split('id: "deploy-mcp"', maxsplit=1)[1].split('id: "deploy-api"', maxsplit=1)[0]
     assert "LLM_MODEL=openai/gpt-4o-mini" in api_deploy
     assert "LLM_TIMEOUT_SECONDS=180" in api_deploy
     assert "LLM_MODEL" not in mcp_deploy
@@ -729,14 +730,18 @@ def test_docker_deploy_path_consistency():
 
 def test_cloudbuild_hosts_mcp_next_to_searxng_and_grants_api_invoker():
     cloudbuild = (REPO_ROOT / "cloudbuild.yaml").read_text(encoding="utf-8")
-    api_deploy, mcp_deploy = cloudbuild.split('id: "deploy-mcp"', maxsplit=1)
+    api_deploy = cloudbuild.split('id: "deploy-api"', maxsplit=1)[1].split('\n\n  # 5.', maxsplit=1)[0]
+    mcp_deploy = cloudbuild.split('id: "deploy-mcp"', maxsplit=1)[1].split('id: "deploy-api"', maxsplit=1)[0]
+    allow_host = cloudbuild.split('id: "allow-mcp-cloud-run-host"', maxsplit=1)[1].split('id: "bind-mcp-invoker"', maxsplit=1)[0]
 
     assert "--service-account=${_MCP_CALLER_SA}@${PROJECT_ID}.iam.gserviceaccount.com" in api_deploy
+    assert 'waitFor: ["push-image", "push-searxng-image", "get-api-ingress-container", "deploy-mcp"]' in api_deploy
     assert "--container=searxng" in mcp_deploy
     assert "--container=${ingress_container}" in mcp_deploy
     assert 'if [ "${ingress_container}" = "__default__" ]' in mcp_deploy
+    assert "services replace /workspace/mcp-deploy.json" in mcp_deploy
     assert "--depends-on=searxng" in mcp_deploy
     assert "SEARXNG_BASE_URL=http://localhost:8080" in mcp_deploy
-    assert 'id: "allow-mcp-cloud-run-host"' in mcp_deploy
-    assert "value(status.url)" in mcp_deploy
-    assert "MCP_ALLOWED_HOST=${mcp_host}" in mcp_deploy
+    assert "value(status.url)" in allow_host
+    assert "MCP_ALLOWED_HOST=${mcp_host}" in allow_host
+    assert 'waitFor: ["deploy-mcp", "deploy-api"]' in allow_host

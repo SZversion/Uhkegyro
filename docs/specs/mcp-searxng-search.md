@@ -26,7 +26,7 @@
 - 입력은 허용 역할 enum과 비어 있지 않은 문자열 배열이며, 전체 배열이 활성 카드와 일치해야 한다.
 - MCP 프로세스만 `SEARXNG_BASE_URL`을 사용한다. Compose 주소는 `http://searxng:8080`; Cloud Run MCP와 sidecar는 같은 네트워크 namespace에서 `http://localhost:8080`으로 통신한다.
 - Cloud Run MCP Host는 실제 서비스 URL host를 `MCP_ALLOWED_HOST`로 등록하고, 외부 MCP 요청에는 별도 Cloud Run IAM 인증을 적용한다.
-- Cloud Build는 기존 MCP 서비스의 유일한 ingress 컨테이너를 갱신하고, 이름이 없으면 기본 컨테이너로 갱신한다. 서비스가 없으면 `mcp` ingress를 만들며, SearXNG sidecar는 별도 컨테이너로 둔다.
+- Cloud Build는 기존 ingress가 이름 없으면 `mcp`로 명명해 설정을 교체하고, 이름이 있으면 그 ingress를 갱신한다. 두 경우 모두 `mcp` ingress 하나와 별도 SearXNG sidecar 하나를 구성한다.
 - 검색 결과·Pin URL 검증과 실패 코드는 기존 `SearXNGPinterestSearchProvider` 계약을 따른다.
 
 ## AC
