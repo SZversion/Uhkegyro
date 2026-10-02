@@ -18,7 +18,7 @@ from backend.services.failure_mapping import FAILURE_MESSAGE, OperationalFailure
 from backend.services.job_retry_recovery import JobRetryRecovery, should_retry
 from backend.services.job_trace import AttemptTrace, JobTracer
 from backend.services.llm import LLMConfigurationError, LLMTimeout
-from backend.services.pinterest_public_search import PinterestPublicSearchProvider, _load_public_search_html
+from backend.services.searxng_pinterest_search import SearXNGPinterestSearchProvider
 from backend.services import agent_worker
 
 SECRET = "secret-token postgresql://private:password@host/db"
@@ -110,24 +110,15 @@ def test_migration_failure_is_classified_and_sanitized(monkeypatch):
     (RuntimeError(SECRET), Code.SEARCH_UPSTREAM_UNAVAILABLE),
 ])
 def test_search_failure_keeps_partial_result_contract_and_safe_log(caplog, error, code):
-    async def fail(url):
+    async def fail(url, params):
         raise error
-    outcome = asyncio.run(PinterestPublicSearchProvider(html_loader=fail).search(Role.POSE, ("standing",)))
+    outcome = asyncio.run(SearXNGPinterestSearchProvider(
+        base_url="http://searxng", json_loader=fail,
+    ).search(Role.POSE, ("standing",)))
     assert outcome.code is ReasonCode.PIN_SEARCH_UNAVAILABLE
     assert caplog.records[-1].failure_code == code.value
     assert SECRET not in caplog.text
     assert caplog.records[-1].exc_info is None
-
-
-def test_search_http_429_is_not_interpreted_as_empty_results():
-    class Page:
-        async def goto(self, *args, **kwargs):
-            return SimpleNamespace(status=429)
-        async def content(self):
-            pytest.fail("HTTP error page must not be parsed as an empty search")
-    with pytest.raises(OperationalFailure) as caught:
-        asyncio.run(_load_public_search_html(Page(), "https://example.test", 15000))
-    assert classify_failure(caught.value) is Code.SEARCH_RATE_LIMITED
 
 
 @pytest.mark.parametrize("error_type", [OSError, asyncpg.CannotConnectNowError, asyncpg.TooManyConnectionsError])
@@ -156,8 +147,10 @@ def test_lost_database_heartbeat_is_traced_as_database_failure(monkeypatch, snap
 
 
 def test_missing_search_dependency_is_configuration_failure():
-    async def fail(url):
+    async def fail(url, params):
         raise ModuleNotFoundError(SECRET)
     with pytest.raises(OperationalFailure) as caught:
-        asyncio.run(PinterestPublicSearchProvider(html_loader=fail).search(Role.POSE, ("standing",)))
+        asyncio.run(SearXNGPinterestSearchProvider(
+            base_url="http://searxng", json_loader=fail,
+        ).search(Role.POSE, ("standing",)))
     assert classify_failure(caught.value) is Code.CONFIGURATION_ERROR

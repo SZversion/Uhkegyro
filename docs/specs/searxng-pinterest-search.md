@@ -12,7 +12,8 @@
 - 활성 카드의 `query_fragments`에 `drawing site:pinterest.com/pin`을 붙인다.
 - URL이 HTTPS Pinterest 호스트의 숫자 Pin 경로인 결과만 반환한다.
 - Worker가 이 provider를 사용해 widget 조회와 결과 조립으로 연결한다.
-- **범위 밖**: 기존 HTML 크롤러 코드 제거, 이미지 파일 저장.
+- 사용되지 않는 Pinterest HTML·Playwright 크롤러 코드, 테스트와 의존성을 제거한다.
+- **범위 밖**: 이미지 파일 저장.
 
 ## What
 
@@ -44,5 +45,6 @@
 - **Given** SearXNG가 HTTP 200과 빈 결과, Google Images의 `unresponsive_engines` 오류를 반환할 때, **When** provider가 처리하면, **Then** `PIN_SEARCH_UNAVAILABLE`을 반환하고 worker가 최대 세 번 검색을 시도한다.
 - **Given** 주소 누락·HTTP 오류·잘못된 JSON일 때, **When** 검색하면, **Then** 주소 누락은 `CONFIGURATION_ERROR`, 그 외 실패는 `PIN_SEARCH_UNAVAILABLE`로 처리한다.
 - **Given** 유효한 LLM 선택과 활성 카드가 있을 때, **When** Worker가 job을 처리하면, **Then** 카드 검색 조각으로 SearXNG를 호출하고 검증된 Pin 결과를 widget 조회와 응답 조립에 전달한다.
+- **Given** Worker의 검색 경로가 SearXNG로 전환됐을 때, **When** 런타임 의존성을 설치하면, **Then** 기존 Pinterest HTML 크롤러와 Playwright 설치가 필요하지 않다.
 - **Given** Cloud Build가 API를 Cloud Run에 배포할 때, **When** API와 SearXNG sidecar를 시작하면, **Then** API는 `http://localhost:8080`으로 검색하고 SearXNG 컨테이너는 외부 ingress 없이 실행된다.
 - **Given** Cloud Run이 API와 SearXNG sidecar를 시작할 때, **When** SearXNG TCP startup probe가 성공하기 전이면, **Then** API ingress는 시작되지 않는다.

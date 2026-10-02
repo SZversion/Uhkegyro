@@ -10,4 +10,3 @@ python-jose[cryptography]>=3.3
 pytest>=8.0
 httpx>=0.28
 asyncpg>=0.30
-playwright>=1.54,<2

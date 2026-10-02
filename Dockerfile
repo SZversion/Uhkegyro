@@ -4,8 +4,7 @@ FROM python:3.12-slim
 WORKDIR /app
 
 COPY backend/requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt \
-    && playwright install --with-deps chromium
+RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/ ./backend/
 COPY docs/domains/illustration-reference/term-cards/ ./term-cards/
