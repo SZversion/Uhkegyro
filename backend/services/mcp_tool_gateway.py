@@ -8,7 +8,8 @@ from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
-from jsonschema import ValidationError, validate
+from jsonschema import SchemaError, ValidationError, validate
+from jsonschema.validators import validator_for
 
 from backend.schemas.enums import FailureCode
 from backend.services.failure_mapping import OperationalFailure
@@ -36,6 +37,10 @@ class McpToolGateway:
             input_schema = item.get("inputSchema", item.get("input_schema"))
             if not isinstance(name, str) or not name or not isinstance(input_schema, Mapping):
                 raise ValueError("MCP tool schema is malformed")
+            try:
+                validator_for(input_schema).check_schema(input_schema)
+            except SchemaError as error:
+                raise ValueError("MCP tool schema is malformed") from error
             if description is not None and not isinstance(description, str):
                 raise ValueError("MCP tool schema is malformed")
             normalized = {

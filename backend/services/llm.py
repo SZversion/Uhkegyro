@@ -348,14 +348,13 @@ class LLMInterpretationAdapter:
         try:
             for call in raw_calls:
                 function = call.function
+                call_id, name = call.id, function.name
+                if not all(isinstance(value, str) and value.strip() for value in (call_id, name)):
+                    raise ValueError("tool call ID and name must be non-empty strings")
                 arguments = json.loads(function.arguments)
                 if not isinstance(arguments, dict):
                     raise ValueError("tool arguments must be an object")
-                calls.append({
-                    "id": call.id,
-                    "name": function.name,
-                    "arguments": arguments,
-                })
+                calls.append({"id": call_id, "name": name, "arguments": arguments})
         except (AttributeError, TypeError, ValueError, json.JSONDecodeError) as error:
             raise LLMInvalidStructuredOutput("LLM tool call 형식이 올바르지 않다") from error
         if required and not calls:

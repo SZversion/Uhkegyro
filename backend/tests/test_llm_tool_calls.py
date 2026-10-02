@@ -91,3 +91,16 @@ def test_maps_tool_call_request_timeout_to_existing_llm_error():
         asyncio.run(llm.request_mcp_tool_calls([], [{
             "name": "lookup", "inputSchema": {"type": "object"},
         }], required=True))
+
+
+
+@pytest.mark.parametrize(("call_id", "name"), [
+    (None, "lookup"), ("", "lookup"), (1, "lookup"), ("call-1", None),
+    ("call-1", ""), ("call-1", 1),
+])
+def test_rejects_tool_calls_without_nonempty_string_id_and_name(call_id, name):
+    call = SimpleNamespace(id=call_id, function=SimpleNamespace(name=name, arguments="{}"))
+    bad, _ = adapter(SimpleNamespace(tool_calls=[call]))
+    with pytest.raises(LLMInvalidStructuredOutput) as error:
+        asyncio.run(bad.request_mcp_tool_calls([], [{"name": "lookup", "inputSchema": {"type": "object"}}], required=True))
+    assert error.value.failure_code is FailureCode.LLM_INVALID_STRUCTURED_OUTPUT

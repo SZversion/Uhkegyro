@@ -60,7 +60,7 @@ def test_rejects_mcp_error_malformed_tool_list_and_missing_url():
         return SimpleNamespace(isError=True, structuredContent=None, content=[])
 
     async def malformed_list(url, operation, name=None, arguments=None):
-        return SimpleNamespace(tools=[{"name": "lookup"}])
+        return SimpleNamespace(tools=[{"name": "lookup", "inputSchema": {"type": "not-a-json-schema-type"}}])
 
     with pytest.raises(RuntimeError, match="MCP tool call failed"):
         asyncio.run(McpToolGateway(
