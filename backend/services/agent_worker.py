@@ -6,6 +6,8 @@ import json
 import logging
 from typing import Any, Mapping
 
+from pydantic import ValidationError
+
 from backend.schemas.enums import AgentStatus, JobStatus, ReasonCode, Role
 from backend.schemas.models import AgentResult
 from backend.services.catalog_repository import CatalogSnapshot
@@ -17,6 +19,7 @@ from backend.services.job_retry_recovery import JobRetryRecovery
 from backend.services.job_trace import AttemptTrace, JobTracer
 from backend.services.llm import (
     AgentInterpretationAdapter,
+    LLMInvalidStructuredOutput,
     LLMInterpretationAdapter,
 )
 from backend.services.llm import format_active_cards_json
@@ -31,6 +34,7 @@ logger = logging.getLogger(__name__)
 WORKER_CONCURRENCY = 5
 POLL_INTERVAL_SECONDS = 1
 SEARCH_RETRY_DELAYS_SECONDS = (1, 2)
+MAX_INTERPRETATION_CORRECTIONS = 2
 
 
 class AgentJobWorker:
@@ -111,14 +115,27 @@ class AgentJobWorker:
                     feedback = job.get("validation_feedback_json")
                     if isinstance(feedback, str):
                         feedback = json.loads(feedback)
-                    interpretation = await self._adapter.interpret(
-                        job["request_text"], **conversation_context.trace_args(job),
-                        active_cards_json=format_active_cards_json(self._snapshot),
-                        session_context=conversation_context.prompt_context(context),
-                        **({"validation_feedback": feedback} if feedback else {}),
-                    )
-                    resolution = await conversation_context.validate(
-                        self._memory, job, interpretation, self._snapshot)
+                    correction_feedback = None
+                    for correction in range(MAX_INTERPRETATION_CORRECTIONS + 1):
+                        try:
+                            interpretation = await self._adapter.interpret(
+                                job["request_text"], **conversation_context.trace_args(job),
+                                active_cards_json=format_active_cards_json(self._snapshot),
+                                session_context=conversation_context.prompt_context(context),
+                                **({"validation_feedback": feedback} if feedback else {}),
+                                **({"correction_feedback": correction_feedback}
+                                   if correction_feedback else {}),
+                            )
+                            resolution = await conversation_context.validate(
+                                self._memory, job, interpretation, self._snapshot)
+                            break
+                        except LLMInvalidStructuredOutput as error:
+                            if correction >= MAX_INTERPRETATION_CORRECTIONS:
+                                raise
+                            feedback = error.feedback[:8]
+                            correction_feedback = _interpretation_validation_feedback(
+                                error, str(job["request_text"])
+                            )
                 with trace.stage("searching"):
                     if not await self._update(job_id, attempt, JobStatus.SEARCHING):
                         trace.stale()
@@ -265,6 +282,71 @@ class AgentJobWorker:
         except DATABASE_ERRORS as error:
             raise OperationalFailure(classify_failure(error, context="database")) from None
         return True
+
+
+def _interpretation_validation_feedback(error: LLMInvalidStructuredOutput, request_text: str) -> str:
+    """Return fixed, non-sensitive correction guidance for the next model call."""
+    detail = str(error)
+    cause = error.__cause__
+    duplicate_role = isinstance(cause, ValidationError) and any(
+        "역할당 최대 하나" in str(item.get("ctx", {}).get("error", ""))
+        for item in cause.errors(include_input=False)
+    )
+    if duplicate_role:
+        candidates = []
+        if isinstance(cause, ValidationError):
+            first = next((item for item in cause.errors(include_input=True)
+                          if "역할당 최대 하나" in str(item.get("ctx", {}).get("error", ""))), {})
+            raw = first.get("input")
+            selections = raw.get("selections", []) if isinstance(raw, dict) else getattr(raw, "selections", [])
+            roles = {}
+            for selection in selections:
+                role = selection.get("role") if isinstance(selection, dict) else getattr(selection, "role", None)
+                term_id = selection.get("term_id") if isinstance(selection, dict) else getattr(selection, "term_id", None)
+                if role is not None and term_id:
+                    roles.setdefault(str(role), []).append(str(term_id))
+            candidates = [{"role": role, "term_ids": ids} for role, ids in roles.items() if len(ids) > 1]
+        instruction = (
+            "You selected more than one card for the same role. Keep exactly one "
+            "best-supported card per role; do not repeat a role in selections. "
+            "Conflicting candidates: " + json.dumps(candidates, ensure_ascii=True)
+        )
+    elif isinstance(cause, ValidationError) and any(
+        any(state in str(item.get("ctx", {}).get("error", ""))
+            for state in ("select_terms", "needs_clarification", "out_of_scope"))
+        for item in cause.errors(include_input=False)
+    ):
+        instruction = (
+            "Keep interpretation_state and all dependent fields consistent. "
+            "For select_terms: at least one selection, unresolved_constraints=[], "
+            "clarifying_question=null, clarification_type=null. "
+            "For needs_clarification: selections=[], at least one unresolved constraint, "
+            "one nonempty question, and a nonnull clarification_type. "
+            "For out_of_scope: selections=[], unresolved_constraints=[], context_updates=[], "
+            "clarifying_question=null, clarification_type=null. "
+            "If visual evidence is insufficient, use needs_clarification; never select_terms with no selections."
+        )
+    elif "근거" in detail or "출처" in detail:
+        instruction = (
+            "Every evidence value must be an exact, non-empty substring of the current request, "
+            "or of the verified source request/card label when source_job_id is set. "
+            "Remove any selection or context update without direct evidence. Do not paraphrase, "
+            "reuse a confidence_gate description, or add explanatory words. "
+            "Specifically replace selections[].evidence with an array containing a literal quote, "
+            "not the catalog's explanation. context_updates[].evidence is a separate string field. "
+            "When both describe the same current role change, use the same supporting literal quote "
+            "in both fields. A correct context update does not fix an incorrect selection evidence. "
+            "Copy text character-for-character from this current request: "
+            + json.dumps(request_text, ensure_ascii=False)
+        )
+    elif "카드" in detail or "카탈로그" in detail:
+        instruction = "Use only active term_id values whose role matches the active card catalog."
+    else:
+        instruction = (
+            "Correct the previous output to match the required strict InterpretationOutput JSON schema; "
+            "include every required field and no additional fields."
+        )
+    return "Your previous output failed local validation. Return corrected JSON only. " + instruction
 
 
 async def run_worker(snapshot: CatalogSnapshot) -> None:

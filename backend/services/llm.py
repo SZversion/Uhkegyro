@@ -119,6 +119,7 @@ class AgentInterpretationAdapter(Protocol):
         active_cards_json: str = "",
         session_context: dict | None = None,
         validation_feedback: list[dict] | None = None,
+        correction_feedback: str | None = None,
     ) -> InterpretationOutput:
         ...
 
@@ -184,6 +185,7 @@ class LLMInterpretationAdapter:
         active_cards_json: str = "",
         session_context: dict | None = None,
         validation_feedback: list[dict] | None = None,
+        correction_feedback: str | None = None,
     ) -> InterpretationOutput:
         user_message = render_user_message(self._user_template, request_text, active_cards_json)
         started = time.perf_counter()
@@ -195,7 +197,11 @@ class LLMInterpretationAdapter:
         ]
         if self._structured_output and validation_feedback:
             messages.append({"role": "user", "content": json.dumps({"validation_feedback": validation_feedback})})
-        response = await self._request(messages, output_format=response_format() if self._structured_output else None)
+        if correction_feedback:
+            messages.append({"role": "system", "content": correction_feedback})
+        response = await self._request(
+            messages, output_format=response_format() if self._structured_output else None
+        )
 
         latency_ms = round((time.perf_counter() - started) * 1000, 1)
         content = _extract_content(response)
