@@ -20,8 +20,8 @@
 ### Happy Path
 
 1. 사용자가 저장소를 clone하고 `.env.example`을 `.env`로 복사한다.
-2. 사용자가 Neon 개발 DB URL, OpenRouter key, Langfuse 내부 비밀값을 자신의 `.env`에 입력한다.
-3. `docker compose up --build -d`로 API와 Langfuse 저장 서비스를 시작한다.
+2. 사용자가 Neon 개발 DB URL, OpenRouter key, Langfuse 내부 비밀값, SearXNG `SEARXNG_SECRET`을 자신의 `.env`에 입력한다.
+3. `docker compose up --build -d`로 API, SearXNG, Langfuse 저장 서비스를 시작한다.
 4. 사용자가 API 컨테이너에서 migration runner를 명시적으로 실행한다. 앱 startup은 migration을 자동 실행하지 않는다.
 5. `GET /health`가 `{"status":"ok"}`를 반환하는지 확인한다.
 6. 별도 PowerShell에서 Node.js 20.9 이상으로 frontend 의존성을 설치하고 3001 포트에서 Next.js를 실행한다.
@@ -40,7 +40,7 @@
 ## How
 
 - 수정 범위는 `README.md`와 이 Spec으로 한정한다.
-- backend는 Docker Compose API 컨테이너에서 실행하고, frontend는 호스트의 Node.js 개발 서버에서 실행한다.
+- backend와 SearXNG는 Docker Compose에서 실행하고, frontend는 호스트의 Node.js 개발 서버에서 실행한다.
 - migration은 API 컨테이너의 `asyncpg`, `backend.db.migrate.migrate`, `.env`의 `DATABASE_URL`을 이용해 한 번 명시적으로 실행한다.
 - README에는 실제 key·token·DB URL을 기록하지 않고 변수명과 준비 책임만 기록한다.
 - `GET /health`는 API liveness 확인이다. DB·LLM·Pinterest·Langfuse trace 성공을 보장하는 readiness 또는 E2E 검사는 아니다.
@@ -50,7 +50,7 @@
 **AC-01 · 필수 준비 정보**
 - GIVEN: 저장소를 새로 clone한 개발자
 - WHEN: README의 사전 준비를 읽는다
-- THEN: Docker Compose, Node.js 20.9 이상, Neon 개발 DB URL, OpenRouter key, Langfuse 내부 비밀값이 필요함을 알 수 있다.
+- THEN: Docker Compose, Node.js 20.9 이상, Neon 개발 DB URL, OpenRouter key, Langfuse 내부 비밀값, SearXNG `SEARXNG_SECRET`이 필요함을 알 수 있다.
 
 **AC-02 · 명시적 migration과 health**
 - GIVEN: `.env`를 채우고 Compose API를 기동했다

@@ -1,7 +1,7 @@
 use_default_settings: true
 
 server:
-  secret_key: "${SEARXNG_SECRET}"
+  # SEARXNG_SECRET env overrides the default secret key; settings.yml does not expand env vars.
   base_url: http://localhost:8080/
 
 search:
