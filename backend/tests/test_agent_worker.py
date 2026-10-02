@@ -427,67 +427,36 @@ def test_stale_heartbeat_cancels_worker_without_failure(monkeypatch, snapshot_fa
     assert jobs.heartbeats == 1
     assert [entry[0] for entry in jobs.writes] == [JobStatus.VALIDATING]
     assert recovery.failures == []
-def test_evidence_correction_repeats_only_the_current_request():
-    from backend.services.agent_worker import _interpretation_validation_feedback
+
+
+def test_invalid_interpretation_uses_one_provider_call_per_attempt(
+    monkeypatch, snapshot_factory
+):
     from backend.services.llm import LLMInvalidStructuredOutput
 
-    request = "거리의 선들이 한 점으로 모이게 그리고 싶어."
-    message = _interpretation_validation_feedback(
-        LLMInvalidStructuredOutput("선택 근거가 실제 요청에 없습니다"), request
-    )
-    assert request in message
-    assert "Remove any selection" in message
-    assert "replace selections[].evidence" in message
-    assert "correct context update does not fix" in message
-    generic = _interpretation_validation_feedback(
-        LLMInvalidStructuredOutput("출력 계약 위반"), request
-    )
-    assert request not in generic
+    adapter = FakeAdapter(error=LLMInvalidStructuredOutput("출력 계약 위반"))
+    recovery = FakeRecovery()
+    _run(_worker(
+        monkeypatch, FakeJobs(), recovery, snapshot_factory([]), adapter,
+    ).run_once())
+
+    assert len(adapter.calls) == 1
+    assert len(recovery.failures) == 1
+    assert recovery.failures[0]["attempt"] == JOB["attempt"]
 
 
-def test_duplicate_role_correction_names_the_rule():
-    from backend.schemas.models import InterpretationOutput
-    from backend.services.agent_worker import _interpretation_validation_feedback
+def test_retry_attempts_limit_invalid_output_to_three_provider_calls(
+    monkeypatch, snapshot_factory
+):
     from backend.services.llm import LLMInvalidStructuredOutput
-    from pydantic import ValidationError
 
-    try:
-        InterpretationOutput.model_validate({
-            "interpretation_state": "select_terms",
-            "selections": [
-                {"role": "pose", "term_id": "pose_sitting", "evidence": ["앉은"], "confidence": 1},
-                {"role": "pose", "term_id": "pose_gesture", "evidence": ["손"], "confidence": 1},
-            ],
-        })
-    except ValidationError as cause:
-        try:
-            raise LLMInvalidStructuredOutput("출력 계약 위반") from cause
-        except LLMInvalidStructuredOutput as error:
-            message = _interpretation_validation_feedback(error, "앉은 캐릭터가 손을 내밀어")
-    assert "exactly one" in message
-    assert "pose_sitting" in message and "pose_gesture" in message
+    adapter = FakeAdapter(error=LLMInvalidStructuredOutput("출력 계약 위반"))
+    recovery = FakeRecovery()
+    for attempt in (1, 2, 3):
+        job = {**JOB, "attempt": attempt}
+        _run(_worker(
+            monkeypatch, FakeJobs(job), recovery, snapshot_factory([]), adapter,
+        ).run_once())
 
-
-@pytest.mark.parametrize("state", ["select_terms", "needs_clarification"])
-def test_state_correction_explains_dependent_fields_without_raw_output(state):
-    from backend.services.agent_worker import _interpretation_validation_feedback
-    from backend.services.llm import LLMInvalidStructuredOutput
-    from pydantic import ValidationError
-
-    raw = {
-        "interpretation_state": state,
-        "selections": [],
-        "unresolved_constraints": [],
-        "clarifying_question": "PRIVATE_INVALID_QUESTION",
-        "clarification_type": None,
-    }
-    with pytest.raises(ValidationError) as caught:
-        InterpretationOutput.model_validate(raw)
-    try:
-        raise LLMInvalidStructuredOutput("출력 계약 위반") from caught.value
-    except LLMInvalidStructuredOutput as error:
-        message = _interpretation_validation_feedback(error, "PRIVATE_REQUEST")
-    assert "never select_terms with no selections" in message
-    assert "For needs_clarification: selections=[]" in message
-    assert "PRIVATE_INVALID_QUESTION" not in message
-    assert "PRIVATE_REQUEST" not in message
+    assert len(adapter.calls) == 3
+    assert [failure["attempt"] for failure in recovery.failures] == [1, 2, 3]

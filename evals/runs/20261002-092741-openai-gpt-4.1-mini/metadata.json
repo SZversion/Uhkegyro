@@ -37,7 +37,7 @@
   "prompt_sha256": "d55a55bf1b6be39aa6ffdcbfaf39396625369956ccb35af1338a5cce4ce0a0c2",
   "adapter_sha256": "8ef776776186ea9df171cebb71257a1c6f46af2b5c1f0da6b2da975490dea2ad",
   "catalog_version": "0.8-json-runtime-catalog-reviewed",
-  "git_commit": "398ec08043b09f205825d43219945cbcd486dbf2",
+  "git_commit": "unknown; recorded value 398ec08043b09f205825d43219945cbcd486dbf2 does not identify the evaluated dirty tree",
   "working_tree_dirty": true,
   "temperature": 0,
   "max_tokens": 800,

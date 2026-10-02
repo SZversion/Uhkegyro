@@ -245,22 +245,13 @@ def test_interpret_passes_system_and_user_messages():
     assert '{"active_cards": []}' in messages[1]["content"]
 
 
-def test_interpret_appends_correction_feedback_only_when_provided():
+def test_interpretation_validation_feedback_is_never_added_as_system_message():
     completions = _FakeCompletions(responses=[_FakeResponse(SELECT_JSON)])
-    adapter = _adapter(completions)
-    _run(adapter.interpret(
-        "반동", job_id="r1", session_id="session-1", attempt=2, max_attempts=3,
-        correction_feedback='Correct the evidence using the exact request text: "반동".',
-    ))
-    messages = completions.calls[0]["messages"]
-    assert [message["role"] for message in messages] == ["system", "user", "system"]
-    assert "exact request text" in messages[2]["content"]
-
-    without_feedback = _FakeCompletions(responses=[_FakeResponse(SELECT_JSON)])
-    _run(_adapter(without_feedback).interpret(
+    _run(_adapter(completions).interpret(
         "반동", job_id="r1", session_id="session-1", attempt=1, max_attempts=3,
     ))
-    assert len(without_feedback.calls[0]["messages"]) == 2
+    messages = completions.calls[0]["messages"]
+    assert [message["role"] for message in messages] == ["system", "user"]
 
 
 # --- 관측 계약 (observability-and-prompt-versioning.md) ----------------------

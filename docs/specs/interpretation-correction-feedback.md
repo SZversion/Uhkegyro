@@ -1,43 +1,71 @@
-# 해석 검증 오류 교정 피드백
+# 해석 검증 오류 처리
 
 ## Why
 
-- 페르소나: 자연어로 레퍼런스를 찾는 사용자.
-- 상황: 모델이 원문에 없는 근거 문구를 반복 생성해 job attempt 3회를 소모한다.
-- 문제: 현재 교정 메시지는 어떤 역할의 근거가 잘못됐는지와 인용할 원문을 제시하지 않는다.
-- 측정 지표: 원문 불일치로 종결 실패한 평가 문항 수와 호출 수.
+- **페르소나**: 자연어로 레퍼런스를 요청하는 사용자와 이를 운영하는 개발자.
+- **상황**: 모델의 구조화 응답은 worker가 검증하며 실패는 job attempt 정책으로 처리한다.
+- **문제**: 검증 실패 후 내부 재호출과 사용자 원문·모델 후보를 system 메시지에 넣으면 호출 상한과 신뢰 경계가 깨진다.
+- **측정 지표**: job당 provider 호출은 최초 호출 포함 최대 3회이며, 한 attempt의 호출은 1회다.
 
 ## Goal
 
-- 교정 호출에 요청 원문과 잘못된 역할을 제공해 정확한 근거 인용을 유도한다.
-- 기존 원문 검증과 활성 카드 검증은 유지한다.
-- Out of Scope: 근거 자동 생성·완화, 새로운 카드 선택 정책, retry 횟수 변경.
+- 검증 실패를 내부에서 반복 호출하지 않고 기존 `JobRetryRecovery` attempt 정책에 맡긴다.
+- 사용자 원문은 기존 user 메시지에만 두고 system에는 고정 규칙만 전달한다.
+- `InterpretationOutput` enum과 프롬프트 출력 상태를 일치시킨다.
+- **Out of Scope**: 해석 스키마 상태 확장, 검증 기준 완화, 호출 재시도 상한 변경.
 
 ## What
 
-- 근거 오류일 때만 검증된 현재 요청 원문을 교정 메시지에 재제시한다.
-- 중복 역할 오류는 중복된 역할과 후보 카드 ID를 알리고, 한 역할당 가장 잘 뒷받침되는 카드 하나만 남기도록 지시한다.
-- 원문에 없는 역할·카드는 제거하고, 남은 역할은 정확한 연속 부분 문자열로 인용하도록 지시한다.
-- 교정 메시지는 사용자에게 표시하거나 일반 로그에 저장하지 않는다.
+**Happy Path**
+1. Worker가 한 attempt에서 해석 provider를 한 번 호출한다.
+2. 유효한 구조화 출력은 resolver 검증으로 진행한다.
+3. 구조화 검증 오류는 attempt 실패가 되어 기존 recovery가 재시도 여부를 결정한다.
+
+**Edge Cases**
+
+| # | 상황 | 처리 방식 |
+|---|---|---|
+| EC-01 | 구조화 출력 오류 | 해당 attempt 실패로 전달하고 내부 재호출하지 않음 |
+| EC-02 | 최대 attempts 도달 | 기존 recovery 계약대로 job 종료 |
+| EC-03 | 중복 역할 출력 | 고정 규칙만 사용하고 모델 후보 ID를 system에 재삽입하지 않음 |
+| EC-04 | 근거 인용 오류 | 원문을 system에 복사하지 않고 user 메시지 원문만 근거로 유지 |
+| EC-05 | 범위 밖 요청 | 서버 측 판정으로 처리하고 LLM enum 상태로 요구하지 않음 |
 
 ## How
 
-- Pydantic 상태 검증 오류는 입력 값이나 예외 전문을 전달하지 않고 선택·질문·범위 밖 상태별 필수 필드 규칙을 교정 메시지로 제공한다.
-- 근거 교정은 `selections[].evidence` 배열과 `context_updates[].evidence` 문자열을 각각 명시한다. 같은 역할의 현재 변경을 두 필드로 표현하면 같은 유효한 원문을 사용할 수 있음을 안내한다.
+- `AgentJobWorker`의 correction loop를 제거한다. provider는 attempt당 1회, 기본 최대 3 attempt다.
+- 교정 helper는 요청 텍스트와 오류 raw input을 인자로 받지 않는다. 출력 문구는 고정 규칙뿐이다.
+- adapter 해석 요청은 system/user 두 메시지만 사용하며 별도 correction system 메시지를 추가하지 않는다.
+- `interpretation_state`는 `select_terms | needs_clarification`만 모델 출력으로 허용한다. 범위 밖 요청은 서버 판정으로 유지한다.
 
-- `AgentJobWorker`가 검증 오류를 받은 뒤 `_interpretation_validation_feedback`에 현재 `request_text`를 전달한다.
-- `LLMInterpretationAdapter.interpret()`와 adapter Protocol은 선택적 `validation_feedback` 문자열을 받는다. 값이 있을 때만 기존 system/user 메시지 뒤에 추가 system 메시지로 전달한다.
-- 근거 오류 분기에서 오류 종류와 원문을 JSON 문자열로 삽입한다. 나머지 오류 분기는 기존 고정 문구를 유지한다.
-- 메시지는 다음 해석 호출에만 전달하며 기록하지 않는다.
+## AC (Given-When-Then)
 
-## AC
+**AC-01 · attempt별 provider 호출 상한**
+- GIVEN: 구조화 출력이 검증에 실패한다.
+- WHEN: worker가 한 attempt를 처리한다.
+- THEN: provider를 정확히 한 번 호출하고 실패를 recovery 정책에 전달한다.
 
-- GIVEN: 선택 또는 질문 상태의 필드 조합 오류 WHEN: 교정 메시지를 만든다 THEN: 세 상태의 빈 배열·질문·사유 필드 규칙을 제공하며 잘못된 출력의 원문은 포함하지 않는다.
+**AC-02 · job 호출 상한**
+- GIVEN: 세 번의 worker attempt가 모두 실행된다.
+- WHEN: 각 attempt에서 해석 provider 호출 수를 합산한다.
+- THEN: 총 호출 수는 최대 3회다.
 
-- GIVEN: 원문 불일치 근거 오류 WHEN: 교정 메시지를 만든다 THEN: 현재 요청 원문이 그대로 포함되고 근거 없는 역할 제거를 지시한다.
-- GIVEN: 일반 구조 오류 WHEN: 교정 메시지를 만든다 THEN: 요청 원문을 추가하지 않는다.
-- GIVEN: 같은 역할의 카드가 중복된다 WHEN: 교정 메시지를 만든다 THEN: 해당 역할을 한 개로 줄이도록 지시한다.
-- GIVEN: 중복된 후보 카드 ID가 있다 WHEN: 교정 메시지를 만든다 THEN: 해당 역할과 후보 ID를 표시하되 원문과 evidence는 보관하지 않는다.
-- GIVEN: 교정 응답 WHEN: 원본 검증을 다시 수행한다 THEN: 근거·카드 계약은 그대로 적용된다.
-- GIVEN: `validation_feedback`이 제공된다 WHEN: adapter가 해석 요청을 보낸다 THEN: 메시지 배열 끝에 교정용 system 메시지 하나를 추가한다.
-- GIVEN: `validation_feedback`이 없다 WHEN: adapter가 해석 요청을 보낸다 THEN: 기존 system/user 메시지 두 개만 전달한다.
+**AC-03 · 사용자 원문 신뢰 경계**
+- GIVEN: 원문 근거 검증 오류가 발생한다.
+- WHEN: adapter 요청을 구성한다.
+- THEN: 원문은 user role에만 존재하고 system 메시지에는 재삽입되지 않는다.
+
+**AC-04 · 모델 출력 후보 격리**
+- GIVEN: 중복 역할 및 후보 term_id가 든 모델 출력이다.
+- WHEN: 고정 검증 안내를 구성한다.
+- THEN: system 안내에는 후보 role·term_id·raw output이 포함되지 않는다.
+
+**AC-05 · 상태 계약 일치**
+- GIVEN: v4 프롬프트 출력 상태를 schema enum과 비교한다.
+- WHEN: 계약을 검사한다.
+- THEN: 양쪽 모두 `select_terms`와 `needs_clarification`만 허용한다.
+
+**AC-06 · 평가 출처 재현성**
+- GIVEN: 30문항 평가 산출물이 제공된다.
+- WHEN: PR에서 평가 결과를 검토한다.
+- THEN: metadata의 commit이 실제 평가 대상 코드이고 working tree가 깨끗할 때만 PR head 검증 결과로 인정하며, 그렇지 않으면 기존 수치를 이전 dirty 실행으로 표시한다.

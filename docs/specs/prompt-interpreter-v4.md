@@ -12,6 +12,10 @@
 - 새 검색 요청·회상 질문·범위 밖 요청을 구분한다.
 - 체중 이동과 콘트라포스토, 옆모습과 정면 단서를 구분한다.
 - Out of Scope: 평가 기대값 변경, 카드 데이터 변경, 모델 기본값 변경.
+- 해석 provider 호출은 job attempt당 한 번이며, 기존 `JobRetryRecovery`가 최초 호출 포함 최대 세 attempt를 관리한다.
+- 구조화 출력 검증 실패는 해당 attempt를 실패 처리하고, 내부 교정 재호출은 하지 않는다.
+- 사용자 원문이나 모델 출력에서 추출한 값은 system 메시지로 전달하지 않는다.
+- 모델 해석 상태는 `select_terms`와 `needs_clarification`만 허용한다. 범위 밖 판정은 서버가 처리한다.
 
 ## What
 
@@ -44,7 +48,11 @@
 
 - GIVEN: 새 레퍼런스 검색·수정 요청 WHEN: memory classify THEN: `mode=none`이다.
 - GIVEN: 과거 추천 내용을 묻는 요청 WHEN: memory classify THEN: `mode=recall`이다.
-- GIVEN: 이미지 생성·업로드 분석만 요청 WHEN: 해석 THEN: `out_of_scope`다.
+- GIVEN: 이미지 생성·업로드 분석만 요청 WHEN: 요청 검사 THEN: 서버 측 범위 밖 판정이 처리하고 LLM enum 상태로 반환하지 않는다.
 - GIVEN: 한쪽 다리 체중만 명시 WHEN: 해석 THEN: `pose_weight_shift`이고 콘트라포스토는 선택하지 않는다.
 - GIVEN: 옆모습과 정면 단서가 충돌 WHEN: 해석 THEN: `conflicting_constraints` 질문이다.
 - GIVEN: 고정 30문항 WHEN: v4 평가 THEN: 문항별 회귀와 비용·지연을 기록한다.
+- GIVEN: 구조화된 해석 응답이 검증에 실패 WHEN: 한 job attempt를 실행 THEN: provider 호출은 1회이며 실패는 worker attempt 재시도 정책에 전달된다.
+- GIVEN: 해석 검증 피드백을 구성 WHEN: adapter system message를 작성 THEN: 메시지에는 고정 규칙만 있고 요청 원문·이전 출력·후보 ID는 없다.
+- GIVEN: v4 프롬프트 상태 계약 WHEN: enum과 대조 THEN: `select_terms`와 `needs_clarification`만 모델 출력 상태다.
+- GIVEN: 평가 재현 runner가 브랜치에 없거나 실행 metadata가 dirty 상태다 WHEN: 30문항 결과를 보고 THEN: 해당 결과를 PR head의 재현 결과로 표시하지 않고 검증 불가 상태와 실제 commit을 기록한다.
