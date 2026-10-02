@@ -2,12 +2,14 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { countCharacters, createSubmissionController, validateRequestText } from "../lib/agent-submit.mjs";
-import { createJobPoller, STATUS_LABELS } from "../lib/job-polling.mjs";
+import { createJobPoller } from "../lib/job-polling.mjs";
 import { DEMO_JOB, DEMO_REQUEST_TEXT, uiDemoEnabled } from "../lib/demo-job.mjs";
 import { createMindMapSlots, firstSelectableTermId } from "../lib/term-mind-map.mjs";
 import { getRecommendedSearchQuery } from "../lib/recommended-query.mjs";
 import { searchFixedTerm, searchTermMode } from "../lib/term-search.mjs";
 import { createGalleryRows, resultTerms, roleNotice, showThumbnail } from "../lib/result-view.mjs";
+import { demoReplyJob, readDemoTurns, saveDemoTurns, stopTurnPolling, upsertTurn } from "../lib/conversation.mjs";
+import ConversationPanel from "../components/ConversationPanel";
 
 export default function HomePage() {
   const [requestText, setRequestText] = useState("");
@@ -17,6 +19,11 @@ export default function HomePage() {
   const [selectedTermId, setSelectedTermId] = useState(null);
   const [pollError, setPollError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [turns, setTurns] = useState(() => uiDemoEnabled
+    ? [{ id: "demo-initial", request: DEMO_REQUEST_TEXT, job: DEMO_JOB, demo: true }] : []);
+  const [conversationReady, setConversationReady] = useState(!uiDemoEnabled);
+  const [storageFailed, setStorageFailed] = useState(false);
+  const chatScrollRef = useRef(null);
   const [copiedTermId, setCopiedTermId] = useState(null);
   const [activeGalleryRole, setActiveGalleryRole] = useState(null);
   const [failedThumbnails, setFailedThumbnails] = useState({});
@@ -60,13 +67,42 @@ export default function HomePage() {
   const galleryTerm = galleryRows.find((row) => row.role === activeGalleryRole)?.term || galleryRows[0]?.term || null;
   const queryTerm = ["results", "term-results"].includes(boardView) && hasGalleryRows ? galleryTerm : homeTerm;
   const recommendedSearchQuery = getRecommendedSearchQuery(queryTerm);
-  const conversationBusy = isSubmitting || Boolean(submission && !pollError
+  const conversationBusy = !conversationReady || isSubmitting || Boolean(submission && !pollError
     && !["completed", "failed"].includes(job?.job_status));
   if (!submissionRef.current) submissionRef.current = createSubmissionController();
 
   useEffect(() => {
+    if (!uiDemoEnabled) return;
+    try {
+      const restored = readDemoTurns(window.localStorage);
+      if (restored) setTurns(restored);
+    } catch { setStorageFailed(true); }
+    setConversationReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!uiDemoEnabled || !conversationReady) return;
+    try { setStorageFailed(!saveDemoTurns(window.localStorage, turns)); }
+    catch { setStorageFailed(true); }
+  }, [turns, conversationReady]);
+
+  useEffect(() => {
+    if (!submission || !job || (job.job_id && job.job_id !== submission.jobId)) return;
+    setTurns((entries) => upsertTurn(entries, {
+      id: submission.jobId, request: submission.requestText, job, demo: false,
+    }));
+  }, [submission, job]);
+
+  useEffect(() => {
+    if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+  }, [turns]);
+
+  useEffect(() => {
     if (!submission) return;
-    const poller = createJobPoller(submission.jobId, { onUpdate: setJob, onError: setPollError });
+    const poller = createJobPoller(submission.jobId, { onUpdate: setJob, onError: (message) => {
+      setPollError(message);
+      setTurns((entries) => stopTurnPolling(entries, submission.jobId));
+    } });
     pollerRef.current = poller;
     poller.start(submission.pollAfterMs);
     return () => {
@@ -220,8 +256,9 @@ export default function HomePage() {
     resetSketchSearches();
 
     if (uiDemoEnabled) {
-      const demoJob = DEMO_JOB;
+      const demoJob = demoReplyJob(text, turns, DEMO_JOB);
       const id = crypto.randomUUID();
+      setTurns((entries) => upsertTurn(entries, { id, request: text, job: demoJob, demo: true }));
       setJob(demoJob);
       setSearchHistory((entries) => [{ id, request: text, job: demoJob, demo: true }, ...entries]);
       setBoardView("results");
@@ -244,6 +281,7 @@ export default function HomePage() {
     try {
       const result = await submissionRef.current.submit(text);
       if (result.ok) {
+        setTurns((entries) => upsertTurn(entries, { id: result.jobId, request: text, job: { job_status: "queued" }, demo: false }));
         setSubmission({ ...result, requestText: text });
         setRequestText("");
       }
@@ -483,15 +521,14 @@ export default function HomePage() {
       </section>
 
       <aside className="prompt-panel" aria-labelledby="prompt-title">
-        <div className="panel-top" >
+        <div className="panel-top" ref={chatScrollRef}>
           {uiDemoEnabled && <span className="demo-badge">대화 UI 더미 · LLM 미연결</span>}
           <h2 id="prompt-title">UH케 그릴 건가요?</h2>
-          {submission && !pollError && !["completed", "failed"].includes(job?.job_status) &&
-            <div className="receipt" role="status">{STATUS_LABELS[job?.job_status || "queued"]}</div>}
-          {job?.job_status === "completed" && <article className="term-detail"><p>
-            {job.result?.user_message || galleryTerm?.plain_meaning_ko || homeTerm?.plain_meaning_ko || "검색 결과를 확인해 주세요."}
-          </p></article>}
-          {job?.job_status === "failed" && <p className="form-error" role="alert">{job.failure?.user_message}</p>}
+          <p className="conversation-notice">{uiDemoEnabled
+            ? "더미 대화만 이 브라우저에 저장됩니다. 개인·민감 정보는 입력하지 마세요."
+            : "현재 탭에서 대화를 확인할 수 있습니다. 이전 맥락·재접속 복원은 백엔드 연결 예정입니다."}</p>
+          {storageFailed && <p className="form-error" role="status">브라우저 저장을 사용할 수 없어 새로고침 후 더미 대화가 유지되지 않습니다.</p>}
+          <ConversationPanel turns={turns} onChoice={fillInput} />
           {pollError && <p className="form-error" role="alert">{pollError}</p>}
         </div>
 
