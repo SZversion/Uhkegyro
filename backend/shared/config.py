@@ -38,6 +38,7 @@ class Settings(BaseSettings):
 
     # MCP (기본 비활성화 — 실제 도구 준비 후 true로 변경)
     mcp_enabled: bool = False
+    mcp_base_url: str = ""
 
     # TERM_CARD 카탈로그 경로
     term_cards_path: str = "/app/term-cards"
