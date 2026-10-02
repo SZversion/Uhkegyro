@@ -88,7 +88,7 @@ _OUT_OF_SCOPE_INPUT = re.compile(
 _SCOPE_CLAUSE_SEPARATOR = re.compile(r"[.!?。！？,;]+")
 _NEGATED_SCOPE_ACTION = re.compile(
     r"^\s*(?:(?:은|는|을|를|이|가)\s*)?(?:하지\s*(?:말고|않고|마|않)|"
-    r"안\s*(?:해도|하고|할|하는|함)|지\s*(?:말고|않고|않)|필요\s*없|원하지\s*않)"
+    r"안\s*(?:해도|하고|할|하는|함)|지\s*(?:말고|않고|않)|필요\s*없|원하지\s*않|(?:말고|없이)(?=\s|$))"
 )
 
 

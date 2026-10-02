@@ -21,9 +21,19 @@ def test_marks_unsupported_operations_as_out_of_scope(case_id):
     "이미지 생성은 하지 말고 마른 체형의 캐릭터 레퍼런스만 찾아 줘.",
     "Pinterest에서 서 있는 포즈 레퍼런스를 찾아줘. 다운로드나 저장은 필요 없어.",
     "내가 올린 그림을 분석하지 말고, 마른 체형의 레퍼런스를 찾아 줘.",
+    "이미지 생성 말고 마른 체형의 레퍼런스만 찾아 줘.",
+    "이미지 생성 없이 마른 체형의 레퍼런스만 찾아 줘.",
 ])
 def test_negated_unsupported_action_does_not_block_reference_search(request_text):
     assert not is_out_of_scope_input(request_text)
+
+
+@pytest.mark.parametrize("request_text", [
+    "이미지 생성 말고 마른 체형의 레퍼런스를 찾아 줘. 내가 올린 그림을 분석해 줘.",
+    "이미지 생성 없이 마른 체형의 레퍼런스를 찾아 주고 이미지 편집도 해 줘.",
+])
+def test_negation_does_not_allow_separate_unsupported_action(request_text):
+    assert is_out_of_scope_input(request_text)
 
 
 def _fixture_inputs(path: Path, ids: set[str]) -> list[str]:
