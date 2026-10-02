@@ -24,4 +24,11 @@ LLM adapter의 시스템 작성 지침을 추가한다. JSON 스키마·DB·모�
 ## 검증 결과
 - OSC21 adapter·MCP tool call 테스트 70개 통과.
 - 3002 연결 API를 재빌드했고 MARKDOWN_GUIDANCE_ACTIVE=True와 health 200을 확인했다.
-- 확인용 유료 요청은 보내지 않았다. 실제 모델의 Markdown 작성 품질은 미검증이다.
+- 초기 적용 확인 시 유료 요청은 보내지 않았다. 이후 승인된 화면 요청은 LLM_INVALID_STRUCTURED_OUTPUT로 실패했으므로 실제 모델의 Markdown 작성 품질은 미검증이다.
+
+## 통합 PR 검증 (2026-10-02)
+- origin/main a0c49f7 기준으로 통합했다. PR107의 v4 작성·복구 지침, 기억 분류 정규화, 모호한 요청의 조건 갱신 방지를 보존했다.
+- 백엔드 전체 테스트: 492 passed, 28 skipped, 5 warnings. 실제 PostgreSQL 등 환경 의존 테스트의 미실행을 통과로 계산하지 않는다.
+- 프런트 테스트: 51 passed. Production build 통과. npm ci --ignore-scripts 성공, npm audit 보고 0 vulnerabilities.
+- 원문·모델 출력 없이 내부 검증 진단만 보존한다. 신규 실패 원인이나 라이브 답변 품질은 이번 PR 생성 과정에서 유료 호출로 재검증하지 않았다.
+- 이번 통합 PR에 한해 사용자에게 400줄 제한 예외 승인을 받았다. 자동 생성 lockfile을 포함한다.
