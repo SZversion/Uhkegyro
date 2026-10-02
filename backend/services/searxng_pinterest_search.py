@@ -13,6 +13,7 @@ from backend.schemas.enums import FailureCode, PinStatus, ReasonCode, Role
 from backend.schemas.models import PinResult
 from backend.services.failure_mapping import OperationalFailure, classify_failure
 from backend.services.response_assembler import RoleSearchOutcome
+from backend.services.search_url_builder import SEARCH_SUFFIXES
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,11 @@ class SearXNGPinterestSearchProvider:
         *,
         base_url: str,
         json_loader: JsonLoader | None = None,
+        suffix: str = "drawing",
     ) -> None:
+        if suffix not in SEARCH_SUFFIXES:
+            raise ValueError("지원하지 않는 검색 접미사입니다")
+        self._suffix = suffix
         self._base_url = base_url.rstrip("/")
         self._json_loader = json_loader or _load_search_json
 
@@ -42,7 +47,7 @@ class SearXNGPinterestSearchProvider:
             raise OperationalFailure(FailureCode.CONFIGURATION_ERROR)
 
         params = {
-            "q": f"!goi {' '.join(query_fragments)} drawing site:pinterest.com/pin",
+            "q": f"!goi {' '.join(query_fragments)} {self._suffix} site:pinterest.com/pin",
             "categories": "images",
             "format": "json",
             "language": "en",

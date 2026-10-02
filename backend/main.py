@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from backend.routes.agent import ApiContractError, router as agent_router
+from backend.routes.term_search import router as term_search_router
 from backend.shared.auth import set_session_cookie
 from backend.services.catalog_repository import CatalogLoadError, load_catalog
 from backend.shared.config import get_settings, resolve_term_cards_dir
@@ -28,6 +29,7 @@ async def lifespan(app: FastAPI):
         app.state.catalog = load_catalog(resolve_term_cards_dir(settings))
     except CatalogLoadError as error:
         raise RuntimeError(f"CATALOG_INVALID_AT_STARTUP: {error}") from error
+    app.state.term_search_slots = asyncio.Semaphore(2)
     worker_task = asyncio.create_task(run_worker(app.state.catalog))
     try:
         yield
@@ -60,6 +62,7 @@ async def handle_api_contract_error(request: FastAPI, exc: ApiContractError) -> 
 
 
 app.include_router(agent_router)
+app.include_router(term_search_router)
 
 
 @app.exception_handler(Exception)
