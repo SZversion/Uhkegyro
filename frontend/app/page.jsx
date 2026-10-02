@@ -8,7 +8,7 @@ import { createMindMapSlots, firstSelectableTermId } from "../lib/term-mind-map.
 import { getRecommendedSearchQuery } from "../lib/recommended-query.mjs";
 import { searchFixedTerm, searchTermMode } from "../lib/term-search.mjs";
 import { createGalleryRows, resultTerms, roleNotice, showThumbnail } from "../lib/result-view.mjs";
-import { demoReplyJob, readDemoTurns, saveDemoTurns, upsertTurn } from "../lib/conversation.mjs";
+import { demoReplyJob, readDemoTurns, saveDemoTurns, stopTurnPolling, upsertTurn } from "../lib/conversation.mjs";
 import ConversationPanel from "../components/ConversationPanel";
 
 export default function HomePage() {
@@ -99,7 +99,10 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!submission) return;
-    const poller = createJobPoller(submission.jobId, { onUpdate: setJob, onError: setPollError });
+    const poller = createJobPoller(submission.jobId, { onUpdate: setJob, onError: (message) => {
+      setPollError(message);
+      setTurns((entries) => stopTurnPolling(entries, submission.jobId));
+    } });
     pollerRef.current = poller;
     poller.start(submission.pollAfterMs);
     return () => {
@@ -525,7 +528,7 @@ export default function HomePage() {
             ? "더미 대화만 이 브라우저에 저장됩니다. 개인·민감 정보는 입력하지 마세요."
             : "현재 탭에서 대화를 확인할 수 있습니다. 이전 맥락·재접속 복원은 백엔드 연결 예정입니다."}</p>
           {storageFailed && <p className="form-error" role="status">브라우저 저장을 사용할 수 없어 새로고침 후 더미 대화가 유지되지 않습니다.</p>}
-          <ConversationPanel turns={turns} onChoice={fillInput} pausedTurnId={pollError ? submission?.jobId : null} />
+          <ConversationPanel turns={turns} onChoice={fillInput} />
           {pollError && <p className="form-error" role="alert">{pollError}</p>}
         </div>
 

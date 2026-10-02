@@ -20,7 +20,8 @@
 ## How
 
 - frontend/lib/conversation.mjs는 turn upsert, 답변 표시, 더미 기록 읽기·쓰기, 고정 더미 응답만 담당한다.
-- turn은 `{id, request, job, demo}`다. 같은 id는 덮어쓰되 이전 turn은 유지한다. 서버 payload의 job_id는 제출 id와 대조한다.
+- turn은 `{id, request, job, demo, polling_stopped?}`다. 같은 id는 갱신하되 이전 turn은 유지한다. 서버 payload의 job_id는 제출 id와 대조한다.
+- 상태 조회 실패 시 해당 turn에 polling_stopped를 보존한다. 새 요청·기록 열기가 전역 오류를 초기화해도 이전 turn의 중단 안내는 유지한다. 서버 job_status를 failed로 바꾸지 않는다. 같은 turn의 비종결 갱신은 중단 표시를 유지하고 실제 completed/failed 응답이 확인된 경우에만 해제한다.
 - 통합 답변 연결 예정 필드는 `job.result.answer_text`다. 필드명은 팀과 합의한 뒤 해당 helper만 조정한다. 이 문서는 백엔드 계약을 변경하지 않는다.
 - 실패/안전 거절/범위 밖/확인 질문/회상 응답을 먼저 상태에 맞게 표시한다. success/partial_result는 answer_text를 표시한다. 옛 응답은 user_message 또는 통합 답변 미연결 안내를 표시한다. 개별 term 설명을 합쳐 LLM 답변인 척하지 않는다.
 - ConversationPanel은 누적 turn만 표시한다. galleryTerm과 의존하지 않는다. 답변은 plain text로 표시해 HTML을 실행하지 않고 줄바꿈을 보존한다.
@@ -38,4 +39,6 @@
 - Given 실제 응답에 answer_text가 없음, When 완료, Then 미연결 안내를 표시하고 term별 설명을 답변으로 만들지 않는다.
 - Given 이미지 검색 실패와 유효 answer_text, When 표시, Then 통합 답변을 유지한다.
 - Given 처리 중 job, When 추가 전송, Then 기존 polling을 유지하고 중복 제출하지 않는다.
+- Given 첫 job 상태 조회 실패, When 다음 요청 완료 또는 기록 열기, Then 첫 turn의 중단 안내가 유지되고 대기 표시가 다시 나타나지 않는다.
+- Given 중단된 turn, When 비종결 응답 갱신, Then 중단을 유지한다. 실제 종결 응답이면 그 응답을 표시한다.
 - Given 긴 대화, When 우측 스크롤바 표시, Then 브랜드 색으로 표시되고 입력란은 고정된 채 대화 영역만 스크롤된다.

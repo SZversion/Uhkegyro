@@ -3,7 +3,14 @@ const TERMINAL = new Set(["completed", "failed"]);
 
 export function upsertTurn(turns, turn) {
   const index = turns.findIndex((entry) => entry.id === turn.id);
-  return index < 0 ? [...turns, turn] : turns.map((entry, position) => position === index ? turn : entry);
+  return index < 0 ? [...turns, turn] : turns.map((entry, position) => position === index
+    ? { ...entry, ...turn, polling_stopped: !TERMINAL.has(turn.job?.job_status)
+      && Boolean(entry.polling_stopped || turn.polling_stopped) } : entry);
+}
+
+export function stopTurnPolling(turns, turnId) {
+  return turns.map((turn) => turn.id === turnId && isTurnPending(turn)
+    ? { ...turn, polling_stopped: true } : turn);
 }
 
 export function answerForJob(job) {
@@ -17,7 +24,7 @@ export function answerForJob(job) {
 }
 
 export function isTurnPending(turn) {
-  return !TERMINAL.has(turn.job?.job_status);
+  return !turn.polling_stopped && !TERMINAL.has(turn.job?.job_status);
 }
 
 export function demoReplyJob(request, turns, template) {
