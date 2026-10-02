@@ -122,6 +122,11 @@ class AgentInterpretationAdapter(Protocol):
     ) -> InterpretationOutput:
         ...
 
+    async def request_mcp_tool_calls(
+        self, messages: list[dict], tools: list[dict], *, required: bool
+    ) -> list[dict]:
+        ...
+
 
 class LLMInterpretationAdapter:
     """OpenRouter 기반 기본 해석 어댑터 (단발 호출).
@@ -276,16 +281,27 @@ class LLMInterpretationAdapter:
         )
         return interpretation
 
-    async def _request(self, messages, *, output_format=None):
+    async def _request(
+        self, messages, *, output_format=None, tools=None, tool_choice=None, json_mode=True
+    ):
         try:
-            response = await self._client.chat.completions.create(
-                model=self.settings.llm_model,
-                messages=messages,
-                response_format=output_format or {"type": "json_object"},
-                **({"extra_body": {"provider": {"require_parameters": True}}} if output_format else {}),
-                temperature=0.0,
-                max_tokens=self.settings.llm_max_tokens,
-            )
+            request = {
+                "model": self.settings.llm_model,
+                "messages": messages,
+                "temperature": 0.0,
+                "max_tokens": self.settings.llm_max_tokens,
+            }
+            if output_format is not None:
+                request["response_format"] = output_format
+            elif json_mode:
+                request["response_format"] = {"type": "json_object"}
+            if tools is not None:
+                request["tools"] = tools
+            if tool_choice is not None:
+                request["tool_choice"] = tool_choice
+            if output_format is not None or tools is not None:
+                request["extra_body"] = {"provider": {"require_parameters": True}}
+            response = await self._client.chat.completions.create(**request)
         except openai.APITimeoutError as exc:
             raise LLMTimeout(f"OpenRouter 요청 시간 초과: {exc}") from exc
         except openai.RateLimitError as exc:
@@ -318,6 +334,54 @@ class LLMInterpretationAdapter:
             raise LLMUpstreamUnavailable(f"OpenRouter 전송 실패: {exc}") from exc
 
         return response
+
+    async def request_mcp_tool_calls(
+        self, messages: list[dict], tools: list[dict], *, required: bool
+    ) -> list[dict]:
+        """Ask the configured model to choose from the live MCP tool schemas."""
+        if not tools:
+            if required:
+                raise LLMInvalidStructuredOutput("MCP 도구 목록이 비어 있다")
+            return []
+        function_tools = []
+        for tool in tools:
+            name, schema = tool.get("name"), tool.get("inputSchema")
+            if not isinstance(name, str) or not isinstance(schema, dict):
+                raise LLMInvalidStructuredOutput("MCP 도구 스키마가 올바르지 않다")
+            function_tools.append({
+                "type": "function",
+                "function": {
+                    "name": name,
+                    "description": tool.get("description", ""),
+                    "parameters": schema,
+                },
+            })
+
+        response = await self._request(
+            messages,
+            tools=function_tools,
+            tool_choice="required" if required else "auto",
+            json_mode=False,
+        )
+        choices = getattr(response, "choices", None) or []
+        message = getattr(choices[0], "message", None) if choices else None
+        raw_calls = getattr(message, "tool_calls", None) or []
+        calls = []
+        try:
+            for call in raw_calls:
+                function = call.function
+                call_id, name = call.id, function.name
+                if not all(isinstance(value, str) and value.strip() for value in (call_id, name)):
+                    raise ValueError("tool call ID and name must be non-empty strings")
+                arguments = json.loads(function.arguments)
+                if not isinstance(arguments, dict):
+                    raise ValueError("tool arguments must be an object")
+                calls.append({"id": call_id, "name": name, "arguments": arguments})
+        except (AttributeError, TypeError, ValueError, json.JSONDecodeError) as error:
+            raise LLMInvalidStructuredOutput("LLM tool call 형식이 올바르지 않다") from error
+        if required and not calls:
+            raise LLMInvalidStructuredOutput("LLM이 필수 MCP 도구를 호출하지 않았다")
+        return calls
 
     async def memory(self, operation: str, data: dict, output_type, **trace):
         path = self._resolve_prompt_path()

@@ -6,13 +6,13 @@
 
 ## Goal
 
-- FastMCP가 `get_active_term_card(term_id)`를 `/mcp` Streamable HTTP endpoint로 제공한다.
+- FastMCP가 `get_active_term_card(term_id)`와 `search_pinterest_pins(role, query_fragments)`를 `/mcp` Streamable HTTP endpoint로 제공한다.
 - 도구의 유일한 카드 원본은 시작 검증을 통과해 메모리에 로드된 TERM_CARD JSON 카탈로그다.
 - 브라우저는 MCP에 직접 연결하지 않고, 검증된 Agent worker만 도구를 호출한다.
 
 ## What
 
-도구 입력은 `term_id: str` 하나다. Agent worker는 Pydantic 후보 검증을 통과한 ID만 넘긴다. 도구는 외부 HTTP·Getty·DB·Pinterest 검색을 호출하지 않으며, 활성 카드 한 건의 읽기 전용 복사본만 반환한다.
+`get_active_term_card` 입력은 `term_id: str` 하나이며, 활성 카드 한 건의 읽기 전용 복사본만 반환한다. `search_pinterest_pins`는 역할과 검색 조각 배열을 입력받는다. 검색 도구는 역할과 조각 전체가 활성 TERM_CARD와 정확히 일치할 때만 SearXNG를 호출한다.
 
 성공 응답은 다음 정보를 포함한다.
 
@@ -40,7 +40,8 @@
 - DNS rebinding 방어를 유지하면서 로컬 Host(`127.0.0.1`, `localhost`, `[::1]`)와 `MCP_ALLOWED_HOST`에 지정한 Cloud Run Host만 Streamable HTTP 요청에 허용한다. Cloud Run IAM 인증은 별도로 계속 적용한다.
 - `get_active_term_card`의 description에는 “Pydantic 검증 뒤의 활성 term ID에 대한 팀 검수 설명·검색 조각이 필요할 때 사용한다”를 명시한다.
 - `/mcp`는 서비스 토큰 또는 허용된 서비스 클라이언트만 연결할 수 있게 설정한다. Next.js UI와 일반 브라우저의 직접 호출은 허용하지 않는다.
-- Agent worker는 MCP 응답의 `term_id`, `role`, 활성 조건을 다시 검증하고, 유효한 `query_fragments`를 서버 SearXNG Google Images 검색 provider에 전달한다. 검색 결과 Pin ID는 widget endpoint로 조회해 현재 응답용 `thumbnail_url`을 얻는다. MCP는 그 외부 호출에 관여하지 않는다.
+- `search_pinterest_pins`는 전달된 role·`query_fragments`가 활성 카탈로그의 한 카드와 정확히 일치하지 않으면 `INVALID_SEARCH_TERMS`로 반환하고 SearXNG를 호출하지 않는다.
+- 검색 도구는 유효 조각에 `drawing site:pinterest.com/pin`을 덧붙여 SearXNG Google Images를 검색하고, Pin URL을 검증한다.
 - 구현 완료 시 README에 `/mcp` 연결 방법, tool 목록, 인증 방식, `found`·`not_found` 실제 호출 결과를 추가한다.
 
 ## AC
@@ -80,3 +81,12 @@
 - GIVEN: Cloud Run Host가 `MCP_ALLOWED_HOST`에 지정되어 있고 IAM 인증을 통과했다.
 - WHEN: MCP client가 해당 Host로 `/mcp`를 호출한다.
 - THEN: DNS rebinding 검증이 요청을 `421`로 거부하지 않고 도구 호출을 처리한다.
+
+**AC-07 · 검색 입력을 활성 TERM_CARD로 제한**
+
+- GIVEN: 활성 카드의 역할과 `query_fragments`가 일치한다.
+- WHEN: `search_pinterest_pins`가 호출된다.
+- THEN: SearXNG 검색을 수행한다.
+- AND GIVEN: 역할 또는 조각 배열이 활성 카드와 일치하지 않는다.
+- AND WHEN: 같은 도구가 호출된다.
+- THEN: `INVALID_SEARCH_TERMS`를 반환하고 SearXNG를 호출하지 않는다.

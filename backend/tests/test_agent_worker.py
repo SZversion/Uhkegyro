@@ -2,12 +2,14 @@
 
 import asyncio
 import json
+from types import SimpleNamespace
 
 import pytest
 
 from backend.schemas.enums import (
     AgentStatus,
     ClarificationType,
+    FailureCode,
     InterpretationState,
     JobStatus,
     ReasonCode,
@@ -19,8 +21,6 @@ from backend.services.llm import LLMInvalidStructuredOutput, LLMTimeout
 from backend.services.response_assembler import RoleSearchOutcome
 from backend.services import agent_worker
 from backend.services.agent_worker import AgentJobWorker
-from backend.services.searxng_pinterest_search import SearXNGPinterestSearchProvider
-from backend.services.resolver import ResolutionResult, ValidatedTerm
 from backend.schemas.memory import RecallQuery
 
 
@@ -80,10 +80,12 @@ class FakeRecovery:
 
 
 class FakeAdapter:
-    def __init__(self, output=None, error=None):
+    def __init__(self, output=None, error=None, tool_calls=None):
         self.output = output or _selected()
         self.error = error
         self.calls = []
+        self.tool_calls = list(tool_calls or [])
+        self.tool_requests = []
 
     async def interpret(self, request_text, **kwargs):
         self.calls.append((request_text, kwargs))
@@ -97,15 +99,34 @@ class FakeAdapter:
     def record_validation_failure(self, error, *, attempt):
         self.diagnostics = (error, attempt)
 
-class FakePinterestProvider:
+    async def request_mcp_tool_calls(self, messages, tools, *, required):
+        self.tool_requests.append((messages, tools, required))
+        return self.tool_calls.pop(0) if self.tool_calls else []
+
+
+class FakeMcpGateway:
     def __init__(self, outcomes):
-        self.outcomes = {role: list(values) for role, values in outcomes.items()}
+        self.outcomes = list(outcomes)
         self.calls = []
 
-    async def search(self, role, query_fragments):
-        self.calls.append((role, query_fragments))
-        values = self.outcomes[role]
-        return values.pop(0) if len(values) > 1 else values[0]
+    async def list_tools(self):
+        return [
+            {"name": "search_pinterest_pins", "description": "search pins", "inputSchema": {
+                "type": "object", "properties": {
+                    "role": {"type": "string"}, "query_fragments": {"type": "array"}
+                }, "required": ["role", "query_fragments"]
+            }},
+            {"name": "get_active_term_card", "description": "get card", "inputSchema": {
+                "type": "object", "properties": {}, "additionalProperties": True
+            }},
+        ]
+
+    async def call_tool(self, name, arguments):
+        self.calls.append((name, arguments))
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
 
 
 class BlockingAdapter:
@@ -141,14 +162,14 @@ def _run(coro):
 
 def _worker(
     monkeypatch, jobs, recovery, snapshot, adapter, heartbeat_interval=10,
-    pinterest_provider=None,
+    mcp_gateway=None, widget_client=None,
 ):
     monkeypatch.setattr(agent_worker, "JobRepository", lambda _pool: jobs)
     monkeypatch.setattr(agent_worker, "JobRetryRecovery", lambda _pool: recovery)
     monkeypatch.setattr(agent_worker, "ConversationMemory", lambda _pool: EmptyMemory(jobs))
     return AgentJobWorker(
         object(), snapshot, adapter=adapter, heartbeat_interval=heartbeat_interval,
-        pinterest_provider=pinterest_provider,
+        mcp_gateway=mcp_gateway, widget_client=widget_client,
     )
 
 
@@ -302,29 +323,49 @@ def test_worker_searches_with_validated_role_fragments_and_keeps_pin(
     monkeypatch, snapshot_factory, card_factory
 ):
     pin = PinResult(pin_id="123", pin_url="https://www.pinterest.com/pin/123/", status="available")
-    provider = FakePinterestProvider({
-        Role.POSE: [RoleSearchOutcome(role=Role.POSE, pins=[pin])]
-    })
+    adapter = FakeAdapter(tool_calls=[[
+        {"id": "call-1", "name": "search_pinterest_pins", "arguments": {
+            "role": "pose", "query_fragments": ["weight shift", "standing"]
+        }}
+    ]])
+    gateway = FakeMcpGateway([{"role": "pose", "pins": [pin.model_dump()], "code": None}])
     jobs = FakeJobs()
     snapshot = snapshot_factory([
         card_factory("pose_shift", role="pose", query_fragments=["weight shift", "standing"])
     ])
 
     _run(_worker(
-        monkeypatch, jobs, FakeRecovery(), snapshot, FakeAdapter(),
-        pinterest_provider=provider,
+        monkeypatch, jobs, FakeRecovery(), snapshot, adapter, mcp_gateway=gateway,
     ).run_once())
 
     result = jobs.writes[-1][1]
-    assert provider.calls == [(Role.POSE, ("weight shift", "standing"))]
+    assert gateway.calls == [("search_pinterest_pins", {
+        "role": "pose", "query_fragments": ["weight shift", "standing"]
+    })]
+    assert adapter.tool_requests[0][2] is True
+    assert {tool["name"] for tool in adapter.tool_requests[0][1]} == {
+        "search_pinterest_pins", "get_active_term_card"
+    }
+    assert adapter.tool_requests[1][0][-1] == {
+        "role": "tool", "tool_call_id": "call-1",
+        "content": json.dumps({"role": "pose", "pins": [pin.model_dump()], "code": None}),
+    }
     assert result.reference_plan.terms[0].pins[0].pin_id == "123"
     assert result.agent_status is AgentStatus.SUCCESS
 
 
 def test_worker_retries_unavailable_but_not_empty_search(monkeypatch, snapshot_factory, card_factory):
-    empty = RoleSearchOutcome(role=Role.BODY, code=ReasonCode.PIN_RESULTS_EMPTY)
-    unavailable = RoleSearchOutcome(role=Role.POSE, code=ReasonCode.PIN_SEARCH_UNAVAILABLE)
-    provider = FakePinterestProvider({Role.BODY: [empty], Role.POSE: [unavailable]})
+    calls = [
+        {"id": "body", "name": "search_pinterest_pins", "arguments": {
+            "role": "body", "query_fragments": ["body average"]}},
+        *[{"id": f"pose-{i}", "name": "search_pinterest_pins", "arguments": {
+            "role": "pose", "query_fragments": ["pose shift"]}} for i in range(3)],
+    ]
+    adapter = FakeAdapter(output=None, tool_calls=[[call] for call in calls])
+    gateway = FakeMcpGateway([
+        {"role": "body", "pins": [], "code": "PIN_RESULTS_EMPTY"},
+        *[{"role": "pose", "pins": [], "code": "PIN_SEARCH_UNAVAILABLE"} for _ in range(3)],
+    ])
     output = InterpretationOutput(
         interpretation_state=InterpretationState.SELECT_TERMS,
         clarification_type=None,
@@ -345,54 +386,31 @@ def test_worker_retries_unavailable_but_not_empty_search(monkeypatch, snapshot_f
     ])
 
     _run(_worker(
-        monkeypatch, jobs, FakeRecovery(), snapshot, FakeAdapter(output),
-        pinterest_provider=provider,
+        monkeypatch, jobs, FakeRecovery(), snapshot, FakeAdapter(output, tool_calls=[[call] for call in calls]),
+        mcp_gateway=gateway,
     ).run_once())
 
     result = jobs.writes[-1][1]
-    assert [role for role, _ in provider.calls].count(Role.BODY) == 1
-    assert [role for role, _ in provider.calls].count(Role.POSE) == 3
+    assert [args["role"] for _, args in gateway.calls].count("body") == 1
+    assert [args["role"] for _, args in gateway.calls].count("pose") == 3
     assert result.agent_status is AgentStatus.PARTIAL_RESULT
     assert result.reason_codes == [ReasonCode.PIN_RESULTS_EMPTY, ReasonCode.PIN_SEARCH_UNAVAILABLE]
-
-
-def test_worker_retries_when_searxng_reports_google_images_unresponsive(
-    monkeypatch, snapshot_factory
-):
-    calls = 0
-
-    async def load(url, params):
-        nonlocal calls
-        calls += 1
-        return {"results": [], "unresponsive_engines": [["google images", "timeout"]]}
-
-    async def no_wait(_delay):
-        pass
-
-    monkeypatch.setattr(agent_worker.asyncio, "sleep", no_wait)
-    selection = _selected().selections[0]
-    term = ValidatedTerm(selection=selection, card={"query_fragments": ["standing"]})
-    provider = SearXNGPinterestSearchProvider(
-        base_url="http://searxng:8080", json_loader=load,
-    )
-    worker = _worker(
-        monkeypatch, FakeJobs(), FakeRecovery(), snapshot_factory([]), FakeAdapter(),
-        pinterest_provider=provider,
-    )
-
-    outcomes = _run(worker._search_outcomes(ResolutionResult(status="proceed", terms=[term])))
-
-    assert calls == 3
-    assert outcomes[Role.POSE].code is ReasonCode.PIN_SEARCH_UNAVAILABLE
 
 
 def test_worker_keeps_successful_role_when_another_role_search_fails(
     monkeypatch, snapshot_factory, card_factory
 ):
     pin = PinResult(pin_id="456", pin_url="https://www.pinterest.com/pin/456/", status="available")
-    body_outcome = RoleSearchOutcome(role=Role.BODY, pins=[pin])
-    pose_outcome = RoleSearchOutcome(role=Role.POSE, code=ReasonCode.PIN_SEARCH_UNAVAILABLE)
-    provider = FakePinterestProvider({Role.BODY: [body_outcome], Role.POSE: [pose_outcome]})
+    calls = [
+        {"id": "body", "name": "search_pinterest_pins", "arguments": {
+            "role": "body", "query_fragments": ["body average"]}},
+        *[{"id": f"pose-{i}", "name": "search_pinterest_pins", "arguments": {
+            "role": "pose", "query_fragments": ["pose shift"]}} for i in range(3)],
+    ]
+    gateway = FakeMcpGateway([
+        {"role": "body", "pins": [pin.model_dump()], "code": None},
+        *[{"role": "pose", "pins": [], "code": "PIN_SEARCH_UNAVAILABLE"} for _ in range(3)],
+    ])
     output = InterpretationOutput(
         interpretation_state=InterpretationState.SELECT_TERMS,
         clarification_type=None,
@@ -413,8 +431,8 @@ def test_worker_keeps_successful_role_when_another_role_search_fails(
     ])
 
     _run(_worker(
-        monkeypatch, jobs, FakeRecovery(), snapshot, FakeAdapter(output),
-        pinterest_provider=provider,
+        monkeypatch, jobs, FakeRecovery(), snapshot, FakeAdapter(output, tool_calls=[[call] for call in calls]),
+        mcp_gateway=gateway,
     ).run_once())
 
     result = jobs.writes[-1][1]
@@ -425,10 +443,73 @@ def test_worker_keeps_successful_role_when_another_role_search_fails(
     assert terms[Role.POSE].reason_codes == [ReasonCode.PIN_SEARCH_UNAVAILABLE]
 
 
+def test_worker_rejects_unapproved_search_fragments_before_mcp(monkeypatch, snapshot_factory, card_factory):
+    good_pin = PinResult(pin_id="789", pin_url="https://www.pinterest.com/pin/789/", status="available")
+    adapter = FakeAdapter(tool_calls=[[
+        {"id": "bad-search", "name": "search_pinterest_pins", "arguments": {
+            "role": "pose", "query_fragments": ["invented phrase"]
+        }}
+    ], [{"id": "valid-search", "name": "search_pinterest_pins", "arguments": {
+        "role": "pose", "query_fragments": ["weight shift"]
+    }}]])
+    gateway = FakeMcpGateway([{"role": "pose", "pins": [good_pin.model_dump()], "code": None}])
+    jobs, recovery = FakeJobs(), FakeRecovery()
+    snapshot = snapshot_factory([card_factory(
+        "pose_shift", role="pose", query_fragments=["weight shift"]
+    )])
+
+    _run(_worker(
+        monkeypatch, jobs, recovery, snapshot, adapter, mcp_gateway=gateway
+    ).run_once())
+
+    assert gateway.calls == [("search_pinterest_pins", {
+        "role": "pose", "query_fragments": ["weight shift"]
+    })]
+    assert adapter.tool_requests[1][0][-1]["role"] == "tool"
+    assert jobs.writes[-1][1].reference_plan.terms[0].pins[0].pin_id == "789"
+    assert recovery.failures == []
+
+
+def test_worker_fails_when_model_never_selects_approved_search(monkeypatch, snapshot_factory, card_factory):
+    from backend.services.failure_mapping import classify_failure
+
+    adapter = FakeAdapter(tool_calls=[[
+        {"id": "card", "name": "get_active_term_card", "arguments": {"term_id": "pose_shift"}}
+    ], []])
+    gateway = FakeMcpGateway([{"term_id": "pose_shift"}])
+    recovery = FakeRecovery()
+    _run(_worker(
+        monkeypatch, FakeJobs(), recovery,
+        snapshot_factory([card_factory("pose_shift", role="pose")]), adapter,
+        mcp_gateway=gateway,
+    ).run_once())
+
+    assert [name for name, _ in gateway.calls] == ["get_active_term_card"]
+    assert classify_failure(recovery.failures[0]["error"]) is FailureCode.LLM_INVALID_STRUCTURED_OUTPUT
+
+
+def test_worker_preserves_mcp_configuration_failure(monkeypatch, snapshot_factory, card_factory):
+    from backend.services.failure_mapping import classify_failure
+
+    adapter = FakeAdapter(tool_calls=[[
+        {"id": "search", "name": "search_pinterest_pins", "arguments": {
+            "role": "pose", "query_fragments": ["pose shift"]
+        }}
+    ]])
+    gateway = FakeMcpGateway([{"failure_code": "CONFIGURATION_ERROR"}])
+    recovery = FakeRecovery()
+    _run(_worker(
+        monkeypatch, FakeJobs(), recovery,
+        snapshot_factory([card_factory("pose_shift", role="pose")]), adapter,
+        mcp_gateway=gateway,
+    ).run_once())
+
+    assert classify_failure(recovery.failures[0]["error"]) is FailureCode.CONFIGURATION_ERROR
+
+
 def test_worker_does_not_search_when_interpretation_needs_clarification(
     monkeypatch, snapshot_factory
 ):
-    provider = FakePinterestProvider({})
     output = InterpretationOutput(
         interpretation_state=InterpretationState.NEEDS_CLARIFICATION,
         clarification_type=ClarificationType.ABSTRACT_INTENT,
@@ -439,10 +520,7 @@ def test_worker_does_not_search_when_interpretation_needs_clarification(
 
     _run(_worker(
         monkeypatch, FakeJobs(), FakeRecovery(), snapshot_factory([]), FakeAdapter(output),
-        pinterest_provider=provider,
     ).run_once())
-
-    assert provider.calls == []
 
 
 @pytest.mark.parametrize("attempt", [2, 3])
