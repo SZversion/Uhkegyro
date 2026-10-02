@@ -19,7 +19,7 @@
 1. PR 또는 main push 이벤트가 발생한다.
 2. GitHub Actions가 저장소를 checkout하고 Python 런타임을 준비한다.
 3. `backend/requirements.txt`를 설치한다.
-4. `backend` 디렉터리에서 `pytest`를 실행한다.
+4. 저장소 루트에서 `backend/tests`를 대상으로 `pytest`를 실행한다.
 5. 테스트 실패는 workflow 실패로 표시한다.
 
 **Edge Cases**
@@ -39,7 +39,7 @@
 - Runner: `ubuntu-latest`
 - Python: 3.12
 - 설치 명령: `python -m pip install -r backend/requirements.txt`
-- 실행 명령: 작업 디렉터리 `backend`에서 `python -m pytest tests`
+- 실행 명령: 저장소 루트에서 `python -m pytest backend/tests`
 - 기존 secret scan workflow는 변경하지 않는다.
 
 ## AC (Given-When-Then)
