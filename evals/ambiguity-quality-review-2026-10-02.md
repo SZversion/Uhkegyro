@@ -75,6 +75,9 @@ PR 준비 중 `main`의 `daf63d3`까지 통합했다. MCP 검색 변경으로 �
 | 수정 전 head d7cb143의 pytest CI | 478 passed / 28 skipped |
 | 수정 전 최신 main 통합 로컬 PostgreSQL | 487 passed / 19 skipped |
 | 이번 수정 후 로컬 PostgreSQL | 492 passed / 19 skipped |
+| 수정 head e4f993e의 pytest CI | 483 passed / 28 skipped |
+| 수정 head e4f993e의 Secret Scan CI | 통과 |
+| PR merge commit 76360ce의 동일 명령 전체 이력 검사 | 281 commits / 검출 0건 |
 | main 통합 전 실제 모델 실행 | 40/40 기대값 일치, 재실행하지 않음 |
 
-이번 수정 commit의 GitHub CI 결과는 PR checks 및 재검토 요청 코멘트에 갱신한다. 공식 정성 평가·실제 검색 품질 검증 범위는 이전과 같다.
+[pytest CI](https://github.com/aihuman-7th/proj2-4/actions/runs/36980861524), [Secret Scan CI](https://github.com/aihuman-7th/proj2-4/actions/runs/36980861764). 기록 이후 문서 commit의 checks는 PR에서 확인한다. 공식 정성 평가·실제 검색 품질 검증 범위는 이전과 같다.
