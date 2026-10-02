@@ -245,6 +245,15 @@ def test_interpret_passes_system_and_user_messages():
     assert '{"active_cards": []}' in messages[1]["content"]
 
 
+def test_interpretation_validation_feedback_is_never_added_as_system_message():
+    completions = _FakeCompletions(responses=[_FakeResponse(SELECT_JSON)])
+    _run(_adapter(completions).interpret(
+        "반동", job_id="r1", session_id="session-1", attempt=1, max_attempts=3,
+    ))
+    messages = completions.calls[0]["messages"]
+    assert [message["role"] for message in messages] == ["system", "user"]
+
+
 # --- 관측 계약 (observability-and-prompt-versioning.md) ----------------------
 
 _REQUEST_TEXT = "한쪽 다리에 힘 주고 상체가 살짝 틀어진 마른 캐릭터"

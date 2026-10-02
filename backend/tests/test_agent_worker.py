@@ -442,3 +442,36 @@ def test_stale_heartbeat_cancels_worker_without_failure(monkeypatch, snapshot_fa
     assert jobs.heartbeats == 1
     assert [entry[0] for entry in jobs.writes] == [JobStatus.VALIDATING]
     assert recovery.failures == []
+
+
+def test_invalid_interpretation_uses_one_provider_call_per_attempt(
+    monkeypatch, snapshot_factory
+):
+    from backend.services.llm import LLMInvalidStructuredOutput
+
+    adapter = FakeAdapter(error=LLMInvalidStructuredOutput("출력 계약 위반"))
+    recovery = FakeRecovery()
+    _run(_worker(
+        monkeypatch, FakeJobs(), recovery, snapshot_factory([]), adapter,
+    ).run_once())
+
+    assert len(adapter.calls) == 1
+    assert len(recovery.failures) == 1
+    assert recovery.failures[0]["attempt"] == JOB["attempt"]
+
+
+def test_retry_attempts_limit_invalid_output_to_three_provider_calls(
+    monkeypatch, snapshot_factory
+):
+    from backend.services.llm import LLMInvalidStructuredOutput
+
+    adapter = FakeAdapter(error=LLMInvalidStructuredOutput("출력 계약 위반"))
+    recovery = FakeRecovery()
+    for attempt in (1, 2, 3):
+        job = {**JOB, "attempt": attempt}
+        _run(_worker(
+            monkeypatch, FakeJobs(job), recovery, snapshot_factory([]), adapter,
+        ).run_once())
+
+    assert len(adapter.calls) == 3
+    assert [failure["attempt"] for failure in recovery.failures] == [1, 2, 3]

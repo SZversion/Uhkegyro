@@ -195,7 +195,9 @@ class LLMInterpretationAdapter:
         ]
         if self._structured_output and validation_feedback:
             messages.append({"role": "user", "content": json.dumps({"validation_feedback": validation_feedback})})
-        response = await self._request(messages, output_format=response_format() if self._structured_output else None)
+        response = await self._request(
+            messages, output_format=response_format() if self._structured_output else None
+        )
 
         latency_ms = round((time.perf_counter() - started) * 1000, 1)
         content = _extract_content(response)
