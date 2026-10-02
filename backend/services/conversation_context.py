@@ -32,7 +32,8 @@ async def prepare(memory, job, adapter, trace):
                 raise LLMTimeout("대화 요약 시간 초과") from error
             allowed = set(state.get("summary_sources", [])) | {str(row["job_id"]) for row in rows}
             if not set(map(str, summary.source_job_ids)) <= allowed:
-                raise LLMInvalidStructuredOutput("요약 출처가 입력 기록에 없습니다")
+                raise LLMInvalidStructuredOutput("요약 출처가 입력 기록에 없습니다", stage="conversation_validation",
+                                                 feedback=[{"path": [], "code": "summary_source_invalid"}])
             state.update(summary=summary.text, summary_sources=list(map(str, summary.source_job_ids)),
                          summarized_through=[rows[-1]["created_at"].isoformat(), str(rows[-1]["job_id"])])
     context["summary_incomplete"] = bool(await memory.older(job, context))
@@ -71,7 +72,8 @@ async def recall(memory, job, context, adapter, trace):
         for citation in answer.citations:
             job_id = str(citation.job_id)
             if job_id not in by_id or not citation.quote.strip() or citation.quote not in evidence_text(by_id[job_id]):
-                raise LLMInvalidStructuredOutput("회상 답변의 원본 인용을 확인할 수 없습니다")
+                raise LLMInvalidStructuredOutput("회상 답변의 원본 인용을 확인할 수 없습니다", stage="conversation_validation",
+                                                 feedback=[{"path": [], "code": "recall_citation_invalid"}])
             sources[job_id] = MemorySource(job_id=job_id, href="/api/jobs/" + job_id)
         context["sources"] += records
         return AgentResult(agent_status=AgentStatus.MEMORY_ANSWER, memory_answer=answer.answer,
@@ -87,29 +89,34 @@ async def validate(memory, job, interpretation, snapshot):
         if selection.source_job_id:
             original = by_id.get(str(selection.source_job_id))
             if original is None:
-                raise LLMInvalidStructuredOutput("선택 출처가 검증된 선행 기록에 없습니다")
+                raise LLMInvalidStructuredOutput("선택 출처가 검증된 선행 기록에 없습니다", stage="conversation_validation",
+                                                 feedback=[{"path": [], "code": "selection_source_invalid"}])
             allowed = [original["request_text"]] + [t[k] for t in original["terms"] for k in ("label_ko", "label_en")]
         else:
             allowed = [job["request_text"]]
         if any(not any(phrase in text for text in allowed) for phrase in selection.evidence):
-            raise LLMInvalidStructuredOutput("선택 근거가 실제 요청 또는 원본 카드 라벨에 없습니다")
+            raise LLMInvalidStructuredOutput("선택 근거가 실제 요청 또는 원본 카드 라벨에 없습니다", stage="conversation_validation",
+                                             feedback=[{"path": [], "code": "selection_evidence_invalid"}])
         if selection.source_job_id:
             verified_source_texts[str(selection.source_job_id)] = tuple(allowed)
     seen = set()
     for update in interpretation.context_updates:
         if update.role in seen or not update.evidence.strip() or update.evidence not in job["request_text"]:
-            raise LLMInvalidStructuredOutput("조건 변경에 현재 요청의 명시적 근거가 필요합니다")
+            raise LLMInvalidStructuredOutput("조건 변경에 현재 요청의 명시적 근거가 필요합니다", stage="conversation_validation",
+                                             feedback=[{"path": [], "code": "context_evidence_invalid"}])
         seen.add(update.role)
         if update.term_id is not None:
             candidate = InterpretationOutput(interpretation_state="select_terms", selections=[
                 InterpretationSelection(role=update.role, term_id=update.term_id,
                                         evidence=[update.evidence], confidence=1)])
             if resolve(candidate, snapshot, request_text=str(job["request_text"])).status == STATUS_ALL_INVALID:
-                raise LLMInvalidStructuredOutput("기억할 조건의 카드가 유효하지 않습니다")
+                raise LLMInvalidStructuredOutput("기억할 조건의 카드가 유효하지 않습니다", stage="conversation_validation",
+                                                 feedback=[{"path": [], "code": "context_card_invalid"}])
     resolution = resolve(interpretation, snapshot, request_text=str(job["request_text"]),
                          verified_source_texts=verified_source_texts)
     if resolution.status == STATUS_ALL_INVALID or resolution.invalid_candidates:
-        raise LLMInvalidStructuredOutput("선택 카드가 현재 카탈로그에서 유효하지 않습니다")
+        raise LLMInvalidStructuredOutput("선택 카드가 현재 카탈로그에서 유효하지 않습니다", stage="conversation_validation",
+                                         feedback=[{"path": [], "code": "selection_card_invalid"}])
     return resolution
 
 

@@ -252,6 +252,21 @@ def test_interpret_passes_system_and_user_messages():
     assert '{"active_cards": []}' in messages[1]["content"]
 
 
+def test_interpret_sends_beginner_friendly_answer_rules_to_model():
+    completions = _FakeCompletions(responses=[_FakeResponse(SELECT_JSON)])
+    adapter = _adapter(completions)
+    _run(adapter.interpret("반동", job_id="r1", session_id="session-1", attempt=1, max_attempts=3))
+    system = completions.calls[0]["messages"][0]["content"]
+    assert "Do not expose internal term IDs" in system
+    assert "plain meanings and reference observation points" in system
+    assert "Avoid repetitive selection reports" in system
+    assert "Write answer_text in Korean Markdown" in system
+    assert "Do not wrap the whole answer in a code fence" in system
+    assert "Do not include raw HTML, images, links, tables or code blocks" in system
+    assert "Use only the supplied catalog and supported evidence" in system
+    assert "For needs_clarification use an empty string" in system
+
+
 def test_interpretation_validation_feedback_is_never_added_as_system_message():
     completions = _FakeCompletions(responses=[_FakeResponse(SELECT_JSON)])
     _run(_adapter(completions).interpret(

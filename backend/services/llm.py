@@ -77,8 +77,10 @@ class LLMInvalidStructuredOutput(LLMError):
     failure_code = FailureCode.LLM_INVALID_STRUCTURED_OUTPUT
     error_type = "pydantic_validation_error"
 
-    def __init__(self, message: str, *, feedback: list[dict] | None = None):
+    def __init__(self, message: str, *, feedback: list[dict] | None = None,
+                 stage: str = "interpretation_schema"):
         super().__init__(message)
+        self.stage = stage
         self.feedback = feedback or [{"path": [], "code": "invalid_candidate"}]
 
 
@@ -163,7 +165,17 @@ class LLMInterpretationAdapter:
             self._system_message += "\n\n" + output_rules
         self._system_message += (
             "\nInclude answer_text in the output JSON: a Korean integrated explanation "
-            "of the selected active terms, their plain meanings, selection reasons and cautions, "
+            "for a beginner learning to draw. Naturally connect the user's description to "
+            "the Korean names of selected active terms, their plain meanings and reference observation points. "
+            "Use short, readable paragraphs and retain relevant cautions or uncertainty. "
+            "Write answer_text in Korean Markdown: use short paragraphs, optional ### subheadings, "
+            "bold only the first mention of each key Korean term, bullet lists for observation points, "
+            "and blockquotes for relevant cautions. Do not force sections for a short answer. "
+            "Do not wrap the whole answer in a code fence. Do not include raw HTML, images, links, tables or code blocks. "
+            "Do not expose internal term IDs (such as body_slim or pose_contrapposto) in answer_text; "
+            "keep IDs only in structured selections. Avoid repetitive selection reports such as "
+            "'선택했습니다', '명확한 단서가 있어', or explanations of why unrequested terms were excluded. "
+            "Explain what the terms mean and what to look for when drawing, rather than narrating classification. "
             "at most 4000 characters. Use only the supplied catalog and supported evidence. "
             "Do not invent URLs, Pins or facts. For needs_clarification use an empty string."
         )
@@ -404,7 +416,7 @@ class LLMInterpretationAdapter:
                                source_job_ids=[], latest=False)
             output = output_type.model_validate(payload)
         except (ValidationError, ValueError) as error:
-            raise LLMInvalidStructuredOutput("메모리 출력 계약 위반") from error
+            raise LLMInvalidStructuredOutput("메모리 출력 계약 위반", stage="memory_schema") from error
         self._observe_langfuse(
             **trace, usage=_extract_usage(response),
             output={"operation": operation, "input_chars": len(json.dumps(data, ensure_ascii=False)),

@@ -3,11 +3,15 @@ from __future__ import annotations
 
 import json
 from typing import Any
+from typing import get_args
+
+from pydantic_core import ErrorType
 
 from backend.schemas import Failure
 from backend.schemas.enums import FailureCode, JobStatus
 from backend.services.llm import LLMError, LLMInvalidStructuredOutput
 from backend.services.failure_mapping import FAILURE_MESSAGE, public_failure
+from backend.services.structured_output import response_format
 
 _ACTIVE_STATUSES = [
     JobStatus.RUNNING.value,
@@ -44,6 +48,36 @@ def should_retry(attempt: int, max_attempts: int, error: Exception) -> bool:
 
 def _failure(error: Exception) -> Failure:
     return public_failure(error)
+
+
+def _validation_diagnostics(error: Exception) -> str | None:
+    if not isinstance(error, LLMInvalidStructuredOutput):
+        return None
+    schema = response_format()["json_schema"]["schema"]
+    fields = set(schema["properties"]) | {
+        name for definition in schema.get("$defs", {}).values()
+        for name in definition.get("properties", {})
+    }
+    codes = set(get_args(ErrorType)) | {
+        "invalid_candidate", "role_duplicate", "role_order", "state_rules",
+        "summary_source_invalid", "recall_citation_invalid", "selection_source_invalid",
+        "selection_evidence_invalid", "context_evidence_invalid",
+        "context_card_invalid", "selection_card_invalid",
+    }
+    stage = error.stage if error.stage in {
+        "interpretation_schema", "memory_schema", "conversation_validation"
+    } else "interpretation_schema"
+    diagnostics = []
+    for item in error.feedback[:8]:
+        path = item.get("path", [])
+        path = path[:8] if isinstance(path, list) else []
+        diagnostics.append({
+            "stage": stage,
+            "path": [part if type(part) is int and 0 <= part < 10000 else
+                     part if isinstance(part, str) and part in fields else "unknown_field" for part in path],
+            "code": item.get("code") if item.get("code") in codes else "invalid_candidate",
+        })
+    return json.dumps(diagnostics)
 
 
 class JobRetryRecovery:
@@ -100,7 +134,7 @@ class JobRetryRecovery:
                         lease_expires_at = NULL,
                         succeeded = FALSE,
                         final_payload_json = $4::jsonb,
-                        validation_feedback_json = NULL,
+                        validation_feedback_json = $6::jsonb,
                         completed_at = now(),
                         updated_at = now()
                     WHERE job_id = $1::uuid
@@ -114,6 +148,7 @@ class JobRetryRecovery:
                     max_attempts,
                     json.dumps(failure.model_dump(mode="json")),
                     _ACTIVE_STATUSES,
+                    _validation_diagnostics(error),
                 )
         return row is not None
 
