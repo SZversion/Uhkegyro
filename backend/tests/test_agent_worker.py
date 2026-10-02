@@ -15,7 +15,7 @@ from backend.schemas.enums import (
 )
 from backend.schemas.models import InterpretationOutput, InterpretationSelection, PinResult
 from backend.services.job_repository import StaleJobAttempt
-from backend.services.llm import LLMTimeout
+from backend.services.llm import LLMInvalidStructuredOutput, LLMTimeout
 from backend.services.response_assembler import RoleSearchOutcome
 from backend.services import agent_worker
 from backend.services.agent_worker import AgentJobWorker
@@ -92,6 +92,8 @@ class FakeAdapter:
     async def memory(self, *args, **kwargs):
         return RecallQuery(mode="none")
 
+    def record_validation_failure(self, error, *, attempt):
+        self.diagnostics = (error, attempt)
 
 class FakePinterestProvider:
     def __init__(self, outcomes):
@@ -210,6 +212,19 @@ def test_worker_completes_unsafe_input_without_creating_or_calling_adapter(
     assert request_text not in result.user_message
     assert adapter.calls == []
     assert recovery.failures == []
+    scoped = FakeJobs({**JOB, "request_text": "이 설명대로 캐릭터 이미지를 바로 생성해 줘."})
+    _run(_worker(monkeypatch, scoped, FakeRecovery(), snapshot_factory([]),
+                 FakeAdapter(error=AssertionError("out-of-scope input reached LLM"))).run_once())
+    assert scoped.writes[-1][1].agent_status is AgentStatus.OUT_OF_SCOPE
+
+
+def test_worker_records_structured_validation_failure(monkeypatch, snapshot_factory):
+    error = LLMInvalidStructuredOutput("private model output")
+    jobs, recovery = FakeJobs(), FakeRecovery()
+    adapter = FakeAdapter(error=error)
+    _run(_worker(monkeypatch, jobs, recovery, snapshot_factory([]), adapter).run_once())
+    assert adapter.diagnostics == (error, JOB["attempt"])
+    assert recovery.failures[0]["error"] is error
 
 
 def test_error_during_completion_is_sent_to_failure_mapping(monkeypatch, snapshot_factory, card_factory):
