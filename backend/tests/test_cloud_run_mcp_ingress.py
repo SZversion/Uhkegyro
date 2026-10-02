@@ -19,14 +19,20 @@ def test_ingress_target(service, expected):
 
 def test_unnamed_ingress_becomes_mcp_with_searxng_sidecar():
     service = {"apiVersion": "serving.knative.dev/v1", "kind": "Service", "metadata": {"name": "mcp"}, "spec": {"template": {"spec": {"containers": [{"image": "old", "ports": [{"containerPort": 8000}], "env": [{"name": "KEEP", "value": "yes"}]}]}}}}
-    containers = configure_mcp_service(service, "mcp-image", "searxng-image")["spec"]["template"]["spec"]["containers"]
+    configured = configure_mcp_service(service, "mcp-image", "searxng-image")
+    containers = configured["spec"]["template"]["spec"]["containers"]
     assert [(c["name"], c["image"], c.get("ports")) for c in containers] == [("mcp", "mcp-image", [{"containerPort": 8000}]), ("searxng", "searxng-image", None)]
-    assert containers[0]["env"][0] == {"name": "KEEP", "value": "yes"} and containers[0]["dependsOn"] == ["searxng"]
+    assert containers[0]["env"][0] == {"name": "KEEP", "value": "yes"}
+    assert containers[0].get("dependsOn") is None
+    annotations = configured["spec"]["template"]["metadata"]["annotations"]
+    assert annotations["run.googleapis.com/container-dependencies"] == '{"mcp":["searxng"]}'
     assert containers[1]["env"][0]["valueFrom"]["secretKeyRef"] == {"name": "SEARXNG_SECRET", "key": "latest"}
 
 
 def test_cloudbuild_bash_blocks_are_valid():
     config = yaml.safe_load((ROOT / "cloudbuild.yaml").read_text(encoding="utf-8"))
+    deploy = next(step for step in config["steps"] if step["id"] == "deploy-mcp")["args"][1]
+    assert "services replace /workspace/mcp-deploy.json --region=\"${_REGION}\" --project=\"${PROJECT_ID}\" --dry-run" in deploy
     git = shutil.which("git")
     bash = str(Path(git).parent.parent / "usr" / "bin" / "bash.exe") if git and sys.platform == "win32" else shutil.which("bash")
     for step in config["steps"]:

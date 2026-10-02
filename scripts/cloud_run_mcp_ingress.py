@@ -16,7 +16,7 @@ def configure_mcp_service(service, mcp_image, searxng_image):
     service = json.loads(json.dumps(service))
     mcp = next(c for c in service["spec"]["template"]["spec"]["containers"] if c.get("ports"))
     mcp.update(name="mcp", image=mcp_image, ports=[{"containerPort": 8000}], command=["uvicorn"],
-               args=["mcp_server.server:app", "--host", "0.0.0.0", "--port", "8000"], dependsOn=["searxng"],
+               args=["mcp_server.server:app", "--host", "0.0.0.0", "--port", "8000"],
                resources={"limits": {"cpu": "1", "memory": "512Mi"}})
 
     env = {item["name"]: item for item in mcp.get("env", [])}
@@ -24,6 +24,8 @@ def configure_mcp_service(service, mcp_image, searxng_image):
     env.update({n: {"name": n, "valueFrom": {"secretKeyRef": {"name": n, "key": "latest"}}} for n in ("OPENROUTER_API_KEY", "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "DATABASE_URL", "SESSION_SECRET")})
     mcp["env"] = list(env.values())
 
+    annotations = service["spec"]["template"].setdefault("metadata", {}).setdefault("annotations", {})
+    annotations["run.googleapis.com/container-dependencies"] = '{"mcp":["searxng"]}'
     searxng = {"name": "searxng", "image": searxng_image, "resources": {"limits": {"cpu": "1", "memory": "512Mi"}},
                "env": [{"name": "SEARXNG_SECRET", "valueFrom": {"secretKeyRef": {"name": "SEARXNG_SECRET", "key": "latest"}}}],
                "startupProbe": {"tcpSocket": {"port": 8080}, "periodSeconds": 2, "timeoutSeconds": 2, "failureThreshold": 30}}

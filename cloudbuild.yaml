@@ -73,6 +73,7 @@ steps:
             "${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/${_API_SERVICE_NAME}:${SHORT_SHA}" \
             "${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/searxng:${SHORT_SHA}" \
             > /workspace/mcp-deploy.json
+          gcloud run services replace /workspace/mcp-deploy.json --region="${_REGION}" --project="${PROJECT_ID}" --dry-run
           gcloud run services replace /workspace/mcp-deploy.json --region="${_REGION}" --project="${PROJECT_ID}"
           printf 'mcp' > /workspace/mcp-ingress-container
           exit 0
