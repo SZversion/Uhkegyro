@@ -1,8 +1,55 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import * as chat from "../lib/conversation.mjs";
+import { createJobPoller } from "../lib/job-polling.mjs";
 
 const job = (text, status = "success") => ({ job_status: "completed", result: { agent_status: status, answer_text: text } });
+
+test("first turn stays stopped after a 503 poll and a second completed request", async () => {
+  let turns = chat.upsertTurn([], { id: "a", request: "체형", job: { job_status: "queued" }, demo: false });
+  let tick;
+  let calls = 0;
+  const poller = createJobPoller("a", {
+    fetchImpl: async (url) => {
+      assert.equal(url, "/api/jobs/a");
+      calls++;
+      return new Response(null, { status: 503 });
+    },
+    schedule: (callback) => { tick = callback; return 1; }, cancel: () => {},
+    onUpdate: (updatedJob) => { turns = chat.upsertTurn(turns, { id: "a", job: updatedJob }); },
+    onError: () => { turns = chat.stopTurnPolling(turns, "a"); },
+  });
+  poller.start(1);
+  await tick();
+  poller.stop();
+  turns = chat.upsertTurn(turns, { id: "b", request: "포즈", job: job("둘째 답변"), demo: false });
+  assert.equal(calls, 1);
+  assert.equal(turns[0].polling_stopped, true);
+  assert.equal(chat.isTurnPending(turns[0]), false);
+  assert.equal(turns[0].job.job_status, "queued");
+  assert.equal(chat.answerForJob(turns[1].job), "둘째 답변");
+});
+
+test("stopped state survives nonterminal updates but clears on a real terminal response", () => {
+  let turns = chat.upsertTurn([], { id: "a", request: "체형", job: { job_status: "running" } });
+  turns = chat.stopTurnPolling(turns, "a");
+  turns = chat.upsertTurn(turns, { id: "a", job: { job_status: "searching" } });
+  assert.equal(chat.isTurnPending(turns[0]), false);
+  assert.equal(turns[0].polling_stopped, true);
+  turns = chat.upsertTurn(turns, { id: "a", job: job("조회로 확인한 답변") });
+  assert.equal(turns[0].polling_stopped, false);
+  assert.equal(chat.answerForJob(turns[0].job), "조회로 확인한 답변");
+});
+
+test("stopping polling targets only that unfinished turn, never a completed answer", () => {
+  const turns = [ { id: "a", job: { job_status: "queued" } }, { id: "b", job: job("완료 답변") } ];
+  const stopped = chat.stopTurnPolling(turns, "a");
+  assert.equal(stopped[0].polling_stopped, true);
+  assert.equal(stopped[1], turns[1]);
+  assert.deepEqual(chat.stopTurnPolling(turns, "missing"), turns);
+  assert.deepEqual(chat.stopTurnPolling(turns, "b"), turns);
+  assert.equal(turns[0].polling_stopped, undefined);
+});
 
 test("polling updates one turn without dropping previous answers", () => {
   let turns = chat.upsertTurn([], { id: "a", request: "체형", job: job("첫 답변"), demo: false });
