@@ -6,8 +6,9 @@ from collections.abc import Mapping
 import json
 import logging
 
-from backend.schemas.enums import ReasonCode, Role
+from backend.schemas.enums import FailureCode, ReasonCode, Role
 from backend.schemas.models import PinResult
+from backend.services.failure_mapping import OperationalFailure
 from backend.services.response_assembler import RoleSearchOutcome
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,9 @@ def parse_search_result(role: Role, payload: object) -> RoleSearchOutcome:
                     break
                 except ValueError:
                     continue
+    if (isinstance(payload, Mapping)
+            and payload.get("failure_code") == FailureCode.CONFIGURATION_ERROR.value):
+        raise OperationalFailure(FailureCode.CONFIGURATION_ERROR)
     try:
         if not isinstance(payload, Mapping) or payload.get("role") != role.value:
             raise ValueError("MCP search role mismatch")

@@ -12,6 +12,7 @@
 - resolver 검증 뒤 LLM이 등록 MCP 도구 중 필요한 도구를 선택하고 worker가 안전하게 중계한다. Pinterest 검색 인자는 승인 TERM_CARD의 `query_fragments`로 제한한다.
 - provider 결과를 `RoleSearchOutcome`으로 모아 response assembler에 전달한다.
 - 검색 장애 결과는 역할별 최대 3회 조회하며, 최종 장애는 `PIN_SEARCH_UNAVAILABLE`, 정상 빈 결과는 `PIN_RESULTS_EMPTY`로 구분한다.
+- 모든 승인 역할의 검색 호출이 없으면 도구 선택 실패로 처리하고, `PIN_SEARCH_UNAVAILABLE`로 위장하지 않는다. MCP 설정 오류는 `CONFIGURATION_ERROR`로 보존한다.
 - **범위 밖**: Pinterest 공개 검색·Widget 구현 변경, LLM 재시도 정책 변경, 실패 코드 공개 문구 변경(작업 15), UI 구현.
 
 ## What
@@ -21,7 +22,8 @@
 3. `PIN_SEARCH_UNAVAILABLE`이면 LLM이 같은 승인 역할·조각으로 검색 도구를 다시 선택하게 해 총 3회까지 시도하고 첫 번째·두 번째 장애 뒤 각각 1초·2초 기다린다. 이후에도 실패하면 해당 역할의 마지막 unavailable 결과를 유지하고 다른 역할 검색을 계속한다.
 4. 역할별 결과를 response assembler에 전달한다. 다른 역할에 결과가 있으면 결과는 `partial_result`가 되며 unavailable 역할의 Pin 목록은 비어 있다. 모든 역할의 정상 빈 검색은 `PIN_RESULTS_EMPTY`를 집계한다.
 5. clarification 또는 유효한 검색 카드가 없는 결과는 Pinterest provider를 호출하지 않는다. 직접 검색 금지 카드도 resolver가 유효 검색 대상으로 전달하지 않는다.
-6. MCP 도구 결과는 원래 `tool_call_id`로 LLM에 반환한다. 검색 도구 실패는 역할별 재시도에 포함하고, 설정 오류는 검색 결과 오류로 숨기지 않는다.
+6. MCP 도구 결과는 원래 `tool_call_id`로 LLM에 반환한다. 검색 도구 호출 실패는 역할별 재시도에 포함하고, 설정 오류는 `CONFIGURATION_ERROR`로 보존한다. LLM이 다른 도구만 호출하거나 호출을 멈춰 승인 검색 역할이 남으면 `LLM_INVALID_STRUCTURED_OUTPUT`으로 Job을 실패 처리한다.
+7. 승인되지 않은 검색 조각은 MCP에 전달하지 않고 도구 오류로 LLM에 돌려준다. 올바른 검색 호출로 회복할 수 있으며, 잘못된 인자는 검색 장애 횟수에 포함하지 않는다.
 
 ## How
 
@@ -57,3 +59,15 @@
 - GIVEN: resolver가 clarification 결과 또는 검색 가능한 카드를 하나도 승인하지 않는다.
 - WHEN: Worker가 Job을 처리한다.
 - THEN: MCP 도구 목록을 LLM에 제공하거나 Pinterest 검색 도구를 호출하지 않는다.
+
+**AC-05 · 미검색 역할과 설정 오류 구분**
+
+- GIVEN: LLM이 승인 역할의 검색 도구를 호출하지 않거나 MCP가 `CONFIGURATION_ERROR`를 반환한다.
+- WHEN: Worker가 MCP 도구 선택·실행을 마친다.
+- THEN: 미검색 역할은 `LLM_INVALID_STRUCTURED_OUTPUT`로 처리하고, 설정 오류는 `CONFIGURATION_ERROR`로 보존한다. 두 경우 모두 `PIN_SEARCH_UNAVAILABLE`로 완료하지 않는다.
+
+**AC-06 · 잘못된 검색 인자 복구**
+
+- GIVEN: LLM이 승인되지 않은 검색 조각을 호출한 뒤 승인된 조각으로 다시 호출한다.
+- WHEN: Worker가 두 도구 호출을 처리한다.
+- THEN: 첫 호출은 MCP 검색 없이 도구 오류를 반환하고, 검색 시도로 집계하지 않으며, 두 번째 유효 호출 결과를 사용한다.

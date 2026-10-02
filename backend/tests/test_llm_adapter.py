@@ -739,3 +739,5 @@ def test_cloudbuild_hosts_mcp_next_to_searxng_and_grants_api_invoker():
     assert 'id: "allow-mcp-cloud-run-host"' in mcp_deploy
     assert "value(status.url)" in mcp_deploy
     assert "MCP_ALLOWED_HOST=${mcp_host}" in mcp_deploy
+    assert 'ingress_container="$(cat /workspace/api-ingress-container)"' in mcp_deploy
+    assert '--container="${ingress_container}"' in mcp_deploy

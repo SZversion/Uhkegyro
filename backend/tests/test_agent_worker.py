@@ -9,6 +9,7 @@ import pytest
 from backend.schemas.enums import (
     AgentStatus,
     ClarificationType,
+    FailureCode,
     InterpretationState,
     JobStatus,
     ReasonCode,
@@ -403,12 +404,12 @@ def test_worker_keeps_successful_role_when_another_role_search_fails(
     calls = [
         {"id": "body", "name": "search_pinterest_pins", "arguments": {
             "role": "body", "query_fragments": ["body average"]}},
-        {"id": "pose", "name": "search_pinterest_pins", "arguments": {
-            "role": "pose", "query_fragments": ["pose shift"]}},
+        *[{"id": f"pose-{i}", "name": "search_pinterest_pins", "arguments": {
+            "role": "pose", "query_fragments": ["pose shift"]}} for i in range(3)],
     ]
     gateway = FakeMcpGateway([
         {"role": "body", "pins": [pin.model_dump()], "code": None},
-        {"role": "pose", "pins": [], "code": "PIN_SEARCH_UNAVAILABLE"},
+        *[{"role": "pose", "pins": [], "code": "PIN_SEARCH_UNAVAILABLE"} for _ in range(3)],
     ])
     output = InterpretationOutput(
         interpretation_state=InterpretationState.SELECT_TERMS,
@@ -443,36 +444,67 @@ def test_worker_keeps_successful_role_when_another_role_search_fails(
 
 
 def test_worker_rejects_unapproved_search_fragments_before_mcp(monkeypatch, snapshot_factory, card_factory):
+    good_pin = PinResult(pin_id="789", pin_url="https://www.pinterest.com/pin/789/", status="available")
     adapter = FakeAdapter(tool_calls=[[
         {"id": "bad-search", "name": "search_pinterest_pins", "arguments": {
             "role": "pose", "query_fragments": ["invented phrase"]
         }}
-    ]])
-    gateway = FakeMcpGateway([])
-    jobs = FakeJobs()
+    ], [{"id": "valid-search", "name": "search_pinterest_pins", "arguments": {
+        "role": "pose", "query_fragments": ["weight shift"]
+    }}]])
+    gateway = FakeMcpGateway([{"role": "pose", "pins": [good_pin.model_dump()], "code": None}])
+    jobs, recovery = FakeJobs(), FakeRecovery()
     snapshot = snapshot_factory([card_factory(
         "pose_shift", role="pose", query_fragments=["weight shift"]
     )])
 
     _run(_worker(
-        monkeypatch, jobs, FakeRecovery(), snapshot, adapter, mcp_gateway=gateway
+        monkeypatch, jobs, recovery, snapshot, adapter, mcp_gateway=gateway
     ).run_once())
 
-    assert gateway.calls == []
+    assert gateway.calls == [("search_pinterest_pins", {
+        "role": "pose", "query_fragments": ["weight shift"]
+    })]
     assert adapter.tool_requests[1][0][-1]["role"] == "tool"
-    assert jobs.writes[-1][1].reason_codes == [ReasonCode.PIN_SEARCH_UNAVAILABLE]
+    assert jobs.writes[-1][1].reference_plan.terms[0].pins[0].pin_id == "789"
+    assert recovery.failures == []
 
 
-def test_parse_mcp_search_result_validates_payload():
-    from backend.services.mcp_pinterest_search import parse_search_result
+def test_worker_fails_when_model_never_selects_approved_search(monkeypatch, snapshot_factory, card_factory):
+    from backend.services.failure_mapping import classify_failure
 
-    empty = parse_search_result(Role.BODY, {
-        "role": "body", "pins": [], "code": "PIN_RESULTS_EMPTY"
-    })
-    invalid = parse_search_result(Role.BODY, {"role": "pose", "pins": []})
+    adapter = FakeAdapter(tool_calls=[[
+        {"id": "card", "name": "get_active_term_card", "arguments": {"term_id": "pose_shift"}}
+    ], []])
+    gateway = FakeMcpGateway([{"term_id": "pose_shift"}])
+    recovery = FakeRecovery()
+    _run(_worker(
+        monkeypatch, FakeJobs(), recovery,
+        snapshot_factory([card_factory("pose_shift", role="pose")]), adapter,
+        mcp_gateway=gateway,
+    ).run_once())
 
-    assert empty.code is ReasonCode.PIN_RESULTS_EMPTY
-    assert invalid.code is ReasonCode.PIN_SEARCH_UNAVAILABLE
+    assert [name for name, _ in gateway.calls] == ["get_active_term_card"]
+    assert classify_failure(recovery.failures[0]["error"]) is FailureCode.LLM_INVALID_STRUCTURED_OUTPUT
+
+
+def test_worker_preserves_mcp_configuration_failure(monkeypatch, snapshot_factory, card_factory):
+    from backend.services.failure_mapping import classify_failure
+
+    adapter = FakeAdapter(tool_calls=[[
+        {"id": "search", "name": "search_pinterest_pins", "arguments": {
+            "role": "pose", "query_fragments": ["pose shift"]
+        }}
+    ]])
+    gateway = FakeMcpGateway([{"failure_code": "CONFIGURATION_ERROR"}])
+    recovery = FakeRecovery()
+    _run(_worker(
+        monkeypatch, FakeJobs(), recovery,
+        snapshot_factory([card_factory("pose_shift", role="pose")]), adapter,
+        mcp_gateway=gateway,
+    ).run_once())
+
+    assert classify_failure(recovery.failures[0]["error"]) is FailureCode.CONFIGURATION_ERROR
 
 
 def test_worker_does_not_search_when_interpretation_needs_clarification(

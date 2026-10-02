@@ -6,7 +6,7 @@ import json
 import logging
 from typing import Any, Mapping
 
-from backend.schemas.enums import AgentStatus, JobStatus, ReasonCode, Role
+from backend.schemas.enums import AgentStatus, FailureCode, JobStatus, ReasonCode, Role
 from backend.schemas.models import AgentResult
 from backend.services.catalog_repository import CatalogSnapshot
 from backend.services.conversation_memory import ConversationMemory
@@ -230,21 +230,19 @@ class AgentJobWorker:
                 tool_call_count += 1
                 result: dict
                 search_attempted = False
+                role = None
                 try:
                     if name == PINTEREST_SEARCH_TOOL:
                         role = Role(arguments.get("role"))
                         fragments = arguments.get("query_fragments")
-                        if role not in approved:
+                        if role not in approved or role in outcomes:
                             raise ValueError("Pinterest search arguments are outside approved terms")
                         if fragments != list(approved[role]):
-                            outcomes[role] = RoleSearchOutcome(
-                                role=role, pins=[], code=ReasonCode.PIN_SEARCH_UNAVAILABLE
-                            )
                             raise ValueError("Pinterest search arguments are outside approved terms")
+                        if attempts[role] >= 3:
+                            raise ValueError("Pinterest search retry limit exceeded")
                         attempts[role] += 1
                         search_attempted = True
-                        if attempts[role] > 3:
-                            raise ValueError("Pinterest search retry limit exceeded")
                     result = await self._mcp_gateway.call_tool(name, arguments)
                     if name == PINTEREST_SEARCH_TOOL:
                         outcome = parse_search_result(role, result)
@@ -255,33 +253,25 @@ class AgentJobWorker:
                         else:
                             await asyncio.sleep(SEARCH_RETRY_DELAYS_SECONDS[attempts[role] - 1])
                 except Exception as error:
+                    if (isinstance(error, OperationalFailure)
+                            and error.failure_code is FailureCode.CONFIGURATION_ERROR):
+                        raise
                     result = {"error": str(error)}
-                    if name == PINTEREST_SEARCH_TOOL:
-                        try:
-                            failed_role = Role(arguments.get("role"))
-                            if failed_role in approved:
-                                if not search_attempted:
-                                    attempts[failed_role] = min(attempts[failed_role] + 1, 3)
-                                if attempts[failed_role] >= 3:
-                                    outcomes.setdefault(failed_role, RoleSearchOutcome(
-                                        role=failed_role, pins=[],
-                                        code=ReasonCode.PIN_SEARCH_UNAVAILABLE,
-                                    ))
-                                elif search_attempted:
-                                    await asyncio.sleep(
-                                        SEARCH_RETRY_DELAYS_SECONDS[attempts[failed_role] - 1]
-                                    )
-                        except (ValueError, TypeError):
-                            pass
+                    if search_attempted and role is not None:
+                        if attempts[role] >= 3:
+                            outcomes[role] = RoleSearchOutcome(
+                                role=role, pins=[], code=ReasonCode.PIN_SEARCH_UNAVAILABLE
+                            )
+                        else:
+                            await asyncio.sleep(SEARCH_RETRY_DELAYS_SECONDS[attempts[role] - 1])
                 messages.append({
                     "role": "tool", "tool_call_id": call_id,
                     "content": json.dumps(result, ensure_ascii=False),
                 })
-        for role in approved:
-            if role not in outcomes:
-                outcomes[role] = RoleSearchOutcome(
-                    role=role, pins=[], code=ReasonCode.PIN_SEARCH_UNAVAILABLE
-                )
+        if set(approved) - set(outcomes):
+            raise LLMInvalidStructuredOutput(
+                "LLM이 모든 승인 역할에 대한 Pinterest 검색 도구를 선택하지 않았다"
+            )
         return outcomes
 
     async def _with_heartbeat(self, job: Any, operation: Any) -> None:
