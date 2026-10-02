@@ -132,10 +132,13 @@ services:
       LANGFUSE_HOST: http://langfuse-web:3000
       LANGFUSE_BASE_URL: http://langfuse-web:3000
       SEARXNG_BASE_URL: http://searxng:8080
+      MCP_BASE_URL: http://mcp:8001/mcp
     depends_on:
       langfuse-web:
         condition: service_started
       searxng:
+        condition: service_started
+      mcp:
         condition: service_started
 
   mcp:

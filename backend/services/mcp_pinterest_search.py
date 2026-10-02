@@ -1,0 +1,37 @@
+"""Convert MCP Pinterest tool responses to the worker contract."""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+import json
+import logging
+
+from backend.schemas.enums import ReasonCode, Role
+from backend.schemas.models import PinResult
+from backend.services.response_assembler import RoleSearchOutcome
+
+logger = logging.getLogger(__name__)
+
+def parse_search_result(role: Role, payload: object) -> RoleSearchOutcome:
+    if isinstance(payload, Mapping) and isinstance(payload.get("content"), list):
+        for block in payload["content"]:
+            if isinstance(block, Mapping) and isinstance(block.get("text"), str):
+                try:
+                    payload = json.loads(block["text"])
+                    break
+                except ValueError:
+                    continue
+    try:
+        if not isinstance(payload, Mapping) or payload.get("role") != role.value:
+            raise ValueError("MCP search role mismatch")
+        raw_pins = payload["pins"]
+        if not isinstance(raw_pins, list) or len(raw_pins) > 8:
+            raise ValueError("MCP search pin count invalid")
+        pins = [PinResult.model_validate(pin) for pin in raw_pins]
+        code = ReasonCode(payload["code"]) if payload.get("code") else None
+        if code not in (None, ReasonCode.PIN_RESULTS_EMPTY, ReasonCode.PIN_SEARCH_UNAVAILABLE):
+            raise ValueError("MCP search code invalid")
+        return RoleSearchOutcome(role=role, pins=pins, code=code)
+    except (KeyError, TypeError, ValueError):
+        logger.warning("MCP search response invalid")
+        return RoleSearchOutcome(role=role, pins=[], code=ReasonCode.PIN_SEARCH_UNAVAILABLE)

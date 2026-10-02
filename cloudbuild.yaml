@@ -129,6 +129,7 @@ steps:
         mcp_url="$(gcloud run services describe "${_MCP_SERVICE_NAME}" --region="${_REGION}" --project="${PROJECT_ID}" --format='value(status.url)')"
         mcp_host="${mcp_url#https://}"
         gcloud run services update "${_MCP_SERVICE_NAME}" --region="${_REGION}" --project="${PROJECT_ID}" --container=mcp --update-env-vars="MCP_ALLOWED_HOST=${mcp_host}"
+        gcloud run services update "${_API_SERVICE_NAME}" --region="${_REGION}" --project="${PROJECT_ID}" --update-env-vars="MCP_BASE_URL=${mcp_url}/mcp"
 
   # 4. MCP 서비스에 호출자 서비스 계정 권한 부여 (mcp-caller)
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
