@@ -26,7 +26,10 @@
 ## How
 
 - `SearXNGPinterestSearchProvider(base_url=...)`는 `GET {base_url}/search`를 `httpx`로 호출하며 제한시간은 15초다.
-- 검색어는 `!goi {" ".join(query_fragments)} drawing site:pinterest.com/pin`이다.
+- 검색어는 `!goi {" ".join(query_fragments)} {suffix} site:pinterest.com/pin`이다.
+  suffix는 기본 `drawing`이며 `sketch`, `mannequinization`도 허용한다.
+  worker의 기본 검색은 그대로 drawing이다. 카드 재검색 endpoint는
+  [term-search-api.md](term-search-api.md)를 따른다.
 - `https`와 `pinterest.com` 또는 하위 도메인, `/pin/{ASCII digits}` 경로만 허용한다.
 - 반환 URL은 `https://www.pinterest.com/pin/{id}/`로 정규화한다.
 - base URL 누락은 `CONFIGURATION_ERROR`이고, 이미지 URL·본문·제목은 읽거나 저장하지 않는다.
