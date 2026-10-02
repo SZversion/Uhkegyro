@@ -30,6 +30,7 @@
 - v4 다음 attempt의 user 메시지에는 서버 고정 repair_rules도 포함해 앉기+가까운 손의 역할 분리, 복합 동작 흐름의 단일 포즈와 상충 조건 질문을 교정한다. 모델 원문을 재주입하지 않는다.
 - 최초 포함 최대 3 attempt, attempt당 provider 호출 1회. 후보 중복을 confidence로 임의 제거하거나 성공으로 간주하지 않는다.
 - resolver는 모델 질문을 직접 표시하지 않는다. 기존 clarification_type과 현재 요청의 제한된 시각 단서로 고정 질문 템플릿을 선택하며 해당되지 않으면 기존 공통 질문을 사용한다.
+- 체형 충돌 질문은 어깨·골반 폭의 동등 단서와 어깨가 골반보다 넓다는 명시적 비교 단서가 모두 있을 때만 선택한다. 시점 충돌 질문은 옆모습을 원하는 동시에 정면처럼 보이길 원하는 대조 표현이 있을 때 선택한다. 단어의 존재만으로 충돌 축을 단정하지 않는다. 두 축 모두 충돌하거나 어느 축도 확정할 수 없으면 공통 충돌 질문을 사용한다.
 - 선택·질문 기대값은 기존 dataset을 변경하지 않는다. 별도 ambiguity.jsonl에 명시/생략/부정/상충 대조 사례를 추가하고 LIVE_EVAL_INCLUDE_AMBIGUITY=1로 기존 runner에 포함한다.
 - runner는 최종 사용자 질문의 must_address(_any_of)를 검사하고 실제 answer_text를 review.md로 내보낸다. 자동으로 정성 점수를 확정하지 않는다.
 - 평가 DB는 이번 평가용 로컬 PostgreSQL만 사용하고 임시 schema를 삭제한다. Langfuse·실제 검색은 사용하지 않는다. synthetic 입력의 생성 답변만 산출물에 보존한다.
@@ -40,6 +41,9 @@
 - Given 모호한 곡선 자세 또는 의상 효과만 존재, When 해석, Then 필요한 지지·기울기 또는 체형/의상 단서를 묻고 검색하지 않는다.
 - Given 명시된 한쪽 다리 지지·반대 어깨/골반 기울기 또는 실제 골격 비율, When 해석, Then 해당 카드 하나를 선택하고 질문을 남발하지 않는다.
 - Given 상충하는 체형/시점 조건, When 해석, Then 우선 조건 질문이며 이전 대화 constraints를 수정하지 않는다.
+- Given 명확한 동등 체형과 시점 충돌, When 고정 질문 선택, Then 시점만 질문하고 더 넓은 어깨 조건을 추가하지 않는다.
+- Given 명확한 시점과 폭 비율 충돌, When 고정 질문 선택, Then 체형만 질문하고 옆모습/정면 선택지를 추가하지 않는다.
+- Given 어깨·골반 단어만 있거나 비교 축이 불명확함, When 충돌 질문 선택, Then 공통 질문을 반환한다.
 - Given 모델 질문에 내부 정보 요청, When resolver, Then 원문을 노출하지 않고 요청 단서에 맞는 고정 질문만 표시한다.
 - Given 명확한 앉기와 가까운 손, When 해석, Then pose_sitting과 perspective_foreshortening을 역할별 하나씩 선택한다.
 - Given 일반 결과, When 답변 검토, Then 쉬운 뜻·입력 근거·카드 관찰 지점이 있고 내부 ID·URL/Pin 추측이 없다.

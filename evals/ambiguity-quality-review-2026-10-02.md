@@ -62,3 +62,19 @@ GPT-4.1-mini + v4에 대조 규칙, 검증 피드백 재시도, 초보자 관찰
 PR 준비 중 `main`의 `daf63d3`까지 통합했다. MCP 검색 변경으로 제거된 `pinterest_provider` 생성자 인자에 맞춰 평가 runner를 수정했다. 평가 전용 worker subclass에서 검색 단계만 기존 fixture로 대체하며, MCP tool 선택·네트워크 검증은 제외한다. production worker의 상태 저장·검증·재시도 경로는 유지한다.
 
 통합 후 실제 로컬 PostgreSQL을 포함한 backend 전체 테스트는 **487 passed, 19 skipped**다. 앞의 실제 모델 40/40 결과는 15:45 실행 소스에 대한 결과로 보존하며, 최신 main 통합 후 실제 모델 40건을 다시 실행한 결과로 주장하지 않는다. 이전 반복 실행의 원시 자료는 원래 작업 폴더에 보존했고, PR에는 최종 15:45 실행 자료를 포함한다.
+
+## PR #107 재검토 수정
+
+- 체형 충돌 질문은 동등 폭과 어깨가 골반보다 넓다는 비교 단서를 함께 확인한다. 옆모습/정면 대조가 함께 있거나 충돌 축을 좁힐 수 없으면 공통 질문을 사용한다. 분기 순서를 바꿔 다른 축을 우선하는 방식이 아니다.
+- “명확한 체형 + 시점 충돌”, “명확한 시점 + 체형 충돌”, 관련 없는 넓이 단서, 비교 부정, 두 축 동시 충돌의 결정론 회귀 5건을 추가했다. 입력에 없는 조건을 질문 선택지로 만들지 않는지 정확한 최종 질문으로 검사한다. 이 대조 입력의 실제 모델 E2E 평가 결과는 아니다.
+- gitleaks v8.30.1의 전체 이력 검사에서 원본 commit `f709df4`의 metadata 98·127행 소스 지문 두 건만 재현했다. `.gitleaksignore`는 commit·경로·rule·행으로 지정한 fingerprint 두 개만 무시한다. metadata 내용과 전체 git 이력 스캔을 유지한다.
+- 같은 metadata에 별도 합성 test token을 넣은 임시 clone에서는 검출 1건·exit 1을 확인했다. 파일 전체 예외가 아니며 test token은 PR에 포함하지 않았다.
+
+| 검증 시점·환경 | 결과 |
+| --- | --- |
+| 수정 전 head d7cb143의 pytest CI | 478 passed / 28 skipped |
+| 수정 전 최신 main 통합 로컬 PostgreSQL | 487 passed / 19 skipped |
+| 이번 수정 후 로컬 PostgreSQL | 492 passed / 19 skipped |
+| main 통합 전 실제 모델 실행 | 40/40 기대값 일치, 재실행하지 않음 |
+
+이번 수정 commit의 GitHub CI 결과는 PR checks 및 재검토 요청 코멘트에 갱신한다. 공식 정성 평가·실제 검색 품질 검증 범위는 이전과 같다.

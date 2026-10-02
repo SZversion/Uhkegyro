@@ -202,6 +202,27 @@ def test_focused_question_ignores_untrusted_model_text(snapshot_factory, kind, r
     assert "API" not in result.clarifying_question
 
 
+@pytest.mark.parametrize("request_text,expected", [
+    ("어깨와 골반 폭은 비슷한 체형이고, 옆모습인데 정면처럼 양쪽 눈과 귀가 대칭으로 보이게 해줘.",
+     "옆모습 실루엣과 정면의 좌우 대칭 중 무엇을 우선할까요?"),
+    ("정면에서 양쪽 눈과 귀가 대칭으로 보이고, 어깨와 골반 폭은 비슷하지만 어깨가 골반보다 훨씬 넓은 체형을 원해.",
+     "어깨와 골반 폭이 비슷한 비율과 어깨가 더 넓은 실루엣 중 무엇을 우선할까요?"),
+    ("어깨와 골반 폭은 비슷한 체형이고 손은 크게, 눈은 넓은 느낌을 원해.",
+     "서로 다른 조건 중 어떤 조건을 우선할지 알려주세요."),
+    ("어깨와 골반 폭은 비슷하고 어깨가 골반보다 넓지 않은 체형을 원해.",
+     "서로 다른 조건 중 어떤 조건을 우선할지 알려주세요."),
+    ("어깨와 골반 폭은 비슷하지만 어깨가 골반보다 넓은 체형이고 옆모습인데 정면처럼 대칭으로 보여줘.",
+     "서로 다른 조건 중 어떤 조건을 우선할지 알려주세요."),
+])
+def test_conflict_question_requires_both_alternatives(snapshot_factory, request_text, expected):
+    interp = _interpretation(state=InterpretationState.NEEDS_CLARIFICATION,
+                            unresolved_constraints=["상충"], clarification_type="conflicting_constraints",
+                            clarifying_question="어느 조건을 우선할까요?")
+    result = resolve(interp, snapshot_factory([]), request_text=request_text)
+    assert result.clarifying_question == expected
+    assert result.terms == [] and result.reason_codes == [ReasonCode.CONFLICTING_CONSTRAINTS]
+
+
 def test_clarify_abstract_intent(snapshot_factory, card_factory):
     snapshot = _normal_cards(card_factory, snapshot_factory)
     interp = _interpretation(
