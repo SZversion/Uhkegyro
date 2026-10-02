@@ -19,6 +19,8 @@ from backend.services.llm import LLMInvalidStructuredOutput, LLMTimeout
 from backend.services.response_assembler import RoleSearchOutcome
 from backend.services import agent_worker
 from backend.services.agent_worker import AgentJobWorker
+from backend.services.searxng_pinterest_search import SearXNGPinterestSearchProvider
+from backend.services.resolver import ResolutionResult, ValidatedTerm
 from backend.schemas.memory import RecallQuery
 
 
@@ -338,6 +340,36 @@ def test_worker_retries_unavailable_but_not_empty_search(monkeypatch, snapshot_f
     assert [role for role, _ in provider.calls].count(Role.POSE) == 3
     assert result.agent_status is AgentStatus.PARTIAL_RESULT
     assert result.reason_codes == [ReasonCode.PIN_RESULTS_EMPTY, ReasonCode.PIN_SEARCH_UNAVAILABLE]
+
+
+def test_worker_retries_when_searxng_reports_google_images_unresponsive(
+    monkeypatch, snapshot_factory
+):
+    calls = 0
+
+    async def load(url, params):
+        nonlocal calls
+        calls += 1
+        return {"results": [], "unresponsive_engines": [["google images", "timeout"]]}
+
+    async def no_wait(_delay):
+        pass
+
+    monkeypatch.setattr(agent_worker.asyncio, "sleep", no_wait)
+    selection = _selected().selections[0]
+    term = ValidatedTerm(selection=selection, card={"query_fragments": ["standing"]})
+    provider = SearXNGPinterestSearchProvider(
+        base_url="http://searxng:8080", json_loader=load,
+    )
+    worker = _worker(
+        monkeypatch, FakeJobs(), FakeRecovery(), snapshot_factory([]), FakeAdapter(),
+        pinterest_provider=provider,
+    )
+
+    outcomes = _run(worker._search_outcomes(ResolutionResult(status="proceed", terms=[term])))
+
+    assert calls == 3
+    assert outcomes[Role.POSE].code is ReasonCode.PIN_SEARCH_UNAVAILABLE
 
 
 def test_worker_keeps_successful_role_when_another_role_search_fails(
