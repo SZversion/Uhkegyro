@@ -6,7 +6,7 @@ import json
 import logging
 from typing import Any, Mapping
 
-from backend.schemas.enums import AgentStatus, JobStatus, ReasonCode, Role
+from backend.schemas.enums import AgentStatus, FailureCode, JobStatus, ReasonCode, Role
 from backend.schemas.models import AgentResult
 from backend.services.catalog_repository import CatalogSnapshot
 from backend.services.conversation_memory import ConversationMemory
@@ -21,9 +21,9 @@ from backend.services.llm import (
     LLMInvalidStructuredOutput,
 )
 from backend.services.llm import format_active_cards_json
-from backend.services.pinterest_provider import PinterestProvider
-from backend.services.searxng_pinterest_search import SearXNGPinterestSearchProvider
-from backend.services.pinterest_widget import PinterestWidgetClient, PinterestWidgetProvider
+from backend.services.mcp_pinterest_search import parse_search_result
+from backend.services.mcp_tool_gateway import McpToolGateway
+from backend.services.pinterest_widget import PinterestWidgetClient
 from backend.services.resolver import ResolutionResult
 from backend.services.response_assembler import RoleSearchOutcome, assemble
 from backend.services.failure_mapping import DATABASE_ERRORS, OperationalFailure, classify_failure
@@ -32,6 +32,8 @@ logger = logging.getLogger(__name__)
 WORKER_CONCURRENCY = 5
 POLL_INTERVAL_SECONDS = 1
 SEARCH_RETRY_DELAYS_SECONDS = (1, 2)
+MAX_MCP_TOOL_CALLS = 16
+PINTEREST_SEARCH_TOOL = "search_pinterest_pins"
 
 
 class AgentJobWorker:
@@ -43,7 +45,8 @@ class AgentJobWorker:
         snapshot: CatalogSnapshot,
         *,
         adapter: AgentInterpretationAdapter | None = None,
-        pinterest_provider: PinterestProvider | None = None,
+        mcp_gateway: McpToolGateway | None = None,
+        widget_client: PinterestWidgetClient | None = None,
         heartbeat_interval: float = 10,
         tracer: JobTracer | None = None,
     ) -> None:
@@ -52,7 +55,8 @@ class AgentJobWorker:
         self._recovery = JobRetryRecovery(pool)
         self._snapshot = snapshot
         self._adapter = adapter
-        self._pinterest_provider = pinterest_provider
+        self._mcp_gateway = mcp_gateway
+        self._widget_client = widget_client
         self._heartbeat_interval = heartbeat_interval
         self._tracer = tracer if tracer is not None else JobTracer.from_settings()
 
@@ -138,7 +142,9 @@ class AgentJobWorker:
                         trace.stale()
                         return
                     if search_outcomes is None:
-                        search_outcomes = await self._search_outcomes(resolution)
+                        search_outcomes = await self._search_outcomes(
+                            resolution, request_text=str(job["request_text"])
+                        )
                 result = assemble(resolution, self._snapshot, search_outcomes,
                                   answer_text=interpretation.answer_text)
                 if recalled is not None:
@@ -164,26 +170,108 @@ class AgentJobWorker:
             await self._handle_failure(job, error, trace)
 
     async def _search_outcomes(
-        self, resolution: ResolutionResult
+        self, resolution: ResolutionResult, *, request_text: str
     ) -> Mapping[Role, RoleSearchOutcome]:
-        if self._pinterest_provider is None:
+        if self._mcp_gateway is None or not resolution.terms:
             return {}
-
+        adapter = self._adapter
+        if not hasattr(adapter, "request_mcp_tool_calls"):
+            raise ValueError("해석 어댑터가 MCP tool calling을 지원하지 않습니다")
+        tools = await self._mcp_gateway.list_tools()
+        approved = {
+            term.selection.role: tuple(term.card["query_fragments"])
+            for term in resolution.terms
+        }
         outcomes: dict[Role, RoleSearchOutcome] = {}
-        for term in resolution.terms:
-            role = term.selection.role
-            query_fragments = tuple(term.card["query_fragments"])
-            outcome = await self._pinterest_provider.search(role, query_fragments)
-            if outcome.role is not role:
-                raise ValueError("Pinterest provider 결과 역할이 요청과 다릅니다")
-            for delay in SEARCH_RETRY_DELAYS_SECONDS:
-                if outcome.code is not ReasonCode.PIN_SEARCH_UNAVAILABLE:
-                    break
-                await asyncio.sleep(delay)
-                outcome = await self._pinterest_provider.search(role, query_fragments)
-                if outcome.role is not role:
-                    raise ValueError("Pinterest provider 결과 역할이 요청과 다릅니다")
-            outcomes[role] = outcome
+        attempts: dict[Role, int] = {role: 0 for role in approved}
+        tool_call_count = 0
+        messages = [
+            {"role": "system", "content": (
+                "Use the registered MCP tools to fulfill the request. For Pinterest searches, "
+                "call search_pinterest_pins only with an approved role and that role's exact "
+                "query_fragments. Never invent or alter fragments. Use other listed tools "
+                "when needed. After a tool result, decide whether another tool call is needed."
+            )},
+            {"role": "user", "content": json.dumps({
+                "request": request_text,
+                "approved_terms": [
+                    {
+                        "role": term.selection.role.value,
+                        "term_id": term.selection.term_id,
+                        "query_fragments": list(term.card["query_fragments"]),
+                    }
+                    for term in resolution.terms
+                ],
+            }, ensure_ascii=False)},
+        ]
+        for _ in range(MAX_MCP_TOOL_CALLS):
+            pending = [role for role in approved if role not in outcomes]
+            calls = await adapter.request_mcp_tool_calls(
+                messages, tools, required=bool(pending)
+            )
+            if not calls:
+                break
+            assistant_calls = []
+            for call in calls:
+                name, arguments, call_id = call["name"], call["arguments"], call["id"]
+                assistant_calls.append({
+                    "id": call_id, "type": "function",
+                    "function": {"name": name, "arguments": json.dumps(arguments)},
+                })
+            messages.append({"role": "assistant", "content": None, "tool_calls": assistant_calls})
+            for call in calls:
+                name, arguments, call_id = call["name"], call["arguments"], call["id"]
+                if tool_call_count >= MAX_MCP_TOOL_CALLS:
+                    messages.append({
+                        "role": "tool", "tool_call_id": call_id,
+                        "content": json.dumps({"error": "MCP tool-call limit reached"}),
+                    })
+                    continue
+                tool_call_count += 1
+                result: dict
+                search_attempted = False
+                role = None
+                try:
+                    if name == PINTEREST_SEARCH_TOOL:
+                        role = Role(arguments.get("role"))
+                        fragments = arguments.get("query_fragments")
+                        if role not in approved or role in outcomes:
+                            raise ValueError("Pinterest search arguments are outside approved terms")
+                        if fragments != list(approved[role]):
+                            raise ValueError("Pinterest search arguments are outside approved terms")
+                        if attempts[role] >= 3:
+                            raise ValueError("Pinterest search retry limit exceeded")
+                        attempts[role] += 1
+                        search_attempted = True
+                    result = await self._mcp_gateway.call_tool(name, arguments)
+                    if name == PINTEREST_SEARCH_TOOL:
+                        outcome = parse_search_result(role, result)
+                        if self._widget_client is not None:
+                            outcome = await self._widget_client.enrich_outcome(outcome)
+                        if outcome.code is not ReasonCode.PIN_SEARCH_UNAVAILABLE or attempts[role] >= 3:
+                            outcomes[role] = outcome
+                        else:
+                            await asyncio.sleep(SEARCH_RETRY_DELAYS_SECONDS[attempts[role] - 1])
+                except Exception as error:
+                    if (isinstance(error, OperationalFailure)
+                            and error.failure_code is FailureCode.CONFIGURATION_ERROR):
+                        raise
+                    result = {"error": str(error)}
+                    if search_attempted and role is not None:
+                        if attempts[role] >= 3:
+                            outcomes[role] = RoleSearchOutcome(
+                                role=role, pins=[], code=ReasonCode.PIN_SEARCH_UNAVAILABLE
+                            )
+                        else:
+                            await asyncio.sleep(SEARCH_RETRY_DELAYS_SECONDS[attempts[role] - 1])
+                messages.append({
+                    "role": "tool", "tool_call_id": call_id,
+                    "content": json.dumps(result, ensure_ascii=False),
+                })
+        if set(approved) - set(outcomes):
+            raise LLMInvalidStructuredOutput(
+                "LLM이 모든 승인 역할에 대한 Pinterest 검색 도구를 선택하지 않았다"
+            )
         return outcomes
 
     async def _with_heartbeat(self, job: Any, operation: Any) -> None:
@@ -302,12 +390,10 @@ async def run_worker(snapshot: CatalogSnapshot) -> None:
             if settings.database_url.startswith("sqlite"):
                 return
             pool = await create_pool(settings)
-            pinterest_provider = PinterestWidgetProvider(
-                SearXNGPinterestSearchProvider(base_url=settings.searxng_base_url),
-                PinterestWidgetClient(),
-            )
+            mcp_gateway = McpToolGateway(mcp_url=settings.mcp_base_url)
+            widget_client = PinterestWidgetClient()
             await AgentJobWorker(
-                pool, snapshot, pinterest_provider=pinterest_provider
+                pool, snapshot, mcp_gateway=mcp_gateway, widget_client=widget_client
             ).run_forever(
                 concurrency=settings.worker_concurrency
             )

@@ -154,6 +154,8 @@ steps:
         else
           gcloud run services update "${_MCP_SERVICE_NAME}" --region="${_REGION}" --project="${PROJECT_ID}" --container="${ingress_container}" --update-env-vars="MCP_ALLOWED_HOST=${mcp_host}"
         fi
+        ingress_container="$(cat /workspace/api-ingress-container)"
+        gcloud run services update "${_API_SERVICE_NAME}" --region="${_REGION}" --project="${PROJECT_ID}" --container="${ingress_container}" --update-env-vars="MCP_BASE_URL=${mcp_url}/mcp"
 
   # 5. MCP 서비스에 호출자 서비스 계정 권한 부여 (mcp-caller)
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
