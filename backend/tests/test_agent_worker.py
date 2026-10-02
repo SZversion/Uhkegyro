@@ -95,7 +95,6 @@ class FakeAdapter:
     def record_validation_failure(self, error, *, attempt):
         self.diagnostics = (error, attempt)
 
-
 class FakePinterestProvider:
     def __init__(self, outcomes):
         self.outcomes = {role: list(values) for role, values in outcomes.items()}

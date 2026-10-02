@@ -16,7 +16,7 @@
 ## What
 
 - `다시 찾아 줘`는 새 검색이며 `전에 무엇을 추천했어?`는 회상이다.
-- 이미지 생성·업로드 이미지 분석 등 미지원 작업은 worker의 결정론적 gate가 범위 밖으로 처리한다.
+- 이미지 생성·업로드 이미지 분석 등 미지원 작업을 긍정적으로 요청하면 worker gate가 범위 밖으로 처리한다. 그 작업을 부정하거나 필요 없다고 명시하고 별도 레퍼런스를 요청하면 gate를 통과해 레퍼런스 단서만 해석한다. 긍정 미지원 작업과 레퍼런스 단서가 섞이면 미지원 작업이 우선한다.
 - 한국어 `올린/첨부한 그림을 분석·판정` 표현도 새 레퍼런스 탐색으로 오인하지 않는다.
 - 한쪽 다리에 체중을 싣는 단서만 있으면 `pose_weight_shift`; 어깨·골반의 반대 기울기까지 있어야 `pose_contrapposto`다.
 - 어깨와 골반이 같은 쪽으로 기울어도 명시된 한쪽 다리 체중 지지는 `pose_weight_shift` 근거로 유지한다.
@@ -35,7 +35,8 @@
 
 - GIVEN: 새 레퍼런스 검색·수정 요청 WHEN: memory classify THEN: `mode=none`이다.
 - GIVEN: 과거 추천 내용을 묻는 요청 WHEN: memory classify THEN: `mode=recall`이다.
-- GIVEN: 이미지 생성·업로드 분석 요청 WHEN: worker gate 적용 THEN: `out_of_scope`로 완료하고 LLM·검색을 호출하지 않는다.
+- GIVEN: 이미지 생성·업로드 분석을 긍정적으로 요청 WHEN: worker gate 적용 THEN: `out_of_scope`로 완료하고 LLM·검색을 호출하지 않는다.
+- GIVEN: 이미지 생성·업로드 분석을 부정하고 별도 레퍼런스를 요청 WHEN: worker gate 적용 THEN: 정상 해석 흐름을 탄다.
 - GIVEN: 한쪽 다리 체중만 명시 WHEN: 해석 THEN: `pose_weight_shift`이고 콘트라포스토는 선택하지 않는다.
 - GIVEN: 옆모습과 정면 단서가 충돌 WHEN: 해석 THEN: `conflicting_constraints` 질문이다.
 - GIVEN: 고정 30문항 WHEN: v4 평가 THEN: 문항별 회귀와 비용·지연을 기록한다.

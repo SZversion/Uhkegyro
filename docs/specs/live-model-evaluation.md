@@ -18,6 +18,7 @@
 ## What
 
 - A request outside the text-based illustration-reference service is classified by a deterministic worker gate after the unsafe-input gate and before conversation memory or LLM work.
+- The scope gate detects affirmative unsupported operations only. Explicitly negated or declined operations do not block a separate supported reference search; affirmative unsupported work takes precedence when mixed with reference terms.
 - Out-of-scope jobs complete with `agent_status=out_of_scope`, `reason_codes=[OUT_OF_SCOPE_REQUEST]`, no reference plan, and no LLM, resolver, or search calls.
 - Candidate prompts describe only the `InterpretationOutput` states accepted by the Pydantic schema and leave final out-of-scope decisions to the worker.
 - On `LLMInvalidStructuredOutput`, the worker invokes an optional adapter diagnostic hook with the current attempt. The evaluation adapter records a bounded category and safe schema path/type only; it never records raw exception text, raw model output, or rejected field values.
@@ -27,6 +28,7 @@
 
 - Keep `InterpretationState` and resolver states as `select_terms` and `needs_clarification`; use `AgentStatus.OUT_OF_SCOPE` only in the final server result.
 - The exact unsupported-operation gate contract and supported categories are documented in `docs/specs/out-of-scope-gate.md`.
+- Validation diagnostics use allow-listed output field names, replace unknown path components with `unknown_field`, and cap rendered path/type lengths; raw values and exception messages are never serialized.
 - Add `is_out_of_scope_input()` beside input normalization and call it after `is_unsafe_input()` in `AgentJobWorker._process_claimed()`.
 - Change `MeasuredAdapter._request(self, messages, *, output_format=None)` and forward `output_format=output_format` to the parent.
 - Catch `LLMInvalidStructuredOutput` in the worker's existing failure path and call `record_validation_failure(error, attempt=job["attempt"])` only if the adapter provides that hook.
@@ -40,4 +42,5 @@
 - GIVEN: an unsafe input WHEN: the worker claims the job THEN: the unsafe gate runs before scope classification and the terminal result is `unsafe_input`.
 - GIVEN: a supported image-reference request WHEN: the worker classifies it THEN: the out-of-scope gate does not intercept it.
 - GIVEN: an LLM structured-output validation error WHEN: the worker handles the attempt THEN: only safe bounded diagnostics are recorded and raw error text is absent.
+- GIVEN: a Pydantic error location contains an attacker-controlled extra JSON key WHEN: diagnostics are serialized THEN: the path uses `unknown_field`, marker/value/exception text are absent, and the stable `output_schema` category remains.
 - GIVEN: a v2-v4 prompt is sent to the model WHEN: its output is validated THEN: it requests only states accepted by `InterpretationOutput` and does not instruct the model to emit `out_of_scope`.

@@ -27,6 +27,15 @@ from backend.services.session_repository import SessionRepository
 from backend.shared.config import Settings
 
 ROOT = Path(__file__).resolve().parents[1]
+_OUTPUT_FIELDS = frozenset({"interpretation_state", "selections", "unresolved_constraints", "clarifying_question",
+                            "clarification_type", "context_updates", "role", "term_id", "evidence",
+                            "confidence", "source_job_id"})
+
+
+def _safe_validation_path(location):
+    parts = ["[]" if isinstance(part, int) else part if isinstance(part, str) and part in _OUTPUT_FIELDS
+             else "unknown_field" for part in location[:12]]
+    return (".".join(parts) or "unknown_field")[:96]
 
 
 class MeasuredAdapter(LLMInterpretationAdapter):
@@ -41,22 +50,8 @@ class MeasuredAdapter(LLMInterpretationAdapter):
         elif isinstance(cause, ValidationError):
             code = "output_schema"
             first = cause.errors(include_input=True)[0]
-            detail = {"field": ".".join(str(part) for part in first["loc"]),
-                      "type": first["type"]}
-            if first["type"] == "value_error":
-                rule = str(first.get("ctx", {}).get("error", ""))
-                if "역할당 최대 하나" in rule:
-                    detail["rule"] = "duplicate_role"
-                elif "역할 순서" in rule:
-                    detail["rule"] = "role_order"
-                elif "needs_clarification" in rule:
-                    detail["rule"] = "clarification_state"
-                elif "select_terms" in rule:
-                    detail["rule"] = "selection_state"
-                elif "out_of_scope" in rule:
-                    detail["rule"] = "out_of_scope_state"
-                else:
-                    detail["rule"] = "other_state_rule"
+            detail = {"field": _safe_validation_path(first["loc"]),
+                      "type": str(first["type"])[:64]}
         elif cause is not None:
             code = "output_schema"
         else:

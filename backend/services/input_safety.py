@@ -85,6 +85,11 @@ _OUT_OF_SCOPE_INPUT = re.compile(
     r"pinterest.{0,40}(?:100개|모아서|크롤링|내려받|다운로드|저장)|"
     r"(?:핀|이미지).{0,24}(?:대량으로|100개).{0,24}(?:다운로드|내려받|저장)"
 )
+_SCOPE_CLAUSE_SEPARATOR = re.compile(r"[.!?。！？,;]+")
+_NEGATED_SCOPE_ACTION = re.compile(
+    r"^\s*(?:(?:은|는|을|를|이|가)\s*)?(?:하지\s*(?:말고|않고|마|않)|"
+    r"안\s*(?:해도|하고|할|하는|함)|지\s*(?:말고|않고|않)|필요\s*없|원하지\s*않)"
+)
 
 
 def normalize_input_text(request_text: str) -> str:
@@ -154,4 +159,8 @@ def is_unsafe_input(request_text: str) -> bool:
 
 def is_out_of_scope_input(request_text: str) -> bool:
     """Return whether a request asks for a deterministic unsupported operation."""
-    return bool(_OUT_OF_SCOPE_INPUT.search(normalize_input_text(request_text)))
+    clauses = _SCOPE_CLAUSE_SEPARATOR.split(normalize_input_text(request_text))
+    return any(
+        not _NEGATED_SCOPE_ACTION.match(clause[match.end():])
+        for clause in clauses for match in _OUT_OF_SCOPE_INPUT.finditer(clause)
+    )

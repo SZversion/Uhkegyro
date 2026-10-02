@@ -9,8 +9,8 @@ from types import SimpleNamespace
 import asyncpg
 import pytest
 
-from scripts.run_live_eval import MeasuredAdapter, ROOT, execute
-from backend.services.llm import LLMInvalidStructuredOutput
+from scripts.run_live_eval import MeasuredAdapter, ROOT, _safe_validation_path, execute
+from backend.services.llm import LLMInvalidStructuredOutput, _validate_output
 from backend.services.catalog_repository import load_catalog
 from backend.services import conversation_context
 
@@ -18,8 +18,22 @@ from backend.services import conversation_context
 def test_validation_diagnostics_are_bounded_and_do_not_store_error_text():
     adapter = object.__new__(MeasuredAdapter)
     adapter.reset({"runtime_fixture": {}})
-    adapter.record_validation_failure(LLMInvalidStructuredOutput("선택 근거에 비밀 원문"), attempt=2)
-    assert adapter.validation_failures == [{"attempt": 2, "code": "selection_evidence"}]
+    marker, value = "PRIVATE_MARKER_8472", "SENSITIVE_INPUT_3190"
+    payload = {"interpretation_state": "needs_clarification", "clarification_type": "abstract_intent",
+               "selections": [], "unresolved_constraints": ["불명확"], "clarifying_question": "어떤 포즈인가요?",
+               "context_updates": [], marker: value}
+    with pytest.raises(LLMInvalidStructuredOutput) as raised:
+        _validate_output(json.dumps(payload, ensure_ascii=False))
+    adapter.record_validation_failure(raised.value, attempt=2)
+    adapter.record_validation_failure(LLMInvalidStructuredOutput(f"{marker} 선택 근거 {value}"), attempt=3)
+    serialized = json.dumps(adapter.validation_failures, ensure_ascii=False)
+    assert all(text not in serialized for text in (marker, value, str(raised.value), str(raised.value.__cause__)))
+    assert adapter.validation_failures[0]["code"] == "output_schema"
+    assert adapter.validation_failures[0]["detail"]["field"] == "unknown_field"
+    assert len(adapter.validation_failures[0]["detail"]["field"]) <= 96
+    assert len(_safe_validation_path(["selections"] * 12)) <= 96
+    assert len(adapter.validation_failures[0]["detail"]["type"]) <= 64
+    assert adapter.validation_failures[1] == {"attempt": 3, "code": "selection_evidence"}
 
 
 @pytest.mark.skipif(not os.getenv("TEST_DATABASE_URL"), reason="TEST_DATABASE_URL is not configured")
