@@ -45,6 +45,18 @@ steps:
           python -c 'import json,sys; service=json.load(open(sys.argv[1])); template=service.get("spec",{}).get("template",{}).get("spec",{}); containers=template.get("containers",[]); ingress=next((c for c in containers if c.get("ports")), None); name=ingress.get("name") if ingress else None; print(name) if name else sys.exit("Cloud Run service has no ingress container with a configured port")' /workspace/api-service.json > /workspace/api-ingress-container
         else
           printf 'api' > /workspace/api-ingress-container
+
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
+    id: "get-mcp-ingress-container"
+    entrypoint: "bash"
+    args:
+      - "-ceu"
+      - |
+        if gcloud run services describe "${_MCP_SERVICE_NAME}" --region="${_REGION}" --project="${PROJECT_ID}" --format=json > /workspace/mcp-service.json 2>/dev/null; then
+          python scripts/cloud_run_mcp_ingress.py /workspace/mcp-service.json > /workspace/mcp-ingress-container
+        else
+          python scripts/cloud_run_mcp_ingress.py > /workspace/mcp-ingress-container
+        fi
         fi
 
   # 3a. 공개 API Cloud Run 서비스 배포 (인증 불필요)
@@ -86,49 +98,51 @@ steps:
   # 3b. 내부 MCP Cloud Run 서비스 배포 (인증 필요, IAM으로 보호)
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
     id: "deploy-mcp"
-    entrypoint: "gcloud"
+    waitFor: ["get-mcp-ingress-container"]
+    entrypoint: "bash"
     args:
-      - "run"
-      - "deploy"
-      - "${_MCP_SERVICE_NAME}"
-      - "--region=${_REGION}"
-      - "--platform=managed"
-      - "--no-allow-unauthenticated"
-      - "--min-instances=0"
-      - "--max-instances=3"
-      - "--concurrency=80"
-      - "--timeout=300"
-      - "--container=searxng"
-      - "--image=${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/searxng:${SHORT_SHA}"
-      - "--cpu=1"
-      - "--memory=512Mi"
-      - "--set-secrets=SEARXNG_SECRET=SEARXNG_SECRET:latest"
-      - "--startup-probe=tcpSocket.port=8080,periodSeconds=2,timeoutSeconds=2,failureThreshold=30"
-      - "--container=mcp"
-      - "--image=${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/${_API_SERVICE_NAME}:${SHORT_SHA}"
-      - "--port=8000"
-      - "--cpu=1"
-      - "--memory=512Mi"
-      - "--depends-on=searxng"
-      - "--command=uvicorn"
-      - "--args=mcp_server.server:app,--host,0.0.0.0,--port,8000"
-      - "--set-env-vars=ENVIRONMENT=production,SEARXNG_BASE_URL=http://localhost:8080"
-      - "--set-secrets=OPENROUTER_API_KEY=OPENROUTER_API_KEY:latest"
-      - "--set-secrets=LANGFUSE_PUBLIC_KEY=LANGFUSE_PUBLIC_KEY:latest"
-      - "--set-secrets=LANGFUSE_SECRET_KEY=LANGFUSE_SECRET_KEY:latest"
-      - "--set-secrets=DATABASE_URL=DATABASE_URL:latest"
-      - "--set-secrets=SESSION_SECRET=SESSION_SECRET:latest"
+      - "-ceu"
+      - |
+        ingress_container="$(cat /workspace/mcp-ingress-container)"
+        set -- run deploy "${_MCP_SERVICE_NAME}" \
+          "--region=${_REGION}" --platform=managed --no-allow-unauthenticated \
+          --min-instances=0 --max-instances=3 --concurrency=80 --timeout=300 \
+          --container=searxng \
+          "--image=${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/searxng:${SHORT_SHA}" \
+          --cpu=1 --memory=512Mi \
+          --set-secrets=SEARXNG_SECRET=SEARXNG_SECRET:latest \
+          --startup-probe=tcpSocket.port=8080,periodSeconds=2,timeoutSeconds=2,failureThreshold=30
+        if [ "${ingress_container}" != "__default__" ]; then
+          set -- "$@" "--container=${ingress_container}"
+        fi
+        set -- "$@" \
+          "--image=${_ARTIFACT_REGISTRY}/${PROJECT_ID}/${_ARTIFACT_REPO}/${_API_SERVICE_NAME}:${SHORT_SHA}" \
+          --port=8000 --cpu=1 --memory=512Mi --depends-on=searxng \
+          --command=uvicorn --args=mcp_server.server:app,--host,0.0.0.0,--port,8000 \
+          --set-env-vars=ENVIRONMENT=production,SEARXNG_BASE_URL=http://localhost:8080 \
+          --set-secrets=OPENROUTER_API_KEY=OPENROUTER_API_KEY:latest \
+          --set-secrets=LANGFUSE_PUBLIC_KEY=LANGFUSE_PUBLIC_KEY:latest \
+          --set-secrets=LANGFUSE_SECRET_KEY=LANGFUSE_SECRET_KEY:latest \
+          --set-secrets=DATABASE_URL=DATABASE_URL:latest \
+          --set-secrets=SESSION_SECRET=SESSION_SECRET:latest
+        gcloud "$@"
 
   # FastMCP의 Host 허용 목록에 Cloud Run 서비스 주소를 등록
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"
     id: "allow-mcp-cloud-run-host"
+    waitFor: ["deploy-mcp"]
     entrypoint: "bash"
     args:
       - "-ceu"
       - |
         mcp_url="$(gcloud run services describe "${_MCP_SERVICE_NAME}" --region="${_REGION}" --project="${PROJECT_ID}" --format='value(status.url)')"
         mcp_host="${mcp_url#https://}"
-        gcloud run services update "${_MCP_SERVICE_NAME}" --region="${_REGION}" --project="${PROJECT_ID}" --container=mcp --update-env-vars="MCP_ALLOWED_HOST=${mcp_host}"
+        ingress_container="$(cat /workspace/mcp-ingress-container)"
+        if [ "${ingress_container}" = "__default__" ]; then
+          gcloud run services update "${_MCP_SERVICE_NAME}" --region="${_REGION}" --project="${PROJECT_ID}" --update-env-vars="MCP_ALLOWED_HOST=${mcp_host}"
+        else
+          gcloud run services update "${_MCP_SERVICE_NAME}" --region="${_REGION}" --project="${PROJECT_ID}" --container="${ingress_container}" --update-env-vars="MCP_ALLOWED_HOST=${mcp_host}"
+        fi
 
   # 4. MCP 서비스에 호출자 서비스 계정 권한 부여 (mcp-caller)
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk:slim"

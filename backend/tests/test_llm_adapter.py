@@ -733,7 +733,8 @@ def test_cloudbuild_hosts_mcp_next_to_searxng_and_grants_api_invoker():
 
     assert "--service-account=${_MCP_CALLER_SA}@${PROJECT_ID}.iam.gserviceaccount.com" in api_deploy
     assert "--container=searxng" in mcp_deploy
-    assert "--container=mcp" in mcp_deploy
+    assert "--container=${ingress_container}" in mcp_deploy
+    assert 'if [ "${ingress_container}" = "__default__" ]' in mcp_deploy
     assert "--depends-on=searxng" in mcp_deploy
     assert "SEARXNG_BASE_URL=http://localhost:8080" in mcp_deploy
     assert 'id: "allow-mcp-cloud-run-host"' in mcp_deploy
