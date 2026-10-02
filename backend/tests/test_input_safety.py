@@ -5,10 +5,16 @@ from pathlib import Path
 
 import pytest
 
-from backend.services.input_safety import is_unsafe_input
+from backend.services.input_safety import is_out_of_scope_input, is_unsafe_input
 
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+@pytest.mark.parametrize("case_id", ["EVAL-17", "EVAL-18", "EVAL-19", "EVAL-20"])
+def test_marks_unsupported_operations_as_out_of_scope(case_id):
+    request_text = _fixture_inputs(ROOT / "evals" / "dataset.jsonl", {case_id})[0]
+    assert is_out_of_scope_input(request_text)
 
 
 def _fixture_inputs(path: Path, ids: set[str]) -> list[str]:

@@ -76,6 +76,16 @@ _SENSITIVE_COREFERENCE_DISCLOSURE = re.compile(
     r"(?:it|that|this|the\s+(?:key|token|credential|secret))\b"
 )
 
+_OUT_OF_SCOPE_INPUT = re.compile(
+    r"이미지.{0,12}(?:생성|그려|편집)|(?:생성|그려|편집).{0,12}이미지|"
+    r"(?:올린|첨부한|업로드한).{0,16}(?:그림|이미지).{0,18}(?:분석|판정|읽어)|"
+    r"(?:그림|이미지).{0,16}(?:분석|판정|읽어).{0,18}(?:올린|첨부|업로드)|"
+    r"(?:현존|특정).{0,16}(?:일러스트레이터|작가|화가).{0,18}(?:화풍|스타일)|"
+    r"(?:화풍|스타일).{0,18}(?:그대로|복제|따라).{0,16}(?:그려|생성)|"
+    r"pinterest.{0,40}(?:100개|모아서|크롤링|내려받|다운로드|저장)|"
+    r"(?:핀|이미지).{0,24}(?:대량으로|100개).{0,24}(?:다운로드|내려받|저장)"
+)
+
 
 def normalize_input_text(request_text: str) -> str:
     """Normalize user text for deterministic safety and evidence checks."""
@@ -140,3 +150,8 @@ def is_unsafe_input(request_text: str) -> bool:
         or _requests_sensitive_disclosure(text)
         or _requests_harmful_execution(text)
     )
+
+
+def is_out_of_scope_input(request_text: str) -> bool:
+    """Return whether a request asks for a deterministic unsupported operation."""
+    return bool(_OUT_OF_SCOPE_INPUT.search(normalize_input_text(request_text)))

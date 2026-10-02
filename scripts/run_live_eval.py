@@ -47,14 +47,6 @@ class MeasuredAdapter(LLMInterpretationAdapter):
                 rule = str(first.get("ctx", {}).get("error", ""))
                 if "역할당 최대 하나" in rule:
                     detail["rule"] = "duplicate_role"
-                    raw = first.get("input")
-                    candidates = (raw.get("selections", []) if isinstance(raw, dict)
-                                  else getattr(raw, "selections", []))
-                    detail["candidates"] = [
-                        {"role": str(item.get("role") if isinstance(item, dict) else item.role),
-                         "term_id": item.get("term_id") if isinstance(item, dict) else item.term_id}
-                        for item in candidates
-                    ]
                 elif "역할 순서" in rule:
                     detail["rule"] = "role_order"
                 elif "needs_clarification" in rule:
@@ -84,9 +76,9 @@ class MeasuredAdapter(LLMInterpretationAdapter):
             item["detail"] = detail
         self.validation_failures.append(item)
 
-    async def _request(self, messages, output_type=None):
+    async def _request(self, messages, *, output_format=None):
         started = time.monotonic()
-        response = await super()._request(messages, output_type) if output_type else await super()._request(messages)
+        response = await super()._request(messages, output_format=output_format)
         usage = response.usage.model_dump() if response.usage else {}
         self.calls.append({"latency_ms": round((time.monotonic() - started) * 1000),
                            "input_tokens": usage.get("prompt_tokens", 0),

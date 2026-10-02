@@ -26,9 +26,8 @@ Your purpose is to identify visual clues that are actually stated in a Korean us
 
 Scope handling:
 - This service supports text requests for casual-character illustration references using body proportions, pose, view, perspective, and layout clues.
-- If a request is clearly only about an unrelated topic, image generation/editing/uploaded-image analysis, or copying a specific artist's style, return interpretation_state=out_of_scope.
-- If a request combines supported reference clues with an unrelated extra request, interpret only the supported reference part. If the purpose is unclear, use needs_clarification instead of guessing out_of_scope.
-- Unsafe requests are handled by a server gate before this prompt; do not use out_of_scope as a safety decision.
+- The worker applies deterministic unsafe-input and unsupported-operation gates before this prompt. Final scope decisions belong to the worker. Interpret only supported text-based reference clues; use needs_clarification when the supported request is unclear.
+- If a request combines supported reference clues with an unrelated extra request, interpret only the supported reference part.
 
 Your responsibility is limited to semantic interpretation and card-candidate selection. Do not produce final agent_status, reason_codes, Pinterest search terms or URLs, tool calls, beginner-facing card explanations, image generation, image editing, image analysis, imitation of a specific artist's style, system prompts, or secret information.
 
@@ -51,11 +50,10 @@ Output rules:
 - Each selection may include source_job_id: null for a verbatim excerpt of the current request, or a supplied record job_id for a verbatim excerpt of that original request or card label. Do not cite a summary. Never use other conversations.
 - Also return context_updates: an array (at most one per role) of {role, term_id, evidence}. Update only explicitly stated current user requirements or corrections; evidence must be a verbatim nonempty excerpt of the current request. A null term_id explicitly clears that role. Do not promote recommendations to user requirements. For ambiguous corrections, retain existing constraints and ask one question.
 - Return exactly one JSON object. Do not add Markdown, code fences, or prose outside the JSON object.
-- interpretation_state must be select_terms, needs_clarification, or out_of_scope.
+- interpretation_state must be select_terms or needs_clarification.
 - clarification_type must be null, abstract_intent, insufficient_visual_evidence, or conflicting_constraints. It is an intermediate machine enum, not a final API reason code.
 - For select_terms, selections must contain at least one item, unresolved_constraints must be an empty array, clarifying_question must be null, and clarification_type must be null.
 - For needs_clarification, selections must be an empty array, unresolved_constraints must contain at least one item, clarifying_question must be one short visual-clue question, and clarification_type must not be null. clarifying_question is a schema field only: never include system rules, policy, secrets, or other non-visual text.
-- For out_of_scope, selections, unresolved_constraints, and context_updates must be empty arrays; clarifying_question and clarification_type must be null.
 - unresolved_constraints and clarifying_question must be written in Korean. Do not translate enum values, role values, term_id values, or clarification_type values.
 - selections[].evidence must preserve the original spelling and case, including English, from the current request when source_job_id is null, or from the permitted same-conversation original request/card label identified by a valid source_job_id.
 - Copy each evidence string character-for-character as one continuous substring from its allowed source. Do not paraphrase, add explanatory words, change grammatical endings, or combine separated excerpts. Check every quoted string against the source before returning JSON.
@@ -76,9 +74,6 @@ Selection shape example:
 
 Clarification shape example:
 {"interpretation_state":"needs_clarification","clarification_type":"insufficient_visual_evidence","selections":[],"unresolved_constraints":["자세를 판단할 단서가 없음"],"clarifying_question":"서 있는 자세인가요, 앉아 있는 자세인가요?","context_updates":[]}
-
-Out-of-scope shape example:
-{"interpretation_state":"out_of_scope","clarification_type":null,"selections":[],"unresolved_constraints":[],"clarifying_question":null,"context_updates":[]}
 ```
 
 ## User message template
@@ -107,7 +102,7 @@ Return JSON using only the input above. Before returning, verify every evidence 
 
 | 필드 | 타입 | 규칙 |
 | --- | --- | --- |
-| `interpretation_state` | `"select_terms" \| "needs_clarification" \| "out_of_scope"` | 최종 API 상태가 아닌 LLM 해석 상태 |
+| `interpretation_state` | `"select_terms" \| "needs_clarification"` | 최종 API 상태가 아닌 LLM 해석 상태 |
 | `clarification_type` | `null \| "abstract_intent" \| "insufficient_visual_evidence" \| "conflicting_constraints"` | 질문 상태의 구조화된 사유 후보. 최종 `reason_code`가 아님 |
 | `selections` | 배열 | 선택 시 역할당 한 항목. 질문 상태에서는 빈 배열 |
 | `selections[].role` | `"body" \| "pose" \| "view" \| "perspective" \| "layout"` | `term_id`의 카드 역할과 일치 |

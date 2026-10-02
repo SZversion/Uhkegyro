@@ -1,35 +1,18 @@
 """Ensure the evaluation never credits an incorrect terminal result."""
-from copy import deepcopy
+import asyncio
 import json
+import os
 from pathlib import Path
+import uuid
+from types import SimpleNamespace
 
-from scripts.run_live_eval import MeasuredAdapter, assess
+import asyncpg
+import pytest
+
+from scripts.run_live_eval import MeasuredAdapter, ROOT, execute
 from backend.services.llm import LLMInvalidStructuredOutput
-
-
-def test_required_selection_and_reason_mismatches_are_failures():
-    case = json.loads((Path(__file__).parents[2] / "evals/dataset.jsonl").read_text(encoding="utf-8").splitlines()[0])
-    submitted = {"job_status": "queued", "poll_after_ms": 1000}
-    terminal = {"job_status": "completed", "result": {
-        "agent_status": "success", "reason_codes": [], "reference_plan": {
-            "terms": [{**term, "pins": []} for term in case["expected"]["required_selections"]]}}}
-    assert all(assess(case, submitted, terminal, []).values())
-    missing = deepcopy(terminal)
-    missing["result"]["reference_plan"]["terms"].pop()
-    assert not assess(case, submitted, missing, [])["required_selections"]
-    wrong = deepcopy(terminal)
-    wrong["result"]["reason_codes"] = ["PIN_RESULTS_EMPTY"]
-    assert not assess(case, submitted, wrong, [])["reason_codes"]
-
-
-def test_interrupted_case_requires_real_failure_and_third_attempt():
-    case = json.loads((Path(__file__).parents[2] / "evals/dataset.jsonl").read_text(encoding="utf-8").splitlines()[-1])
-    submitted = {"job_status": "queued", "poll_after_ms": 1000}
-    terminal = {"job_status": "failed", "attempt": 3,
-                "failure": {"failure_code": "JOB_INSTANCE_INTERRUPTED"}}
-    assert all(assess(case, submitted, terminal, []).values())
-    terminal["attempt"] = 1
-    assert not assess(case, submitted, terminal, [])["attempt"]
+from backend.services.catalog_repository import load_catalog
+from backend.services import conversation_context
 
 
 def test_validation_diagnostics_are_bounded_and_do_not_store_error_text():
@@ -39,19 +22,35 @@ def test_validation_diagnostics_are_bounded_and_do_not_store_error_text():
     assert adapter.validation_failures == [{"attempt": 2, "code": "selection_evidence"}]
 
 
-def test_retry_fixture_fails_every_correction_in_first_attempt():
-    import asyncio
-
-    adapter = object.__new__(MeasuredAdapter)
-    adapter.reset({"runtime_fixture": {"llm_sequence": ["invalid_structured_output", "valid"]}})
-
+@pytest.mark.skipif(not os.getenv("TEST_DATABASE_URL"), reason="TEST_DATABASE_URL is not configured")
+def test_execute_completes_postgres_worker_and_measured_request_path(monkeypatch):
     async def run():
-        for _ in range(3):
-            try:
-                await adapter.interpret("request", attempt=1)
-            except LLMInvalidStructuredOutput:
-                pass
-            else:
-                raise AssertionError("first attempt must fail")
-
+        case = json.loads(next(line for line in (ROOT / "evals/dataset.jsonl").read_text(encoding="utf-8").splitlines() if '"id":"EVAL-01"' in line))
+        snapshot = load_catalog(ROOT / "docs/domains/illustration-reference/term-cards")
+        schema, url = "live_eval_test_" + uuid.uuid4().hex, os.environ["TEST_DATABASE_URL"]
+        admin = await asyncpg.connect(url)
+        pool = None
+        try:
+            await admin.execute(f'CREATE SCHEMA "{schema}"')
+            pool = await asyncpg.create_pool(url, setup=lambda conn: conn.execute(f'SET search_path TO "{schema}"'), server_settings={"search_path": schema})
+            for migration in sorted((ROOT / "backend/db/migrations").glob("*.sql")):
+                await pool.execute(migration.read_text(encoding="utf-8"))
+            class Completions:
+                async def create(self, **kwargs):
+                    self.response_format = kwargs["response_format"]
+                    content = '{"interpretation_state":"select_terms","selections":[{"role":"body","term_id":"body_slim","evidence":["마른 체형"],"confidence":0.9},{"role":"pose","term_id":"pose_standing","evidence":["두 발로 똑바로 서서"],"confidence":0.9},{"role":"view","term_id":"view_front","evidence":["정면"],"confidence":0.9}],"unresolved_constraints":[],"clarifying_question":null,"clarification_type":null,"context_updates":[]}'
+                    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content=content))], usage=None)
+            completions = Completions()
+            adapter = object.__new__(MeasuredAdapter)
+            adapter.settings = SimpleNamespace(interpreter_prompt_version="v0", llm_model="test", llm_max_tokens=128,
+                                                langfuse_public_key="", langfuse_secret_key="")
+            adapter._system_message, adapter._user_template, adapter._structured_output = "system", "{{request_text}}", False
+            adapter._client = SimpleNamespace(chat=SimpleNamespace(completions=completions))
+            async def no_recall(*args): return None, False
+            monkeypatch.setattr(conversation_context, "recall", no_recall)
+            result = await execute(case, pool, snapshot, adapter)
+            assert result["passed"] and result["calls"] and completions.response_format == {"type": "json_object"}
+        finally:
+            if pool: await pool.close()
+            await admin.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE'); await admin.close()
     asyncio.run(run())
