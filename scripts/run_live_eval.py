@@ -29,7 +29,7 @@ from backend.shared.config import Settings
 ROOT = Path(__file__).resolve().parents[1]
 _OUTPUT_FIELDS = frozenset({"interpretation_state", "selections", "unresolved_constraints", "clarifying_question",
                             "clarification_type", "context_updates", "role", "term_id", "evidence",
-                            "confidence", "source_job_id"})
+                            "confidence", "source_job_id", "keywords", "mode", "answer_text"})
 
 
 def _safe_validation_path(location):
@@ -66,6 +66,10 @@ class MeasuredAdapter(LLMInterpretationAdapter):
                 code = "injected_failure"
             else:
                 code = "other_validation"
+        repair_codes = [item.get("code") for item in error.feedback
+                        if item.get("code") in {"role_duplicate", "role_order", "state_rules"}]
+        if repair_codes:
+            code = repair_codes[0]
         item = {"attempt": attempt, "code": code}
         if detail:
             item["detail"] = detail
@@ -76,6 +80,7 @@ class MeasuredAdapter(LLMInterpretationAdapter):
         response = await super()._request(messages, output_format=output_format)
         usage = response.usage.model_dump() if response.usage else {}
         self.calls.append({"latency_ms": round((time.monotonic() - started) * 1000),
+                           "response_model": response.model,
                            "input_tokens": usage.get("prompt_tokens", 0),
                            "output_tokens": usage.get("completion_tokens", 0),
                            "cost_usd": usage.get("cost")})
@@ -110,6 +115,28 @@ class FixtureSearch:
         return RoleSearchOutcome(role, pins)
 
 
+class FixtureSearchWorker(AgentJobWorker):
+    """Keep production job execution; exclude MCP tool selection from this eval."""
+    async def _search_outcomes(self, resolution, *, request_text):
+        return {term.selection.role: await self.fixture_search.search(
+            term.selection.role, term.card["query_fragments"])
+            for term in resolution.terms}
+
+
+def question_addresses(contract, question):
+    """Bounded cue checks, not a semantic-quality grade."""
+    clues = contract.get("must_address", "") + " ".join(contract.get("must_address_any_of", []))
+    if "겉실루엣" in clues:
+        return all(word in question for word in ("의상", "실제", "체형", "겉실루엣"))
+    if "어깨와 골반" in clues:
+        return all(word in question for word in ("어깨", "골반", "비슷", "넓", "우선"))
+    if "옆모습" in clues:
+        return all(word in question for word in ("옆모습", "정면", "우선"))
+    if "한쪽 다리" in clues:
+        return ("한쪽 다리" in question and "체중" in question) or ("S" in question and "몸통" in question)
+    return False
+
+
 def assess(case, submitted, terminal, searches):
     expected = case["expected"]
     result = terminal.get("result") or {}
@@ -139,6 +166,10 @@ def assess(case, submitted, terminal, searches):
         checks["empty_pins"] = all(not t["pins"] for t in terms if t["role"] in reference["pins_empty_for_roles"])
     if "search" not in expected["tool_calls"]:
         checks["no_search"] = not searches
+    if "clarifying_question" in expected:
+        question = result.get("clarifying_question") or ""
+        checks["question_count"] = question.count("?") == expected["clarifying_question"]["count"]
+        checks["question_domain_cues"] = question_addresses(expected["clarifying_question"], question)
     return checks
 
 
@@ -154,7 +185,8 @@ async def execute(case, pool, snapshot, adapter):
     submitted, _ = await jobs.submit(session_id=sid, request_text=case["input"], idempotency_key=uuid.uuid4().hex)
     adapter.reset(case)
     search = FixtureSearch(case["runtime_fixture"])
-    worker = AgentJobWorker(pool, snapshot, adapter=adapter, pinterest_provider=search, tracer=JobTracer())
+    worker = FixtureSearchWorker(pool, snapshot, adapter=adapter, tracer=JobTracer())
+    worker.fixture_search = search
     recovery = JobRetryRecovery(pool)
     started = time.monotonic()
     while True:
@@ -189,8 +221,9 @@ def report(directory, metadata, rows):
              f"- 검사한 기대값 일치: **{passed}/{len(rows)}**", f"- 실제 모델 응답: {len(calls)}회 / 총 토큰: {total_tokens}",
              f"- 문항 지연 p50/p95: {latency[(len(rows)-1)//2]/1000:.2f}s / {latency[math.ceil(len(rows)*0.95)-1]/1000:.2f}s",
              "- 정성 점수: 지정 도메인 평가자와 독립 검토자 검토 전, 미산정.",
-             "- 실제 PostgreSQL·worker·adapter·resolver·assembler 실행. 검색은 fixture.",
-             "- 미검사: HTTP 202·cookie 인증·MCP 네트워크/provenance·실제 Pinterest·Langfuse 전송·질문 must_address·정성 품질. 전체 계약 준수율이 아님.",
+             "- 실제 PostgreSQL·worker·adapter·resolver·assembler 실행. 검색 단계는 평가 subclass의 fixture이며 MCP tool 선택은 미검사.",
+             "- 질문 도메인 단서는 최종 서버 질문의 제한된 단어 조합으로 검사한다. 의미 품질·쉬운 언어는 별도 검토한다.",
+             "- 미검사: HTTP 202·cookie 인증·MCP 네트워크/provenance·실제 Pinterest·Langfuse 전송·정성 품질. 전체 계약 준수율이 아님.",
              "", "| 문항 | 판정 | 실제 상태 | 불일치 검사 |", "|---|---|---|---|"]
     for row in rows:
         actual = row["terminal"].get("result") or row["terminal"].get("failure") or {}
@@ -198,6 +231,12 @@ def report(directory, metadata, rows):
     costs = [c["cost_usd"] for c in calls]
     lines.append(f"\n제공자가 응답에 기록한 총 비용(USD): {sum(costs) if costs and all(c is not None for c in costs) else '미확인'}")
     (directory / "report.md").write_text("\n".join(lines)+"\n", encoding="utf-8")
+    review = ["# 실제 사용자 답변 검토", "", "자동 정성 점수 아님. 의미·근거·관찰 지점과 질문의 충분성을 독립 검토한다.", ""]
+    for row in rows:
+        result = row["terminal"].get("result") or {}
+        review += [f"## {row['id']} ({'PASS' if row['passed'] else 'FAIL'})", "", row["input"], "",
+                   result.get("answer_text") or result.get("clarifying_question") or result.get("user_message") or "답변 없음", ""]
+    (directory / "review.md").write_text("\n".join(review), encoding="utf-8")
 
 
 async def main():
@@ -209,6 +248,10 @@ async def main():
     dataset = ROOT / "evals/dataset.jsonl"
     cases = [json.loads(line) for line in dataset.read_text(encoding="utf-8").splitlines()]
     assert len(cases) == len({c["id"] for c in cases}) == 30
+    extra_dataset = ROOT / "evals/ambiguity.jsonl"
+    if os.getenv("LIVE_EVAL_INCLUDE_AMBIGUITY") == "1":
+        cases += [json.loads(line) for line in extra_dataset.read_text(encoding="utf-8").splitlines()]
+        assert len(cases) == len({case["id"] for case in cases})
     selected_ids = [x.strip() for x in os.getenv("LIVE_EVAL_CASE_IDS", "").split(",") if x.strip()]
     if selected_ids:
         known_ids = {case["id"] for case in cases}
@@ -222,13 +265,19 @@ async def main():
     directory.mkdir(parents=True, exist_ok=False)
     digest = lambda p: hashlib.sha256(p.read_bytes()).hexdigest()
     metadata = {"started_kst": started.isoformat(), "model": settings.llm_model,
+                "prompt_version": settings.interpreter_prompt_version,
                 "selected_case_ids": [case["id"] for case in cases],
                 "dataset_sha256": digest(dataset), "prompt_sha256": digest(Path(settings.interpreter_prompt_path)),
                 "adapter_sha256": digest(ROOT / "backend/services/llm.py"), "catalog_version": snapshot.dataset_version,
                 "git_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip(),
                 "working_tree_dirty": bool(subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT)),
                 "temperature": 0, "max_tokens": settings.llm_max_tokens, "timeout_seconds": settings.llm_timeout_seconds,
-                "langfuse": "disabled", "search": "fixture", "http": "not tested"}
+                "langfuse": "disabled", "search": "fixture", "http": "not tested",
+                "mcp_tool_selection": "not tested; evaluation worker overrides search stage"}
+    sources = [p for folder in ("backend", "prompts", "skills", "scripts") for p in (ROOT / folder).rglob("*")
+               if p.suffix in (".py", ".sql", ".md") and "__pycache__" not in p.parts]
+    sources += [dataset, extra_dataset] if os.getenv("LIVE_EVAL_INCLUDE_AMBIGUITY") == "1" else [dataset]
+    metadata["source_sha256"] = {str(p.relative_to(ROOT)): digest(p) for p in sorted(sources)}
     (directory / "metadata.json").write_text(json.dumps(metadata, indent=2), encoding="utf-8")
     schema = "live_eval_" + uuid.uuid4().hex
     # Neon transaction pooling cannot preserve session search_path. Use its

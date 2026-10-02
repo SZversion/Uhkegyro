@@ -26,6 +26,10 @@
 
 ## How
 
+- 최신 worker의 검색 주입 경계는 `mcp_gateway`다. 해석 품질 runner는 평가 전용 worker subclass에서 `_search_outcomes`만 fixture로 대체하고, 실제 resolver가 승인한 role/query_fragments로 기존 fixture를 호출한다. 종결·재시도·상태 저장 경로는 실제 worker를 유지한다. MCP tool 선택·네트워크 경로는 이 runner의 검증 범위 밖이며 metadata와 보고서에 명시한다.
+
+- 모호·상충 대조 데이터 추가, 최종 서버 질문의 도메인 단서 검사, 실제 사용자 답변 review.md, 코드 지문 manifest는 [ambiguity-answer-quality.md](ambiguity-answer-quality.md)를 따른다. 정성 점수는 자동 산정하지 않는다.
+
 - Keep `InterpretationState` and resolver states as `select_terms` and `needs_clarification`; use `AgentStatus.OUT_OF_SCOPE` only in the final server result.
 - The exact unsupported-operation gate contract and supported categories are documented in `docs/specs/out-of-scope-gate.md`.
 - Validation diagnostics use allow-listed output field names, replace unknown path components with `unknown_field`, and cap rendered path/type lengths; raw values and exception messages are never serialized.
