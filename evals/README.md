@@ -76,6 +76,10 @@ LLM-as-judge를 사용할 때는 생성 모델과 다른 모델 또는 사람 �
 
 `dataset.jsonl` 30건과 `contract-variants.jsonl` 70건은 합쳐 100건 계약 준수 평가 입력이다. 아직 실제 실행 결과는 기록되지 않았으므로, Langfuse Dataset 등록·출시 게이트·baseline 수치는 실행 후에만 채운다.
 
+## 모호·상충 회귀 평가
+
+`ambiguity.jsonl`은 원본 30건을 변경하지 않는 10건 대조 사례다. `LIVE_EVAL_INCLUDE_AMBIGUITY=1 python -m scripts.run_live_eval`로 포함하고, `LIVE_EVAL_CASE_IDS`로 기존 실패 사례와 함께 선택한다. 전용 테스트 PostgreSQL을 DATABASE_URL로 지정하고 LLM_MODEL·INTERPRETER_PROMPT_PATH·INTERPRETER_PROMPT_VERSION을 명시한다. runner는 실제 최종 질문의 도메인 단어 조합을 검사하고 review.md에 사용자 답변을 남긴다. 이것은 의미 점수나 전체 계약 준수율이 아니다. dirty 실행은 source_sha256 manifest와 함께 보고하며 commit 단독 재현 결과로 주장하지 않는다. 정성 검토는 rubric의 근거 우선 기준으로 별도 기록한다.
+
 ## 대화 기억 평가
 
 `memory.jsonl`은 기존 30건을 변경하지 않고 추가한 다중 대화 시나리오다. MEM-01은 `test_eval27_followup_preserves_body_and_pending_question`의 실제 worker/PostgreSQL 통합 입력으로 사용한다. 격리·원본 인용·요약 재시도·과다 후보·복합 요청의 결정론 검사는 `test_conversation_memory.py`, 쿠키·만료·기존 데이터 이관은 `test_conversation_sessions.py`에서 실행한다.

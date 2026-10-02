@@ -236,7 +236,7 @@ class JobRepository:
             raise ValueError("failed job requires failure and forbids result")
         if not terminal and (result is not None or failure is not None):
             raise ValueError("non-terminal job cannot have result or failure")
-        if status is JobStatus.COMPLETED and result.agent_status is AgentStatus.UNSAFE_INPUT:
+        if status is JobStatus.COMPLETED and result.agent_status in (AgentStatus.UNSAFE_INPUT, AgentStatus.OUT_OF_SCOPE):
             allowed_previous = [*allowed_previous, JobStatus.VALIDATING.value]
 
         row = await self._pool.fetchrow(

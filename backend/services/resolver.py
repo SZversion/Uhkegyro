@@ -53,6 +53,22 @@ _CLARIFICATION_QUESTIONS: dict[ClarificationType, str] = {
 }
 
 
+def clarification_question(kind: ClarificationType, request_text: str) -> str:
+    """Select fixed visual questions without model text or interpolated user data."""
+    text = normalize_input_text(request_text)
+    if kind is ClarificationType.INSUFFICIENT_VISUAL_EVIDENCE:
+        if "어깨" in text and any(word in text for word in ("소매", "망토", "패딩", "의상", "옷")):
+            return "의상을 제외한 실제 체형 비율인가요, 의상을 포함한 겉실루엣인가요?"
+        if any(word in text for word in ("휘", "곡선", "멋", "자연")) and any(word in text for word in ("서 있", "서있", "선 포즈", "스탠딩")):
+            return "한쪽 다리에 체중이 실렸나요, 아니면 허리와 몸통이 S자로 이어지나요?"
+    if kind is ClarificationType.CONFLICTING_CONSTRAINTS:
+        if "어깨" in text and "골반" in text:
+            return "어깨와 골반 폭이 비슷한 비율과 어깨가 더 넓은 실루엣 중 무엇을 우선할까요?"
+        if "옆모습" in text and "정면" in text:
+            return "옆모습 실루엣과 정면의 좌우 대칭 중 무엇을 우선할까요?"
+    return _CLARIFICATION_QUESTIONS[kind]
+
+
 @dataclass
 class ValidatedTerm:
     """구조 검증을 통과한 역할 후보 한 건."""
@@ -84,7 +100,7 @@ def resolve(
         return ResolutionResult(
             status=STATUS_CLARIFY,
             reason_codes=[code or ReasonCode.INSUFFICIENT_VISUAL_EVIDENCE],
-            clarifying_question=_CLARIFICATION_QUESTIONS[interpretation.clarification_type],
+            clarifying_question=clarification_question(interpretation.clarification_type, request_text),
         )
 
     normalized_request = normalize_input_text(request_text)

@@ -132,3 +132,5 @@ AgentResult는 nullable memory_answer(최대 2000자)와 sources 배열(job_id, 
 
 회상 전용 job은 validating에서 rendering으로 바로 전이한다. 조건 변경·원문 evidence·출처 검증은 [conversation-context.md](conversation-context.md), 요약 범위는 [conversation-summary.md](conversation-summary.md)를 따른다. source_job_id가 null이면 evidence는 현재 원문, 값이 있으면 해당 대화의 선행 원본 요청/카드 라벨을 인용한다. 상태의 최종 결정은 서버가 한다.
 `answer_text`는 InterpretationOutput와 AgentResult의 최대 4,000자 strict 문자열(기본 빈 문자열)이다. resolver 검증 후 일반/부분 결과에만 모델 통합 설명을 노출하며 term별 정적 피드백·회상 답변은 기존 계약을 유지한다. UI 복원과 상세 계약은 [studio-conversation-connection.md](studio-conversation-connection.md)를 따른다.
+
+모호·상충 확인 질문은 모델 문장을 직접 전달하지 않는다. resolver가 clarification_type과 현재 요청의 제한된 시각 단서를 이용해 고정된 지지 다리/S자 흐름·체형/의상·어깨/골반 비율·옆모습/정면 질문을 고르며, 해당되지 않으면 기존 공통 질문을 반환한다. v4의 검증 실패 피드백과 답변 안내는 [ambiguity-answer-quality.md](ambiguity-answer-quality.md)를 따른다.

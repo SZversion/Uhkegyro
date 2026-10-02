@@ -26,6 +26,8 @@
 
 ## How
 
+- 모호·상충 대조 데이터 추가, 최종 서버 질문의 도메인 단서 검사, 실제 사용자 답변 review.md, 코드 지문 manifest는 [ambiguity-answer-quality.md](ambiguity-answer-quality.md)를 따른다. 정성 점수는 자동 산정하지 않는다.
+
 - Keep `InterpretationState` and resolver states as `select_terms` and `needs_clarification`; use `AgentStatus.OUT_OF_SCOPE` only in the final server result.
 - The exact unsupported-operation gate contract and supported categories are documented in `docs/specs/out-of-scope-gate.md`.
 - Validation diagnostics use allow-listed output field names, replace unknown path components with `unknown_field`, and cap rendered path/type lengths; raw values and exception messages are never serialized.

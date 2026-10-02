@@ -29,12 +29,13 @@ def test_schema_preserves_code_types_and_requires_nullable_fields():
     assert {item["type"] for item in schema["properties"]["clarifying_question"]["anyOf"]} == {"string", "null"}
 
 
-def test_duplicate_role_feedback_is_used_on_next_single_call():
+@pytest.mark.parametrize("version", ["uhkegryo-interpreter-v1", "uhkegryo-interpreter-v4"])
+def test_duplicate_role_feedback_is_used_on_next_single_call(version):
     payload = json.loads(SELECT_JSON)
     payload["selections"].append(payload["selections"][0].copy())
     completions = _FakeCompletions(responses=[_FakeResponse(json.dumps(payload)), _FakeResponse(SELECT_JSON)])
     adapter = _adapter(completions, settings=_real_settings().model_copy(update={
-        "interpreter_prompt_version": "uhkegryo-interpreter-v1",
+        "interpreter_prompt_version": version,
     }))
     kwargs = dict(job_id="job-1", session_id="session-1", max_attempts=3)
     with pytest.raises(llm.LLMInvalidStructuredOutput) as raised:
@@ -44,7 +45,12 @@ def test_duplicate_role_feedback_is_used_on_next_single_call():
     assert len(output.selections) == 1 and len(completions.calls) == 2
     sent = completions.calls[1]["messages"]
     assert sum(item["role"] == "system" for item in sent) == 1
-    assert json.loads(sent[-1]["content"]) == {"validation_feedback": raised.value.feedback}
+    repair = json.loads(sent[-1]["content"])
+    assert repair["validation_feedback"] == raised.value.feedback
+    if version == "uhkegryo-interpreter-v4":
+        assert "pose_sitting" in repair["repair_rules"] and "pose_gesture" in repair["repair_rules"]
+    else:
+        assert repair == {"validation_feedback": raised.value.feedback}
 
 
 def test_feedback_never_contains_unknown_field_names_or_input_values():
