@@ -336,9 +336,13 @@ export default function HomePage() {
         setSubmission({ ...result, requestText: text });
         setRequestText("");
       }
-      else setError(result.error);
+      else {
+        setError(result.error);
+        setMobilePanel("conversation");
+      }
     } catch {
       setError("대화 요청을 접수하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      setMobilePanel("conversation");
     } finally {
       setIsSubmitting(false);
     }
