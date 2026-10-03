@@ -694,13 +694,14 @@ def test_openrouter_spec_and_deployment_use_llm_model_and_180_second_timeout():
 
     assert "`LLM_MODEL`" in spec
     assert "180초" in spec
-    assert "LLM_MODEL=openai/gpt-4o-mini" in env_example
+    assert "LLM_MODEL=openai/gpt-4.1-mini" in env_example
     assert "LLM_TIMEOUT_SECONDS=180" in env_example
-    assert "LLM_MODEL=openai/gpt-4o-mini" in deployment
+    assert "LLM_MODEL=openai/gpt-4.1-mini" in deployment
     assert "LLM_TIMEOUT_SECONDS=180" in deployment
     api_deploy = cloudbuild.split('id: "deploy-api"', maxsplit=1)[1].split('\n\n  # 5.', maxsplit=1)[0]
     mcp_deploy = cloudbuild.split('id: "deploy-mcp"', maxsplit=1)[1].split('id: "deploy-api"', maxsplit=1)[0]
-    assert "LLM_MODEL=openai/gpt-4o-mini" in api_deploy
+    assert "LLM_MODEL=openai/gpt-4.1-mini" in api_deploy
+    assert "INTERPRETER_PROMPT_VERSION=uhkegryo-interpreter-v4" in api_deploy
     assert "LLM_TIMEOUT_SECONDS=180" in api_deploy
     assert "LLM_MODEL" not in mcp_deploy
     assert "LLM_TIMEOUT_SECONDS" not in mcp_deploy
@@ -714,18 +715,19 @@ def test_env_example_declares_concrete_local_prompt_path():
         for line in env_example.splitlines()
         if line.strip().startswith(f"{PROMPT_ENV_VAR}=")
     ]
-    assert assignments == ["./prompts/uhkegryo-interpreter-v0.md"]
+    assert assignments == ["./prompts/uhkegryo-interpreter-v4.md"]
+    assert "INTERPRETER_PROMPT_VERSION=uhkegryo-interpreter-v4" in env_example
 
 
 def test_docker_deploy_path_consistency():
     assert REPO_PROMPT_FILE.exists()
     dockerfile = (REPO_ROOT / "Dockerfile").read_text(encoding="utf-8")
-    assert "COPY prompts/uhkegryo-interpreter-v0.md /app/prompts/uhkegryo-interpreter-v0.md" in dockerfile
+    assert "COPY prompts/uhkegryo-interpreter-v4.md /app/prompts/uhkegryo-interpreter-v4.md" in dockerfile
     cloudbuild = (REPO_ROOT / "cloudbuild.yaml").read_text(encoding="utf-8")
-    assert "INTERPRETER_PROMPT_PATH=/app/prompts/uhkegryo-interpreter-v0.md" in cloudbuild
+    assert "INTERPRETER_PROMPT_PATH=/app/prompts/uhkegryo-interpreter-v4.md" in cloudbuild
     env_example = (REPO_ROOT / ".env.example").read_text(encoding="utf-8")
     assert f"{PROMPT_ENV_VAR}=" in env_example
-    assert "./prompts/uhkegryo-interpreter-v0.md" in env_example
+    assert "./prompts/uhkegryo-interpreter-v4.md" in env_example
 
 
 def test_cloudbuild_hosts_mcp_next_to_searxng_and_grants_api_invoker():

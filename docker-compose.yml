@@ -129,6 +129,9 @@ services:
     env_file:
       - .env
     environment:
+      LLM_MODEL: ${LLM_MODEL:-openai/gpt-4.1-mini}
+      INTERPRETER_PROMPT_PATH: ${INTERPRETER_PROMPT_PATH:-/app/prompts/uhkegryo-interpreter-v4.md}
+      INTERPRETER_PROMPT_VERSION: ${INTERPRETER_PROMPT_VERSION:-uhkegryo-interpreter-v4}
       LANGFUSE_HOST: http://langfuse-web:3000
       LANGFUSE_BASE_URL: http://langfuse-web:3000
       SEARXNG_BASE_URL: http://searxng:8080

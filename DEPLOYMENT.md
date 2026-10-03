@@ -84,14 +84,16 @@ bash scripts/gcp-setup-free.sh
 6. `SEARXNG_SECRET` — SearXNG 설정용 임의의 긴 비밀값
 
 **프롬프트 파일 환경변수** (API 서비스 전용, MCP 서비스 불필요):
-- `INTERPRETER_PROMPT_PATH=/app/prompts/uhkegryo-interpreter-v0.md`
+- `INTERPRETER_PROMPT_PATH=/app/prompts/uhkegryo-interpreter-v4.md`
   - Docker 이미지 내부 경로와 반드시 일치해야 합니다.
   - 설정 누락, 파일 부재·읽기 실패, 필수 섹션 또는 닫힌 code fence 누락 시 adapter 초기화에서 `PromptConfigurationError` (`CONFIGURATION_ERROR`, 재시도 불가)로 실패합니다.
+
+- `INTERPRETER_PROMPT_VERSION=uhkegryo-interpreter-v4`: 경로와 함께 설정합니다. 설정 파일 변경은 실제 Cloud Run 배포 완료를 뜻하지 않습니다.
 
 **OpenRouter 모델·timeout 환경변수** (API 서비스 전용):
 - `OPENROUTER_API_KEY`: Secret Manager에서 제공하는 OpenRouter API key
 - `OPENROUTER_BASE_URL=https://openrouter.ai/api/v1`
-- `LLM_MODEL=openai/gpt-4o-mini`: 모델 교체는 이 값만 변경합니다. `OPENROUTER_MODEL`은 사용하지 않습니다.
+- `LLM_MODEL=openai/gpt-4.1-mini`: 모델 교체는 이 값만 변경합니다. `OPENROUTER_MODEL`은 사용하지 않습니다.
 - `LLM_TIMEOUT_SECONDS=180`: 기본 호출 timeout은 180초이며 SDK 내부 재시도는 비활성화됩니다.
 - `cloudbuild.yaml`의 API 배포 환경변수도 같은 모델과 timeout을 지정합니다. MCP 서비스에는 이 설정을 추가하지 않습니다.
 
@@ -188,7 +190,7 @@ cp .env.example .env
 # .env 편집: OPENROUTER_API_KEY, LLM_MODEL, LLM_TIMEOUT_SECONDS, LANGFUSE_* 등 입력
 # DATABASE_URL에는 Neon dev 브랜치 연결 문자열 필수 입력
 # TERM_CARDS_PATH 미설정 시 자동 탐지 (레포 내 term-cards 디렉터리)
-# INTERPRETER_PROMPT_PATH=./prompts/uhkegryo-interpreter-v0.md (필수; 폴백 없음)
+# INTERPRETER_PROMPT_PATH=./prompts/uhkegryo-interpreter-v4.md (필수; 폴백 없음)
 
 # 전체 스택 실행 (Neon dev 브랜치 사용)
 docker compose up --build
