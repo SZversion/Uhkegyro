@@ -11,6 +11,7 @@ LLM 입력 session_context는 서버 전용이다. 정제된 job에는 job_id/�
 InterpretationSelection.source_job_id는 nullable UUID다. null이면 현재 요청 evidence를 확인하고, 값이 있으면 같은 대화의 선행 원본 요청 또는 검증된 카드 라벨의 실제 인용인지 확인한다. source_job_id만으로 조건을 변경하지 않는다.
 원본 검증을 통과한 selection의 출처별 요청·카드 라벨만 resolver의 `verified_source_texts`에 전달한다. resolver는 해당 source_job_id의 텍스트로 근거를 확인하며 현재 요청에 같은 인용이 존재할 것을 요구하지 않는다. source_job_id만 전달하고 검증된 출처 텍스트가 없으면 거부한다. 활성 카드·역할·검색 가능성 검사와 시작 시 의존 참조 검증은 유지한다.
 구조화 context_updates는 현재 요청의 명시적 근거를 가진 역할별 set/clear만 허용한다. set 카드에 resolver와 같은 활성/역할/의존 검증을 적용한다. 모호하면 기존 조건을 유지하고 질문한다.
+needs_clarification 완료에서는 context_updates를 적용하지 않고 pending_question만 갱신한다. 알려진 기존 조건을 그대로 보존하며, mode=none의 사용하지 않는 회상 필터는 adapter에서 빈 값으로 정규화한다. 상세 계약은 ambiguity-answer-quality.md를 따른다.
 worker는 선행 종결 job만 사용한다. job 완료와 memory_json 갱신은 attempt/상태/만료를 확인한 한 transaction이다. failed·stale attempt는 기억을 쓰지 않는다.
 ## AC
 - Given A의 체형, When B 요청, Then A 기록은 prompt에 없다.

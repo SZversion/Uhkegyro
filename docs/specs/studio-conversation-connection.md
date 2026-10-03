@@ -18,6 +18,7 @@
 - 모든 prompt 버전의 adapter system 규칙에 통합 한국어 답변 생성을 추가한다. 선택 용어의 쉬운 의미·선택 이유·주의점만 설명하고 URL/Pin·검증되지 않은 사실을 만들지 않는다. 확인 질문에는 빈 문자열을 반환한다. schema Skill 예제도 같은 계약으로 맞춘다.
 - 활성 카드 입력에는 plain_meaning_ko와 reference_checkpoints_ko를 추가한다. 팀 피드백을 우선하고 없으면 source_answer_draft/look_for를 사용한다. 검색어·URL·Pin은 모델 입력에 추가하지 않는다.
 - resolver 검증 후 success/partial_result 조립에만 answer_text를 전달한다. 확인 질문·안전/범위 거절에는 모델 답변을 노출하지 않는다. 원래 job 완료 transaction이 결과를 저장한다. 회상 필드는 별도로 유지한다.
+- v4 통합 답변은 쉬운 뜻·입력 근거·카드 관찰 지점을 짧게 안내하며 내부 ID와 선택 알고리즘 설명을 생략한다. 확인 질문은 기존 대화 조건을 변경하지 않는다. 상세 검증은 ambiguity-answer-quality.md를 따른다.
 - GET /api/sessions?limit=1 → GET /api/sessions/{id} → GET /api/sessions/{id}/jobs?limit=100&offset=N. 100건 미만까지 이어 조회하고 job_id로 중복 제거한다. 마지막 job은 GET /api/jobs/{id}로 읽어 응답 전용 이미지도 복원한다.
 - 401 목록 응답만 미인증 빈 대화로 취급한다. 이후 401/404, 네트워크·잘못된 payload는 복원 실패다. unmount/Strict Mode 재실행 시 AbortController로 이전 결과 적용·요청을 취소한다.
 - POST /api/sessions 201로 새 ID 확보 후 POST /api/agent에 request_text와 session_id만 전송한다. 같은 origin, credentials include, no-store 조회를 사용한다. 클라이언트 맥락/요약은 보내지 않는다.

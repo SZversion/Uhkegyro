@@ -118,7 +118,7 @@ def next_state(context, job, interpretation, result):
     if result.agent_status not in (AgentStatus.SUCCESS, AgentStatus.PARTIAL_RESULT, AgentStatus.NEEDS_CLARIFICATION):
         return state
     constraints = state.setdefault("constraints", {})
-    for update in interpretation.context_updates:
+    for update in interpretation.context_updates if result.agent_status is not AgentStatus.NEEDS_CLARIFICATION else []:
         if update.term_id is None:
             constraints.pop(update.role.value, None)
         else:

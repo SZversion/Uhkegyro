@@ -19,6 +19,7 @@ LLM 판단 몫이며 이 모듈은 재판정하지 않는다. 참조 ID의 구�
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from collections.abc import Mapping, Sequence
 
@@ -53,6 +54,28 @@ _CLARIFICATION_QUESTIONS: dict[ClarificationType, str] = {
 }
 
 
+def clarification_question(kind: ClarificationType, request_text: str) -> str:
+    """Select fixed visual questions without model text or interpolated user data."""
+    text = normalize_input_text(request_text)
+    if kind is ClarificationType.INSUFFICIENT_VISUAL_EVIDENCE:
+        if "어깨" in text and any(word in text for word in ("소매", "망토", "패딩", "의상", "옷")):
+            return "의상을 제외한 실제 체형 비율인가요, 의상을 포함한 겉실루엣인가요?"
+        if any(word in text for word in ("휘", "곡선", "멋", "자연")) and any(word in text for word in ("서 있", "서있", "선 포즈", "스탠딩")):
+            return "한쪽 다리에 체중이 실렸나요, 아니면 허리와 몸통이 S자로 이어지나요?"
+    if kind is ClarificationType.CONFLICTING_CONSTRAINTS:
+        equal_width = re.search(r"어깨(?:와|랑|·)\s*골반(?:은|이|의)?\s*(?:폭(?:은|이)?\s*)?(?:비슷|같|동일)", text)
+        wider_shoulders = re.search(r"어깨(?:가|는)?\s*골반보다\s*(?:(?:훨씬|더)\s*)*넓(?:은|고|다|어|습니다)", text)
+        body_conflict = bool(equal_width and wider_shoulders) and not re.search(
+            r"(?:비슷하지|같지|동일하지|넓지)\s*(?:않|못)|아니|원하지", text)
+        view_conflict = bool(re.search(
+            r"옆모습(?:\s*실루엣)?(?:인데|이면서|으로\s*그리고\s*싶은데)[^.?!]*정면처럼", text))
+        if body_conflict and not view_conflict:
+            return "어깨와 골반 폭이 비슷한 비율과 어깨가 더 넓은 실루엣 중 무엇을 우선할까요?"
+        if view_conflict and not body_conflict:
+            return "옆모습 실루엣과 정면의 좌우 대칭 중 무엇을 우선할까요?"
+    return _CLARIFICATION_QUESTIONS[kind]
+
+
 @dataclass
 class ValidatedTerm:
     """구조 검증을 통과한 역할 후보 한 건."""
@@ -84,7 +107,7 @@ def resolve(
         return ResolutionResult(
             status=STATUS_CLARIFY,
             reason_codes=[code or ReasonCode.INSUFFICIENT_VISUAL_EVIDENCE],
-            clarifying_question=_CLARIFICATION_QUESTIONS[interpretation.clarification_type],
+            clarifying_question=clarification_question(interpretation.clarification_type, request_text),
         )
 
     normalized_request = normalize_input_text(request_text)

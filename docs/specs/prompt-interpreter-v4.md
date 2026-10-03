@@ -32,6 +32,8 @@
 
 ## How
 
+- 모호·상충 조건의 대조 규칙, 다음 attempt 검증 피드백, 통합 답변·관찰 지점과 실제 최종 질문 평가의 최신 계약은 [ambiguity-answer-quality.md](ambiguity-answer-quality.md)를 따른다.
+
 - 복합 동작의 방향·흐름 자체를 찾으면 `pose_gesture`를 검토하고 개별 동작 카드를 같은 역할로 나열하지 않는다. 실제 지지·자세가 중심이면 해당 자세 카드 하나를 선택한다.
 - 의상 부피만으로 체형을 판단할 수 없으면 `needs_clarification`의 모든 필드를 일관되게 출력한다.
 - 근거는 카탈로그의 설명이 아닌 허용된 요청 원문에서 복사하며, 후속 요청의 `selections`와 `context_updates` 모두 동일한 인용 규칙을 적용한다.
