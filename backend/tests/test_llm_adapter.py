@@ -752,3 +752,15 @@ def test_cloudbuild_hosts_mcp_next_to_searxng_and_grants_api_invoker():
     assert 'ingress_container="$(cat /workspace/api-ingress-container)"' in allow_host
     assert '--container="${ingress_container}"' in allow_host
     assert "MCP_BASE_URL=${mcp_url}/mcp" in allow_host
+
+
+@pytest.mark.parametrize("file_version,configured", [("v0", "v4"), ("v4", "v0"), ("v0", "v0"), ("v4", "v4")])
+def test_prompt_declaration_matches_version_even_when_renamed(tmp_path, file_version, configured):
+    prompt = tmp_path / "custom-name.md"
+    prompt.write_text((REPO_ROOT / f"prompts/uhkegryo-interpreter-{file_version}.md").read_text(encoding="utf-8"), encoding="utf-8")
+    settings = _real_settings().model_copy(update={"interpreter_prompt_version": f"uhkegryo-interpreter-{configured}"})
+    if file_version != configured:
+        with pytest.raises(llm.PromptConfigurationError, match="INTERPRETER_PROMPT_VERSION"):
+            llm.LLMInterpretationAdapter(settings=settings, prompt_path=prompt, client=object())
+    else:
+        assert llm.LLMInterpretationAdapter(settings=settings, prompt_path=prompt, client=object()).prompt_version.endswith(configured)

@@ -4,6 +4,19 @@
 # Neon: 0.5GB 스토리지, 5분 유휴 시 자동 일시정지, 브랜칭 기능 포함
 # 배포: API + SearXNG sidecar, 별도 MCP 서비스
 steps:
+  - name: "python:3.12-slim"
+    id: "check-team-operation"
+    entrypoint: "python"
+    args: ["scripts/check-team-operation.py"]
+    env:
+      - "TEAM_OPERATION_APPROVED=${_TEAM_OPERATION_APPROVED}"
+      - "TEAM_OPERATION_START=${_TEAM_OPERATION_START}"
+      - "TEAM_OPERATION_END=${_TEAM_OPERATION_END}"
+      - "TEAM_OPERATION_BUDGET=${_TEAM_OPERATION_BUDGET}"
+      - "TEAM_OPERATION_BILLING_OWNER=${_TEAM_OPERATION_BILLING_OWNER}"
+      - "TEAM_OPERATION_BILLING_ACCOUNT=${_TEAM_OPERATION_BILLING_ACCOUNT}"
+      - "TEAM_OPERATION_SHUTDOWN_OWNER=${_TEAM_OPERATION_SHUTDOWN_OWNER}"
+      - "TEAM_OPERATION_SHUTDOWN_PROCEDURE=${_TEAM_OPERATION_SHUTDOWN_PROCEDURE}"
   # 1. Docker 이미지 빌드
   - name: "gcr.io/cloud-builders/docker"
     id: "build-image"
@@ -132,7 +145,7 @@ steps:
           --port=8000 \
           --cpu=1 \
           --memory=512Mi \
-          --update-env-vars=ENVIRONMENT=production,INTERPRETER_PROMPT_PATH=/app/prompts/uhkegryo-interpreter-v4.md,INTERPRETER_PROMPT_VERSION=uhkegryo-interpreter-v4,STRUCTURED_OUTPUT_SKILL_PATH=/app/skills/structured-output/SKILL.md,TERM_CARDS_PATH=/app/term-cards,LLM_MODEL=openai/gpt-4.1-mini,LLM_TIMEOUT_SECONDS=180,SEARXNG_BASE_URL=http://localhost:8080,MCP_ENABLED=true,WORKER_CONCURRENCY=5 \
+          --update-env-vars=ENVIRONMENT=production,INTERPRETER_PROMPT_PATH=/app/prompts/uhkegryo-interpreter-v4.md,INTERPRETER_PROMPT_VERSION=uhkegryo-interpreter-v4,STRUCTURED_OUTPUT_SKILL_PATH=/app/skills/structured-output/SKILL.md,TERM_CARDS_PATH=/app/term-cards,LLM_MODEL=openai/gpt-4.1-mini,LLM_TIMEOUT_SECONDS=180,LLM_MAX_TOKENS=2048,SEARXNG_BASE_URL=http://localhost:8080,MCP_ENABLED=true,WORKER_CONCURRENCY=5 \
           --set-secrets=OPENROUTER_API_KEY=OPENROUTER_API_KEY:latest \
           --set-secrets=LANGFUSE_PUBLIC_KEY=LANGFUSE_PUBLIC_KEY:latest \
           --set-secrets=LANGFUSE_SECRET_KEY=LANGFUSE_SECRET_KEY:latest \
@@ -174,6 +187,14 @@ steps:
       - "--project=${PROJECT_ID}"
 
 substitutions:
+  _TEAM_OPERATION_APPROVED: "false"
+  _TEAM_OPERATION_START: ""
+  _TEAM_OPERATION_END: ""
+  _TEAM_OPERATION_BUDGET: ""
+  _TEAM_OPERATION_BILLING_OWNER: ""
+  _TEAM_OPERATION_BILLING_ACCOUNT: ""
+  _TEAM_OPERATION_SHUTDOWN_OWNER: ""
+  _TEAM_OPERATION_SHUTDOWN_PROCEDURE: ""
   _REGION: "asia-northeast3"
   _ARTIFACT_REGISTRY: "asia-northeast3-docker.pkg.dev"
   _ARTIFACT_REPO: "docker-repo"

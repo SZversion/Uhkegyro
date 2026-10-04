@@ -388,3 +388,5 @@ async def init_db() -> None:
 | Vercel Hobby | 100GB 대역폭, 무제한 개인 프로젝트 | Pro 플랜($20/월) |
 
 **팁**: Neon 대신 **Supabase 무료(500MB, PostgreSQL + Auth + Realtime)**도 대안. 연결 문자열만 바꾸면 됨.
+
+Compose에서 프롬프트를 override할 때는 `INTERPRETER_PROMPT_PATH`와 `INTERPRETER_PROMPT_VERSION`을 함께 설정한다. 기존 v0 경로만 있는 `.env`는 버전도 `uhkegryo-interpreter-v0`으로 지정하거나 두 설정을 제거해 v4 기본 배포로 전환한다. 한 값만 지정하거나 파일의 Prompt 이름과 버전이 다르면 실행 전에 오류가 발생한다.
