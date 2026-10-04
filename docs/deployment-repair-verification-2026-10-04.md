@@ -53,3 +53,5 @@ LLM 출력 오류, Pin 검색 장애, generation 시간 계측 및 Sessions 연�
 - Google/DuckDuckGo 403은 외부 엔진의 응답으로 남아 있다. 마지막 Pinterest 경로가 실제 연속 요청을 복구했다. 모든 외부 엔진이 장애이면 기존 partial_result/PIN_SEARCH_UNAVAILABLE 계약을 따른다.
 - 토큰 상한만 올렸을 때도 확인 질문이 잘려 실패했다. nullable 슬롯과 기존 빈 배열 예시의 충돌을 명시적으로 보완한 후 로컬 실제 모델 3회 연속 및 마지막 Cloud Run 요청이 첫 시도에 통과했다.
 - 이 검증은 위 고정 입력과 실제 운영 연결에 대한 확인이며, 전체 평가셋의 새 품질 점수를 주장하지 않는다.
+
+CI 보완(2026-10-04): term-search의 전체 엔진 장애 fixture를 Google/DuckDuckGo/Pinterest 모두 unresponsive로 수정했다. 단일 Google 장애 뒤 정상 빈 fallback은 PIN_RESULTS_EMPTY 계약이다. backend 전체 497 passed / 28 skipped. 실행 코드 변경 없이 테스트만 보완했다.

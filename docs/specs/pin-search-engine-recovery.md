@@ -23,3 +23,5 @@
 - Given 외부/중복/비정상 Pin URL, When 어느 엔진에서 반환, Then 기존 필터·8개 상한이 유지된다.
 
 엔진 선택 문법은 [SearXNG 공식 엔진 목록](https://docs.searxng.org/user/configured_engines.html)의 goi/ddi/pin을 따른다.
+
+- Given term-search HTTP 테스트가 모든 엔진 장애를 모사, When fallback 검색 실행, Then 세 엔진 모두 unresponsive로 지정되어 PIN_SEARCH_UNAVAILABLE을 검증한다.
