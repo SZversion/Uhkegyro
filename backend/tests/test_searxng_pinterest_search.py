@@ -68,10 +68,32 @@ def test_provider_marks_successful_empty_search():
     assert outcome.code is ReasonCode.PIN_RESULTS_EMPTY
 
 
+@pytest.mark.parametrize("first", [
+    {"results": [], "unresponsive_engines": [["google images", "CAPTCHA"]]},
+    {"results": [{"url": "https://example.com/not-a-pin"}]},
+])
+def test_duckduckgo_recovers_google_failure_or_invalid_results(first):
+    calls = []
+
+    async def load(url, params):
+        calls.append(params["q"])
+        return first if len(calls) == 1 else {
+            "results": [{"url": "https://pinterest.com/pin/456/"}]}
+
+    outcome = asyncio.run(SearXNGPinterestSearchProvider(
+        base_url="http://searxng:8080", json_loader=load,
+    ).search(Role.POSE, ("standing",)))
+    assert len(calls) == 2
+    assert calls[0].startswith("!goi ") and calls[1].startswith("!ddi ")
+    assert [pin.pin_id for pin in outcome.pins] == ["456"]
+    assert outcome.code is None
+
+
 @pytest.mark.parametrize("engine_error", ["timeout", "CAPTCHA", "too many requests"])
 def test_provider_marks_google_images_engine_error_unavailable(engine_error, caplog):
     async def load(url, params):
-        return {"results": [], "unresponsive_engines": [["google images", engine_error]]}
+        engine = {"!goi": "google images", "!ddi": "duckduckgo images", "!pin": "pinterest"}[params["q"].split()[0]]
+        return {"results": [], "unresponsive_engines": [[engine, engine_error]]}
 
     outcome = asyncio.run(SearXNGPinterestSearchProvider(
         base_url="http://searxng:8080", json_loader=load,
@@ -88,6 +110,24 @@ def test_provider_marks_missing_endpoint_unavailable():
             Role.BODY, ("slim body",)
         ))
     assert error.value.failure_code is FailureCode.CONFIGURATION_ERROR
+
+
+def test_pinterest_engine_recovers_both_image_engine_failures():
+    calls = []
+
+    async def load(url, params):
+        bang = params["q"].split()[0]
+        calls.append(bang)
+        if bang == "!pin":
+            return {"results": [{"url": "https://pinterest.com/pin/789/"}]}
+        return {"results": [], "unresponsive_engines": [[
+            "google images" if bang == "!goi" else "duckduckgo images", "HTTP error 403"]]}
+
+    outcome = asyncio.run(SearXNGPinterestSearchProvider(
+        base_url="http://searxng:8080", json_loader=load,
+    ).search(Role.POSE, ("standing",)))
+    assert calls == ["!goi", "!ddi", "!pin"]
+    assert outcome.code is None and outcome.pins[0].pin_id == "789"
 
 
 def test_provider_marks_invalid_json_shape_unavailable():

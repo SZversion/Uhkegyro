@@ -64,13 +64,33 @@ class JobTracer:
             "model": self.model,
             "prompt_version": self.prompt_version,
         }
-        with self._observation(
+        with self._session(str(job["session_id"])), self._observation(
             name="agent-job-attempt",
             input={"request_text": job["request_text"]},
             metadata=metadata,
             trace_context={"trace_id": trace_id} if trace_id else None,
         ) as span:
             yield AttemptTrace(self, span)
+
+    @contextmanager
+    def _session(self, session_id):
+        context = None
+        if self.client is not None:
+            try:
+                from langfuse import propagate_attributes
+                context = propagate_attributes(session_id=session_id)
+                context.__enter__()
+            except Exception:
+                context = None
+                logger.debug("Langfuse session propagation unavailable")
+        try:
+            yield
+        finally:
+            if context is not None:
+                try:
+                    context.__exit__(None, None, None)
+                except Exception:
+                    logger.debug("Langfuse session propagation close unavailable")
 
     @contextmanager
     def _observation(self, **kwargs: Any) -> Iterator[Any]:

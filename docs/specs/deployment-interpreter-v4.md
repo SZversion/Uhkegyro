@@ -20,6 +20,8 @@ Cloud Build API와 Compose API, 환경 변수 예시를 openai/gpt-4.1-mini·v4�
 - 직접 Python 실행 예시: ./prompts/uhkegryo-interpreter-v4.md
 - 경로와 버전을 함께 설정해야 v4 검증 피드백 분기가 적용된다. 배포 가이드·README는 이 계약을 따른다.
 
+- Preview 출력 계약과 2048 토큰 상한은 [interpreter-catalog-output-repair.md](interpreter-catalog-output-repair.md)를 따른다.
+
 ## AC
 - Given 과거 실행과 현재 파일 지문 불일치, When 모델 선택 근거를 기록, Then 과거 결과는 참고로만 사용하고 현재 PR의 품질 통과로 주장하지 않는다.
 - Given 새 배포 구성, When Cloud Build API 환경 변수 확인, Then 모델·v4 경로·v4 버전이 모두 명시된다.

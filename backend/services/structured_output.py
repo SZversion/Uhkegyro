@@ -1,10 +1,11 @@
 """Code-derived output schema and bounded, non-sensitive validation feedback."""
 from pathlib import Path
+import json
 
 from backend.schemas.models import InterpretationOutput
 
 
-def response_format() -> dict:
+def response_format(active_cards_json: str = "") -> dict:
     schema = InterpretationOutput.model_json_schema()
 
     def strict(node):
@@ -20,6 +21,31 @@ def response_format() -> dict:
                 strict(value)
 
     strict(schema)
+    if active_cards_json:
+        cards = json.loads(active_cards_json).get("active_cards", [])
+        for name in ("InterpretationSelection", "ContextUpdate"):
+            original = schema["$defs"][name]
+            variants = []
+            for role in ("body", "pose", "view", "perspective", "layout"):
+                ids = [c["term_id"] for c in cards if c["role"] == role]
+                if not ids:
+                    continue
+                variant = json.loads(json.dumps(original))
+                variant["properties"]["role"] = {"type": "string", "enum": [role]}
+                term = {"type": "string", "enum": ids}
+                variant["properties"]["term_id"] = (
+                    {"anyOf": [term, {"type": "null"}]} if name == "ContextUpdate" else term
+                )
+                variants.append(variant)
+            if variants:
+                schema["$defs"][name] = {"anyOf": variants}
+                field = "selections" if name == "InterpretationSelection" else "context_updates"
+                slots = {role: {"anyOf": [next((v for v in variants
+                    if v["properties"]["role"]["enum"] == [role]), {"type": "null"}),
+                    {"type": "null"}]} for role in ("body", "pose", "view", "perspective", "layout")}
+                schema["properties"][field] = {"type": "object", "properties": slots,
+                    "required": list(slots), "additionalProperties": False,
+                    "description": "One nullable slot per role. Direction takes priority over full-body framing in view."}
     return {"type": "json_schema", "json_schema": {
         "name": "interpretation_output", "strict": True, "schema": schema,
     }}

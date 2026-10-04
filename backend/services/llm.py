@@ -19,6 +19,10 @@ from __future__ import annotations
 import json
 import logging
 import time
+import inspect
+from contextlib import contextmanager
+from contextvars import ContextVar
+from functools import wraps
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from pathlib import Path
@@ -34,6 +38,23 @@ from backend.services.catalog_repository import CatalogSnapshot
 from backend.services.structured_output import load_skill, response_format, validation_feedback
 
 logger = logging.getLogger("backend.services.llm")
+_active_generation = ContextVar("active_generation", default=None)
+
+
+def observed_generation(method):
+    signature = inspect.signature(method)
+
+    @wraps(method)
+    def wrapper(self, *args, **kwargs):
+        bound = signature.bind(self, *args, **kwargs)
+        metadata = {k: kwargs[k] for k in ("job_id", "session_id", "attempt", "max_attempts") if k in kwargs}
+        metadata.update(bound.arguments.get("trace", {}))
+
+        async def run():
+            with self._generation(metadata):
+                return await method(self, *args, **kwargs)
+        return run()
+    return wrapper
 
 PROMPT_FILE_NAME = "uhkegryo-interpreter-v0.md"
 SYSTEM_HEADING = "## System message"
@@ -153,9 +174,9 @@ class LLMInterpretationAdapter:
         if system_message is None or user_template is None:
             path = prompt_path if prompt_path is not None else self._resolve_prompt_path()
             system_message, user_template = load_interpreter_prompt(_require_prompt_file(path))
-        self._structured_output = self.prompt_version == "uhkegryo-interpreter-v1"
+        self._structured_output = self.prompt_version in ("uhkegryo-interpreter-v1", "uhkegryo-interpreter-v4")
         self._system_message = system_message
-        if self._structured_output:
+        if self.prompt_version == "uhkegryo-interpreter-v1":
             try:
                 output_rules = load_skill(self.settings.structured_output_skill_path)
             except (OSError, ValueError) as exc:
@@ -168,6 +189,18 @@ class LLMInterpretationAdapter:
             "Do not invent URLs, Pins or facts. For needs_clarification use an empty string."
         )
         if self.prompt_version == "uhkegryo-interpreter-v4":
+            self._system_message += (
+                "\nCardinality is mandatory for BOTH selections and context_updates: each role "
+                "appears at most once. Direction and framing share the view role. When front "
+                "and full-body are requested together, keep view_front only in BOTH arrays. "
+                "Full-body remains a drawing instruction in answer_text, never a second view "
+                "or a layout card. "
+                "The response schema uses nullable role slots for selections and context_updates "
+                "instead of arrays and OVERRIDES all array examples above. Fill each role once; "
+                "use null for unused roles. For needs_clarification or out_of_scope, BOTH fields "
+                "must be {\"body\":null,\"pose\":null,\"view\":null,\"perspective\":null,\"layout\":null}, "
+                "never []. Keep answer_text empty for clarification."
+            )
             self._system_message += (
                 "\nFor answer_text use 2-4 short Korean sentences: plain meanings, literal "
                 "request clues. End with '참고 이미지에서는 ... 확인해 보세요' using at least "
@@ -196,6 +229,7 @@ class LLMInterpretationAdapter:
     def prompt_version(self) -> str:
         return self.settings.interpreter_prompt_version
 
+    @observed_generation
     async def interpret(
         self,
         request_text: str,
@@ -224,16 +258,36 @@ class LLMInterpretationAdapter:
                     "ONE card per role. For a seated person reaching toward the camera: pose_sitting is the only "
                     "pose; use perspective_foreshortening for the near hand size, never also pose_reaching. "
                     "For running and turning movement FLOW: pose_gesture is the only pose, never both running "
-                    "and turning cards. For incompatible body/view conditions ask one question with empty "
+                    "and turning cards. "
+                    "For front plus full-body keep view_front only in BOTH selections and context_updates; "
+                    "do not include view_full_body in either array. For incompatible body/view conditions ask one question with empty "
                     "selections, context_updates and answer_text. Preserve literal request evidence."
                 )
             messages.append({"role": "user", "content": json.dumps(repair)})
         response = await self._request(
-            messages, output_format=response_format() if self._structured_output else None
+            messages, output_format=response_format(
+                active_cards_json if self.prompt_version == "uhkegryo-interpreter-v4" else ""
+            ) if self._structured_output else None
         )
 
         latency_ms = round((time.perf_counter() - started) * 1000, 1)
         content = _extract_content(response)
+        if self.prompt_version == "uhkegryo-interpreter-v4" and active_cards_json:
+            try:
+                payload = json.loads(content)
+                roles = ("body", "pose", "view", "perspective", "layout")
+                for field in ("selections", "context_updates"):
+                    slots = payload.get(field) if isinstance(payload, dict) else None
+                    if isinstance(slots, dict):
+                        if set(slots) != set(roles) or any(
+                            value is not None and (not isinstance(value, dict) or value.get("role") != role)
+                            for role, value in slots.items()
+                        ):
+                            raise LLMInvalidStructuredOutput("역할 슬롯이 출력 계약과 일치하지 않습니다")
+                        payload[field] = [slots[role] for role in roles if slots[role] is not None]
+                content = json.dumps(payload, ensure_ascii=False)
+            except json.JSONDecodeError:
+                pass  # Existing validation classifies malformed JSON without retaining it.
         usage = _extract_usage(response)
         try:
             interpretation = _validate_output(content)
@@ -302,6 +356,7 @@ class LLMInterpretationAdapter:
             if output_format is not None or tools is not None:
                 request["extra_body"] = {"provider": {"require_parameters": True}}
             response = await self._client.chat.completions.create(**request)
+            self._update_generation(usage_details=_extract_usage(response))
         except openai.APITimeoutError as exc:
             raise LLMTimeout(f"OpenRouter 요청 시간 초과: {exc}") from exc
         except openai.RateLimitError as exc:
@@ -335,6 +390,7 @@ class LLMInterpretationAdapter:
 
         return response
 
+    @observed_generation
     async def request_mcp_tool_calls(
         self, messages: list[dict], tools: list[dict], *, required: bool
     ) -> list[dict]:
@@ -383,6 +439,7 @@ class LLMInterpretationAdapter:
             raise LLMInvalidStructuredOutput("LLM이 필수 MCP 도구를 호출하지 않았다")
         return calls
 
+    @observed_generation
     async def memory(self, operation: str, data: dict, output_type, **trace):
         path = self._resolve_prompt_path()
         source = path.read_text(encoding="utf-8")
@@ -390,6 +447,11 @@ class LLMInterpretationAdapter:
             rules = _extract_fenced_block(source, "## Memory " + operation)
         except ValueError as error:
             raise PromptConfigurationError("메모리 prompt 구성이 없습니다") from error
+        if operation == "classify":
+            rules += ("\nClassify ONLY the current request's intent. Matching an earlier request is NOT recall. "
+                "'마른 캐릭터가 한쪽 다리에 체중을 싣고 서 있는 자세 레퍼런스를 찾아줘' is ALWAYS none, "
+                "even verbatim repeated in history. '포즈만 앉은 모습으로 바꿔줘' is none. "
+                "'아까 어떤 자세를 추천했지?' is recall. Require an explicit historical question for recall/mixed.")
         rules += "\nReturn only JSON matching this schema:\n" + json.dumps(output_type.model_json_schema())
         response = await self._request([
             {"role": "system", "content": rules},
@@ -430,42 +492,60 @@ class LLMInterpretationAdapter:
         `observability-and-prompt-versioning.md`에 따라 원문은 Langfuse trace로만 보내고
         일반 애플리케이션 로그에는 해시·길이·term ID만 남긴다. 키가 없으면 전송하지 않고 반환한다.
         """
-        if not (self.settings.langfuse_public_key and self.settings.langfuse_secret_key):
-            return
+        metadata = {"job_id": job_id, "session_id": session_id,
+                    "attempt": attempt, "max_attempts": max_attempts}
+        if validation_error is not None:
+            metadata.update(error_type=validation_error.error_type,
+                            validation_feedback=validation_error.feedback[:8])
+        self._update_generation(
+            input={"request_text": request_text} if request_text is not None else None,
+            metadata=metadata, output=output, usage_details=usage or None,
+            **({"level": "ERROR", "status_message": "structured output validation failed"}
+               if validation_error is not None else {}),
+        )
+
+    @staticmethod
+    def _update_generation(**changes):
+        generation = _active_generation.get()
+        if generation is not None:
+            try:
+                generation.update(**changes)
+            except Exception:
+                logger.debug("Langfuse generation update unavailable")
+
+    @contextmanager
+    def _generation(self, metadata):
+        context = None
+        token = _active_generation.set(None)
         try:
-            from langfuse import Langfuse
-
-            langfuse = Langfuse(
-                public_key=self.settings.langfuse_public_key,
-                secret_key=self.settings.langfuse_secret_key,
-                host=self.settings.langfuse_host,
-            )
-            # job trace는 worker 소유다. 현재 trace context가 없으면 adapter가
-            # 독립적인 root trace를 만들지 않는다.
-            if not langfuse.get_current_trace_id():
-                logger.debug("Langfuse observation 생략: worker trace context 없음")
-                return
-
-            metadata = {
-                "job_id": job_id, "session_id": session_id,
-                "attempt": attempt, "max_attempts": max_attempts,
-            }
-            if validation_error is not None:
-                metadata.update(error_type=validation_error.error_type,
-                                validation_feedback=validation_error.feedback[:8])
-            with langfuse.start_as_current_observation(
-                as_type="generation",
-                name=self.prompt_version,
-                model=self.settings.llm_model,
-                version=self.prompt_version,
-                input={"request_text": request_text} if request_text is not None else None,
-                metadata=metadata,
-            ) as generation:
-                generation.update(output=output, usage_details=usage or None, **({
-                    "level": "ERROR", "status_message": "structured output validation failed",
-                } if validation_error is not None else {}))
-        except Exception:
-            logger.debug("Langfuse observation 미전송(무시): job_id=%s", job_id)
+            if self.settings.langfuse_public_key and self.settings.langfuse_secret_key:
+                try:
+                    from langfuse import Langfuse
+                    client = Langfuse(public_key=self.settings.langfuse_public_key,
+                        secret_key=self.settings.langfuse_secret_key, host=self.settings.langfuse_host)
+                    if client.get_current_trace_id():
+                        context = client.start_as_current_observation(as_type="generation",
+                            name=self.prompt_version, model=self.settings.llm_model,
+                            version=self.prompt_version, input=None, metadata=metadata)
+                        _active_generation.set(context.__enter__())
+                except Exception:
+                    context = None
+                    logger.debug("Langfuse generation unavailable")
+            try:
+                yield
+            except LLMError as error:
+                self._update_generation(level="ERROR", status_message="LLM call failed",
+                    metadata={**metadata, "error_type": error.error_type, **(
+                        {"validation_feedback": error.feedback[:8]}
+                        if isinstance(error, LLMInvalidStructuredOutput) else {})})
+                raise
+        finally:
+            if context is not None:
+                try:
+                    context.__exit__(None, None, None)
+                except Exception:
+                    logger.debug("Langfuse generation close unavailable")
+            _active_generation.reset(token)
 
 
 def default_prompt_path(settings: Any | None = None) -> Path:

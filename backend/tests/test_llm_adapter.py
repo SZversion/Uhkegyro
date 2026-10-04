@@ -272,7 +272,9 @@ def _langfuse_generation_kwargs(monkeypatch, *, with_keys=True):
 
     class _FakeGeneration:
         def update(self, **kwargs):
-            recorded["generation_update"] = kwargs
+            recorded.setdefault("generation_update", {}).update(kwargs)
+            recorded["generation"].update({k: v for k, v in kwargs.items()
+                                          if k in ("input", "metadata")})
 
     class _FakeLangfuse:
         def __init__(self, **kwargs):
