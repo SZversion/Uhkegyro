@@ -10,7 +10,7 @@
 | MCP·검색 | 카드 조회와 검색 도구, worker tool calling 구현. 후보 코드 ddd7f93에서 실제 검색 연결 확인 | 최종 main·브라우저 연결 재검증 |
 | UI | 입력·polling·답변·용어·Pin 썸네일·대화 이력 구현 | 실제 운영 화면 검증 |
 | Langfuse trace | job/session·attempt·단계·실패, LLM generation·토큰 기록 코드 구현 | 실제 서비스 요청의 입출력·비용·지연 수집 |
-| 공용·로컬 수신 | PR #108: HTTPS health, 합성 JobTracer trace 양쪽 저장·로컬 키 복원·snapshot 복구 검증 | PR은 리뷰 대기. 실제 LLM trace는 별도 확인 |
+| 공용·로컬 수신 | PR #108: HTTPS health, 합성 JobTracer trace 양쪽 저장·로컬 키 복원·snapshot 복구 검증 | PR #108은 병합됨. 실제 LLM 요청 관측은 별도 미검증 |
 
 근거: [MCP 운영 호출](docs/mcp-client-evidence.md), [검색 연결 검증](docs/specs/local-agent-search-verification.md), [Langfuse 운영 기록](https://github.com/aihuman-7th/proj2-4/pull/108). 합성 trace 수신은 실제 모델 관측이나 Dataset 평가 완료를 의미하지 않는다. 일반 로그에는 사용자 원문·키·쿠키를 남기지 않는다.
 
@@ -48,12 +48,12 @@
 
 ### 과거 실행과 현재 배포 파일의 지문 차이
 
-| 파일 | 10/2 실행 metadata의 source_sha256 | 현재 PR Git 파일(LF)의 SHA-256 |
+| 파일 | 10/2 실행 metadata의 source_sha256 | PR #110 코드 기준 466e0a8 Git 파일(LF)의 SHA-256 |
 | --- | --- | --- |
 | prompts/uhkegryo-interpreter-v4.md | 7b3ded9dc1420ea0c34b060692ea63f6d97632ca8103300eaf246eacbf289241 | 975749ff4435d008b5432963b7f718c9df7f5e705cb475573310b282b0cca2fb |
-| backend/services/llm.py | 3bdb2381d27562587a771e83ce621e495685c5ea8a50c36b7ea6023114272a78 | 93b9f7b4101d9a961e0db5f21a70349b5c689edc8a06a920a3e2748bac400fe3 |
+| backend/services/llm.py | 3bdb2381d27562587a771e83ce621e495685c5ea8a50c36b7ea6023114272a78 | 3791f51386587fe04e107c2602b9d024880280491eeb3da41708106aa0b2e57b |
 
-현재 열은 PR #110의 코드 기준 c08e4dc의 Git blob이다. Windows checkout CRLF 해시와 혼동하지 않는다. 과거 실행은 dirty 소스 지문이며 이 표만으로 차이의 원인을 추정하지 않는다. 40/40·비용·지연을 현재 배포 후보의 통과 근거로 사용하지 않는다. 현재 PR에서는 실제 모델 평가를 재실행하지 않았다.
+비교 열은 PR #110 코드 기준 466e0a8에 고정한 Git blob이며, 이후 head의 현재 해시를 의미하지 않는다. Windows checkout CRLF 해시와 혼동하지 않는다. 과거 실행은 dirty 소스 지문이며 이 표만으로 차이의 원인을 추정하지 않는다. 40/40·비용·지연을 현재 배포 후보의 통과 근거로 사용하지 않는다. 현재 PR에서는 실제 모델 평가를 재실행하지 않았다.
 
 ## 5. 비용·지연과 모델 선택
 
