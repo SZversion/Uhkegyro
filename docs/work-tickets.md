@@ -53,7 +53,7 @@
 | OpenRouter·v4 해석 | 구현됨 | 이전 작업 트리 참고 30/30 + 10/10; 현재 PR 지문 불일치, 재평가 필요 |
 | MCP 검색·SearXNG·widget | 구현됨 | 후보 ddd7f93 실제 Pin 16개 연결 검증; 최종 main E2E 필요 |
 | Next.js 결과·대화 UI | 구현됨 | frontend/app/page.jsx·ConversationPanel; 운영 브라우저 검증 필요 |
-| Langfuse 수신·전환 | PR #108 리뷰 대기 | 공용·로컬 합성 trace 검증; 실제 요청 관측 필요 |
+| Langfuse 수신·전환 | PR #108 병합됨 | 공용·로컬 합성 trace 검증; 실제 요청 관측 필요 |
 | 원격 Prompt·Dataset·정성 평가 | 미완료 | 파일 로딩과 자동 기대값 검사를 구분 |
 | 평가 리포트 | 기존 증거 정리됨 | EVAL_REPORT.md; 운영 지표·정성 점수·최종 비교 추가 필요 |
 | 사용자 배포·영상·스크린샷 | 미완료 | 실제 URL·정상/실패 화면·운영 trace 확보 |
