@@ -1,6 +1,6 @@
 # Cloud Build 설정: backend/ 변경 시 Docker 빌드 → Artifact Registry → Cloud Run 배포
 # 트리거: GitHub main 브랜치 push, backend/**·searxng/** 경로 변경 감지
-# 무료 티어: Cloud Run min-instances=0, Neon PostgreSQL (Free Tier), VPC 커넥터 없음
+# 팀 운영: API 내부 worker를 위해 최소 인스턴스 1개·상시 CPU 할당 (유휴 과금)
 # Neon: 0.5GB 스토리지, 5분 유휴 시 자동 일시정지, 브랜칭 기능 포함
 # 배포: API + SearXNG sidecar, 별도 MCP 서비스
 steps:
@@ -114,8 +114,9 @@ steps:
           "--region=${_REGION}" \
           --platform=managed \
           --allow-unauthenticated \
-          --min-instances=0 \
-          --max-instances=3 \
+          --min=1 --max=1 \
+          --min-instances=default --max-instances=default \
+          --no-cpu-throttling \
           --concurrency=80 \
           --timeout=300 \
           --service-account=${_MCP_CALLER_SA}@${PROJECT_ID}.iam.gserviceaccount.com \
@@ -131,7 +132,7 @@ steps:
           --port=8000 \
           --cpu=1 \
           --memory=512Mi \
-          --set-env-vars=ENVIRONMENT=production,INTERPRETER_PROMPT_PATH=/app/prompts/uhkegryo-interpreter-v4.md,INTERPRETER_PROMPT_VERSION=uhkegryo-interpreter-v4,LLM_MODEL=openai/gpt-4.1-mini,LLM_TIMEOUT_SECONDS=180,SEARXNG_BASE_URL=http://localhost:8080 \
+          --update-env-vars=ENVIRONMENT=production,INTERPRETER_PROMPT_PATH=/app/prompts/uhkegryo-interpreter-v4.md,INTERPRETER_PROMPT_VERSION=uhkegryo-interpreter-v4,STRUCTURED_OUTPUT_SKILL_PATH=/app/skills/structured-output/SKILL.md,TERM_CARDS_PATH=/app/term-cards,LLM_MODEL=openai/gpt-4.1-mini,LLM_TIMEOUT_SECONDS=180,SEARXNG_BASE_URL=http://localhost:8080,MCP_ENABLED=true,WORKER_CONCURRENCY=5 \
           --set-secrets=OPENROUTER_API_KEY=OPENROUTER_API_KEY:latest \
           --set-secrets=LANGFUSE_PUBLIC_KEY=LANGFUSE_PUBLIC_KEY:latest \
           --set-secrets=LANGFUSE_SECRET_KEY=LANGFUSE_SECRET_KEY:latest \
