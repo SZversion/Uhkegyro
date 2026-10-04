@@ -42,9 +42,18 @@
 
 이 과정은 탐색적 개선 기록이다. 여러 코드·프롬프트 변경이 포함되어 단일 변수의 인과 비교로 주장하지 않는다. 최종 제출 비교는 같은 모델·데이터셋·rubric에서 한 변수만 바꿔 baseline과 후보를 다시 측정해야 한다. 과거 반복 실행 일부는 원래 작업 폴더에 있으며 저장소에는 최종 실행 자료를 포함한다.
 
-최종 실행: GPT-4.1-mini·v4·카탈로그 `0.8-json-runtime-catalog-reviewed`, 원문 **30/30**, 대조 **10/10** 기대값 일치. [보고서](evals/runs/20261002-154511-openai-gpt-4.1-mini/report.md), [실제 답변](evals/runs/20261002-154511-openai-gpt-4.1-mini/review.md), [metadata](evals/runs/20261002-154511-openai-gpt-4.1-mini/metadata.json).
+이전 작업 트리의 참고 실행: GPT-4.1-mini·v4·카탈로그 `0.8-json-runtime-catalog-reviewed`, 원문 **30/30**, 대조 **10/10** 기대값 일치. [보고서](evals/runs/20261002-154511-openai-gpt-4.1-mini/report.md), [실제 답변](evals/runs/20261002-154511-openai-gpt-4.1-mini/review.md), [metadata](evals/runs/20261002-154511-openai-gpt-4.1-mini/metadata.json).
 
 실제 PostgreSQL·worker·LLM adapter·resolver·assembler를 사용하고 검색은 fixture다. HTTP/cookie·MCP 네트워크·실제 Pinterest·Langfuse·정성 품질은 이 평가에서 제외했다. dirty 작업 트리의 소스 지문으로 기록됐으며 최신 main 통합 후 모델 40건 재실행 결과가 아니다. 따라서 전체 서비스 계약 준수율이나 품질 100점으로 환산하지 않는다.
+
+### 과거 실행과 현재 배포 파일의 지문 차이
+
+| 파일 | 10/2 실행 metadata의 source_sha256 | 현재 PR Git 파일(LF)의 SHA-256 |
+| --- | --- | --- |
+| prompts/uhkegryo-interpreter-v4.md | 7b3ded9dc1420ea0c34b060692ea63f6d97632ca8103300eaf246eacbf289241 | 975749ff4435d008b5432963b7f718c9df7f5e705cb475573310b282b0cca2fb |
+| backend/services/llm.py | 3bdb2381d27562587a771e83ce621e495685c5ea8a50c36b7ea6023114272a78 | 93b9f7b4101d9a961e0db5f21a70349b5c689edc8a06a920a3e2748bac400fe3 |
+
+현재 열은 PR #110의 코드 기준 c08e4dc의 Git blob이다. Windows checkout CRLF 해시와 혼동하지 않는다. 과거 실행은 dirty 소스 지문이며 이 표만으로 차이의 원인을 추정하지 않는다. 40/40·비용·지연을 현재 배포 후보의 통과 근거로 사용하지 않는다. 현재 PR에서는 실제 모델 평가를 재실행하지 않았다.
 
 ## 5. 비용·지연과 모델 선택
 
@@ -56,7 +65,7 @@
 | 문항 지연 p50 / p95 | 4.61초 / 9.89초 |
 | 요청당 운영 비용·완료율 | 미측정 |
 
-GPT-4.1-mini·v4는 고정 기대값과 모호성 대조 평가를 통과한 조합이므로 배포 구성에 선택했다. 위 비용·지연은 검색 fixture 평가값이며 실제 외부 검색과 UI를 포함한 운영 수치가 아니다. 동일 조건의 모델 간 품질·비용 비교는 아직 필요하다.
+GPT-4.1-mini·v4는 이전 작업 트리에서 얻은 참고 결과를 바탕으로 배포 후보 설정으로 선택했다. 현재 PR의 프롬프트·어댑터 지문은 그 실행과 다르며, 현재 커밋의 조합이 40/40을 통과했다는 근거는 없다. 현재 PR의 실제 모델 품질은 동일 평가 재실행 전까지 미검증이다. 위 비용·지연은 검색 fixture 평가값이며 실제 외부 검색과 UI를 포함한 운영 수치가 아니다. 동일 조건의 모델 간 품질·비용 비교는 아직 필요하다.
 
 ## 6. 외부 연결 증거
 

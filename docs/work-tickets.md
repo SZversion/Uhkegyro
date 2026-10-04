@@ -50,7 +50,7 @@
 | FastAPI·cookie·PostgreSQL 세션/Job | 구현됨 | routes·repository·migration, 최종 운영 검증 필요 |
 | worker·retry·lease recovery | 구현됨 | agent_worker·job_retry_recovery |
 | TERM_CARD·resolver·응답 계약 | 구현됨 | 활성 카드 검증·Pydantic·결정론 조립 |
-| OpenRouter·v4 해석 | 구현됨 | 실제 모델 고정 30/30 + 대조 10/10; 검색 fixture |
+| OpenRouter·v4 해석 | 구현됨 | 이전 작업 트리 참고 30/30 + 10/10; 현재 PR 지문 불일치, 재평가 필요 |
 | MCP 검색·SearXNG·widget | 구현됨 | 후보 ddd7f93 실제 Pin 16개 연결 검증; 최종 main E2E 필요 |
 | Next.js 결과·대화 UI | 구현됨 | frontend/app/page.jsx·ConversationPanel; 운영 브라우저 검증 필요 |
 | Langfuse 수신·전환 | PR #108 리뷰 대기 | 공용·로컬 합성 trace 검증; 실제 요청 관측 필요 |

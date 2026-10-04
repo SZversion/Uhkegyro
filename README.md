@@ -209,7 +209,7 @@ frontend 개발 서버도 해당 PowerShell 창에서 `Ctrl+C`로 중지합니�
 
 배포 구성·환경 변수 예시는 `LLM_MODEL=openai/gpt-4.1-mini`, `INTERPRETER_PROMPT_VERSION=uhkegryo-interpreter-v4`, v4 파일 경로를 함께 사용합니다. Cloud Run 이미지 경로는 `/app/prompts/uhkegryo-interpreter-v4.md`, 직접 Python은 `./prompts/uhkegryo-interpreter-v4.md`입니다. 기존 `.env`의 명시적 override도 세 값을 함께 맞춥니다. 구성 변경은 실제 클라우드 배포 완료를 뜻하지 않습니다.
 
-실제 모델 평가 40/40은 검색 fixture·dirty 소스 지문 기준 결과이며 최신 통합 서비스 전체 통과율이 아닙니다. [평가 리포트](EVAL_REPORT.md)와 [실제 서비스 검증 절차](docs/service-validation-guide.md)에서 근거·미검증 범위를 확인합니다. `scripts/run_live_eval.py`는 검색 fixture와 Langfuse 비활성화를 사용하므로 외부 E2E에는 실제 API/브라우저 경로를 사용합니다.
+과거 실제 모델 평가 40/40은 이전 작업 트리의 참고 결과입니다. 당시 프롬프트·어댑터 지문이 현재 PR과 달라 현재 배포 후보의 품질 통과 근거로 사용할 수 없습니다. 현재 PR의 동일 평가 재실행과 운영·정성 검증은 남아 있습니다. [평가 리포트](EVAL_REPORT.md)와 [실제 서비스 검증 절차](docs/service-validation-guide.md)에서 근거·미검증 범위를 확인합니다. `scripts/run_live_eval.py`는 검색 fixture와 Langfuse 비활성화를 사용하므로 외부 E2E에는 실제 API/브라우저 경로를 사용합니다.
 
 ## 환경 변수와 보안
 
@@ -225,9 +225,9 @@ frontend 개발 서버도 해당 PowerShell 창에서 `Ctrl+C`로 중지합니�
 
 | 지표 | 현재 값 | 최종 기록 위치 |
 | --- | --- | --- |
-| 평가셋 품질 점수 | 정성 미측정; 실제 모델 기대값 30/30 + 대조 10/10 (검색 fixture) | [EVAL_REPORT.md](./EVAL_REPORT.md) |
+| 평가셋 품질 점수 | 현재 PR 미검증; 과거 참고 기대값 30/30 + 대조 10/10 (검색 fixture) | [EVAL_REPORT.md](./EVAL_REPORT.md) |
 | 계약 준수율 | 미측정 | `EVAL_REPORT.md` |
-| p50 / p95 지연 | fixture 평가 4.61초 / 9.89초; 운영 미측정 | `EVAL_REPORT.md` |
+| p50 / p95 지연 | 과거 참고 fixture 평가 4.61초 / 9.89초; 현재 PR·운영 미측정 | `EVAL_REPORT.md` |
 | 요청당 평균 비용 | 미측정 | `EVAL_REPORT.md` |
 | LLM·MCP 오류율 | 미측정 | `EVAL_REPORT.md` |
 

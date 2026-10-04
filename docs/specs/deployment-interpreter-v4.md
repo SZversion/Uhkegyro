@@ -1,12 +1,14 @@
 # 배포 해석 모델·프롬프트 v4 정렬
 
 ## Why
-팀이 평가한 GPT-4.1-mini·v4와 배포의 GPT-4o-mini·v0가 달라 평가 근거를 운영 설정과 연결할 수 없다. 측정 지표는 배포·로컬 실행 설정의 모델/경로/버전 세 값 일치다.
+이전 작업 트리에서 평가한 GPT-4.1-mini·v4를 배포 후보 설정으로 선택한다. 같은 v4 이름이어도 현재 파일의 지문이 달라 과거 40/40을 현재 PR의 품질 통과 근거로 사용할 수 없다. 측정 지표는 배포·로컬 실행 설정의 모델/경로/버전 세 값 일치다.
 
 ## Goal
 Cloud Build API와 Compose API, 환경 변수 예시를 openai/gpt-4.1-mini·v4로 정렬한다. 제외: 실제 클라우드 배포, 기본 Settings의 구버전 호환 변경, 원격 Prompt 운영 구현, 외부 평가 실행.
 
 ## What
+과거 40/40·비용·지연은 이전 작업 트리의 참고 결과로 제한한다. 현재 PR의 실제 모델 품질·운영 배포·외부 연결은 재검증 전 미검증이다.
+
 새 Compose API는 v4 파일과 v4 버전을 함께 기본 적용한다. 명시적 환경 변수 override는 유지한다. Cloud Build API는 같은 모델과 이미지 내부 v4 경로·버전을 명시한다. MCP에는 해석 설정을 새로 추가하지 않는다.
 
 ## How
@@ -19,6 +21,7 @@ Cloud Build API와 Compose API, 환경 변수 예시를 openai/gpt-4.1-mini·v4�
 - 경로와 버전을 함께 설정해야 v4 검증 피드백 분기가 적용된다. 배포 가이드·README는 이 계약을 따른다.
 
 ## AC
+- Given 과거 실행과 현재 파일 지문 불일치, When 모델 선택 근거를 기록, Then 과거 결과는 참고로만 사용하고 현재 PR의 품질 통과로 주장하지 않는다.
 - Given 새 배포 구성, When Cloud Build API 환경 변수 확인, Then 모델·v4 경로·v4 버전이 모두 명시된다.
 - Given override 없음, When Compose API 설정 확인, Then 같은 세 값이 기본 적용된다.
 - Given 환경 변수 예시, When Settings와 adapter를 로드, Then 모델은 GPT-4.1-mini, 버전은 v4이고 실제 v4 파일이 파싱된다.
