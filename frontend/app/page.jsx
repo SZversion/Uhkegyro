@@ -11,6 +11,7 @@ import { searchFixedTerm, searchTermMode } from "../lib/term-search.mjs";
 import { createGalleryRows, resultTerms, roleNotice, showThumbnail } from "../lib/result-view.mjs";
 import { demoReplyJob, readDemoTurns, saveDemoTurns, stopTurnPolling, upsertTurn, isTurnPending } from "../lib/conversation.mjs";
 import ConversationPanel from "../components/ConversationPanel";
+import TermGuide from "../components/TermGuide.mjs";
 import { ImageSearchLoading, LoadingImage, LoadingIndicator } from "../components/LoadingIndicator.mjs";
 
 const homeSlots = createMindMapSlots(HOME_TERMS);
@@ -35,10 +36,11 @@ export default function HomePage() {
   const [restoreAttempt, setRestoreAttempt] = useState(0);
   const [storageFailed, setStorageFailed] = useState(false);
   const chatScrollRef = useRef(null);
-  const [copiedTermId, setCopiedTermId] = useState(null);
   const [activeGalleryRole, setActiveGalleryRole] = useState(null);
   const [failedThumbnails, setFailedThumbnails] = useState({});
   const [menuOpen, setMenuOpen] = useState(false);
+  const [mobilePanel, setMobilePanel] = useState("reference");
+  const [termGuide, setTermGuide] = useState(null);
   const [termSearch, setTermSearch] = useState(null);
   const termSearchControllerRef = useRef(null);
   const [sketchSearches, setSketchSearches] = useState({});
@@ -53,7 +55,6 @@ export default function HomePage() {
     : []);
   const pendingRequestRef = useRef("");
   const menuButtonRef = useRef(null);
-  const copyTimerRef = useRef(null);
   const inputRef = useRef(null);
   const galleryRef = useRef(null);
   const submissionRef = useRef(null);
@@ -122,7 +123,7 @@ export default function HomePage() {
 
   useEffect(() => {
     if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
-  }, [turns]);
+  }, [turns, termGuide, mobilePanel]);
 
   useEffect(() => {
     if (uiDemoEnabled || !conversationReady || !pendingTurnIds) return;
@@ -142,7 +143,6 @@ export default function HomePage() {
     };
   }, [pendingTurnIds, conversationReady]);
 
-  useEffect(() => () => clearTimeout(copyTimerRef.current), []);
   useEffect(() => () => historyLoaderRef.current.cancel(), []);
   useEffect(() => () => termSearchControllerRef.current?.abort(), []);
   useEffect(() => {
@@ -218,17 +218,26 @@ export default function HomePage() {
   }
 
   function fillInput(text) {
+    setMobilePanel("conversation");
     setRequestText(text);
     setError("");
     inputRef.current?.focus();
   }
 
+  useEffect(() => {
+    if (mobilePanel === "conversation" && requestText) inputRef.current?.focus();
+  }, [mobilePanel]);
+
   function toggleMenu(event) {
     menuButtonRef.current = event.currentTarget;
     setMenuOpen((open) => !open);
+    if (!window.matchMedia("(max-width: 760px)").matches) {
+      document.querySelector(".history-sidebar-entry")?.focus();
+    }
   }
 
   async function openTermSearch(term) {
+    setTermGuide(term);
     historyLoaderRef.current.cancel();
     resetSketchSearches();
     termSearchControllerRef.current?.abort();
@@ -239,6 +248,7 @@ export default function HomePage() {
     setFailedThumbnails({});
     setTermSearch({ term: { ...term, pins: [], reason_codes: [] }, loading: true });
     setBoardView("term-results");
+    setMobilePanel("conversation");
     try {
       const result = uiDemoEnabled
         ? DEMO_JOB.result.reference_plan.terms.find((entry) => entry.term_id === term.term_id) || term
@@ -290,6 +300,8 @@ export default function HomePage() {
     }
     termSearchControllerRef.current?.abort();
     resetSketchSearches();
+    setMobilePanel("reference");
+    setTermGuide(null);
 
     if (uiDemoEnabled) {
       const demoJob = demoReplyJob(text, turns, DEMO_JOB);
@@ -324,24 +336,15 @@ export default function HomePage() {
         setSubmission({ ...result, requestText: text });
         setRequestText("");
       }
-      else setError(result.error);
+      else {
+        setError(result.error);
+        setMobilePanel("conversation");
+      }
     } catch {
       setError("대화 요청을 접수하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      setMobilePanel("conversation");
     } finally {
       setIsSubmitting(false);
-    }
-  }
-
-  async function copyRecommendedSearchQuery() {
-    if (!recommendedSearchQuery || !queryTerm) return;
-    try {
-      await navigator.clipboard.writeText(recommendedSearchQuery);
-      clearTimeout(copyTimerRef.current);
-      setCopiedTermId(queryTerm.term_id);
-      copyTimerRef.current = setTimeout(() => setCopiedTermId(null), 3000);
-    } catch {
-      clearTimeout(copyTimerRef.current);
-      setCopiedTermId(null);
     }
   }
 
@@ -368,16 +371,20 @@ export default function HomePage() {
   }
 
   function navigateBoard(view) {
+    setTermGuide(null);
     historyLoaderRef.current.cancel();
     resetSketchSearches();
     termSearchControllerRef.current?.abort();
     setBoardView(view);
+    setMobilePanel("reference");
     setMenuOpen(false);
     menuButtonRef.current?.focus();
   }
 
   function openHistory(entry) {
     if (conversationBusy) return;
+    setTermGuide(null);
+    setMenuOpen(false);
     resetSketchSearches();
     termSearchControllerRef.current?.abort();
     pollerRef.current?.stop();
@@ -387,27 +394,57 @@ export default function HomePage() {
     historyLoaderRef.current.open(entry);
     setActiveGalleryRole(null);
     setBoardView("results");
+    setMobilePanel("reference");
   }
 
   return (
-    <main className="workspace">
-      <section className="reference-board" aria-labelledby="reference-title">
-        <header className="board-header">
-          <div className="brand-navigation-anchor">
-            <button className="brand-identity brand-menu-button" type="button" ref={menuButtonRef}
-              aria-label="탐색 메뉴" aria-expanded={menuOpen} aria-controls="board-navigation"
-              onClick={toggleMenu}>
-              <span className="brand-mark" aria-hidden="true">UH</span>
-              <span className="brand-name">UH케그려</span>
+    <main className="workspace" data-mobile-panel={mobilePanel}>
+      <nav className="mobile-workspace-nav" aria-label="작업 화면">
+        <button type="button" aria-label="UH케그려 홈" onClick={() => navigateBoard("home")}>UH</button>
+        <button type="button" aria-pressed={mobilePanel === "reference"} aria-controls="reference-panel"
+          onClick={() => setMobilePanel("reference")}>레퍼런스</button>
+        <button type="button" aria-pressed={mobilePanel === "conversation"} aria-controls="conversation-panel"
+          onClick={() => setMobilePanel("conversation")}>대화</button>
+        <button type="button" aria-expanded={menuOpen} aria-controls="history-sidebar" onClick={toggleMenu}>기록</button>
+      </nav>
+      <aside id="history-sidebar" className="history-sidebar" data-open={menuOpen} aria-label="검색 기록 사이드바">
+        <button className="brand-identity brand-home-button" type="button" aria-label="UH케그려 홈"
+          onClick={() => navigateBoard("home")}>
+          <span className="brand-mark" aria-hidden="true">UH</span>
+          <span className="brand-name">UH케그려</span>
+        </button>
+        <nav className="history-sidebar-list" aria-label="검색 기록 목록">
+          {searchHistory.length ? searchHistory.map((entry, index) => (
+            <button className="history-sidebar-entry" type="button" key={entry.id}
+              disabled={conversationBusy} title={entry.request}
+              aria-current={boardView === "results" && (historyLoad.loading
+                ? historyEntryRef.current?.id : job?.job_id) === entry.id ? "page" : undefined}
+              onClick={() => openHistory(entry)}>
+              <span className="history-sidebar-title">{entry.request.split(/[.!?。！？\n]/, 1)[0] || entry.request}</span>
+              <span className="history-sidebar-status">요청 {searchHistory.length - index}</span>
+              {(entry.demo || entry.job.job_status === "failed") && (
+                <span className="history-sidebar-status">{entry.demo ? "미리보기" : "실패"}</span>
+              )}
             </button>
-              <nav id="board-navigation" className="board-navigation" aria-label="보드 탐색"
-                data-open={menuOpen} aria-hidden={!menuOpen} inert={!menuOpen}>
-                <button type="button" onClick={() => navigateBoard("home")}>홈</button>
-                <button type="button" onClick={() => navigateBoard("history")}>기록</button>
-              </nav>
-          </div>
-          {boardView !== "history" && recommendedSearchQuery && (
+          )) : <p className="history-sidebar-empty">아직 검색 기록이 없습니다.</p>}
+        </nav>
+      </aside>
+      {menuOpen && <button className="history-sidebar-dismiss" type="button" aria-label="기록 닫기"
+        onClick={() => { setMenuOpen(false); menuButtonRef.current?.focus(); }} />}
+      <section id="reference-panel" className="reference-board" aria-label="레퍼런스">
+        <header className="board-header">
+          <button className="brand-identity brand-mobile-home" type="button" aria-label="UH케그려 홈"
+            onClick={() => navigateBoard("home")}>
+            <span className="brand-mark" aria-hidden="true">UH</span><span className="brand-name">UH케그려</span>
+          </button>
+          <button className="history-sidebar-toggle" type="button" aria-expanded={menuOpen}
+            aria-controls="history-sidebar" onClick={toggleMenu}>기록</button>
+          {recommendedSearchQuery && (
             <div className="recommended-query" aria-label="즉시 검색">
+              <div className="query-value">
+                <code tabIndex={0} aria-label="추천 검색어" aria-describedby="full-query-tooltip">{recommendedSearchQuery}</code>
+                <span id="full-query-tooltip" className="full-query-tooltip" role="tooltip">{recommendedSearchQuery}</span>
+              </div>
               <a href={`https://kr.pinterest.com/search/pins/?${new URLSearchParams({ q: recommendedSearchQuery })}`}
                 aria-label="Pinterest에서 검색" aria-describedby="instant-search-tooltip"
                 target="_blank" rel="noopener noreferrer">
@@ -416,35 +453,10 @@ export default function HomePage() {
                   Pinterest 검색 결과는 계정, 이용 기록 등에 따라 달라질 수 있습니다.
                 </span>
               </a>
-              <div className="query-value">
-                <code tabIndex={0} aria-label="추천 검색어" aria-describedby="full-query-tooltip">{recommendedSearchQuery}</code>
-                <span id="full-query-tooltip" className="full-query-tooltip" role="tooltip">{recommendedSearchQuery}</span>
-              </div>
-              <button type="button" onClick={copyRecommendedSearchQuery}>
-                {copiedTermId === queryTerm?.term_id ? "복사 됨" : "복사"}
-              </button>
             </div>
           )}
-          <span className="board-header-balance" aria-hidden="true" />
         </header>
-        {menuOpen && (
-          <>
-            <button className="board-menu-dismiss" type="button" aria-label="메뉴 닫기" onClick={() => setMenuOpen(false)} />
-          </>
-        )}
-        {boardView === "history" ? (
-          <section className="search-history" aria-label="검색 기록">
-            <h1>검색 기록</h1>
-            <p>현재 탭에서 진행한 검색을 다시 확인하세요.</p>
-            {searchHistory.length ? searchHistory.map((entry) => (
-              <button className="search-history-entry" type="button" key={entry.id} disabled={conversationBusy} onClick={() => openHistory(entry)}>
-                <span>{entry.demo ? "미리보기" : entry.job.job_status === "failed" ? "실패" : "완료"}</span>
-                <strong>{entry.request}</strong>
-                <span>결과 열기 →</span>
-              </button>
-            )) : <p>아직 검색 기록이 없습니다.</p>}
-          </section>
-        ) : boardView === "results" && historyLoad.loading ? (
+        {boardView === "results" && historyLoad.loading ? (
           <div className="board-search-loading"><LoadingIndicator label="검색 기록을 불러오는 중…" /></div>
         ) : boardView === "results" && historyLoad.error ? (
           <div className="board-search-loading" role="alert"><p>{historyLoad.error}</p>
@@ -529,14 +541,14 @@ export default function HomePage() {
               <svg className="mind-map-connectors" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                 <line x1="50" y1="61.2" x2="50" y2="29" />
                 <line x1="50" y1="61.2" x2="69.1" y2="37.8" />
-                <line x1="50" y1="61.2" x2="81.3" y2="61.2" />
-                <line x1="50" y1="61.2" x2="18.7" y2="61.2" />
+                <line x1="50" y1="61.2" x2="88.5" y2="61.2" />
+                <line x1="50" y1="61.2" x2="11.5" y2="61.2" />
                 <line x1="50" y1="61.2" x2="30.9" y2="37.8" />
               </svg>
-              <button className="mind-map-hub" type="button" aria-label="중앙 브랜드 탐색 메뉴"
-                aria-expanded={menuOpen} aria-controls="board-navigation" aria-describedby="hub-menu-tip" onClick={toggleMenu}>
+              <button className="mind-map-hub" type="button" aria-label="중앙 브랜드 홈"
+                aria-describedby="hub-menu-tip" onClick={() => navigateBoard("home")}>
                 <span aria-hidden="true">UH</span>
-                <span id="hub-menu-tip" className="hub-menu-tip" role="tooltip">홈·기록 메뉴</span>
+                <span id="hub-menu-tip" className="hub-menu-tip" role="tooltip">홈으로 이동</span>
               </button>
               {homeSlots.map((slot, index) => (
                 <section className={`mind-map-group mind-map-group-${index}`} key={slot.role} aria-label={`${slot.roleLabel} TERM_CARD`}>
@@ -570,7 +582,7 @@ export default function HomePage() {
         )}
       </section>
 
-      <aside className="prompt-panel" aria-labelledby="prompt-title">
+      <aside id="conversation-panel" className="prompt-panel" aria-labelledby="prompt-title">
         <div className="panel-top" ref={chatScrollRef}>
           {uiDemoEnabled && <span className="demo-badge">대화 UI 더미 · LLM 미연결</span>}
           <h2 id="prompt-title">UH케 그릴 건가요?</h2>
@@ -580,7 +592,8 @@ export default function HomePage() {
           {restoreError && <div role="alert"><p>{restoreError}</p>
             <button type="button" onClick={() => setRestoreAttempt((value) => value + 1)}>대화 다시 불러오기</button></div>}
           {storageFailed && <p className="form-error" role="status">브라우저 저장을 사용할 수 없어 새로고침 후 더미 대화가 유지되지 않습니다.</p>}
-          <ConversationPanel turns={turns} onChoice={fillInput} />
+          <ConversationPanel turns={turns} onChoice={fillInput} onRetry={fillInput} retryDisabled={conversationBusy} />
+          <TermGuide term={termGuide} />
           {((!conversationReady && !restoreError) || isSubmitting) && <div className="receipt"><LoadingIndicator
             label={!conversationReady ? "대화를 불러오는 중…" : "요청을 보내는 중…"} /></div>}
           {pollError && <p className="form-error" role="alert">{pollError}</p>}

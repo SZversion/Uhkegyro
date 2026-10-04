@@ -28,6 +28,7 @@ export const HOME_TERMS = HOME_TERM_IDS.map((termId) => {
     role: card.role, term_id: card.term_id, label_ko: card.label_ko,
     plain_meaning_ko: feedback.plain_meaning_ko, selection_reason: null,
     reference_checkpoints: feedback.reference_checkpoints_ko,
+    cautions: feedback.common_confusion_ko || [],
     recommended_search_query: [...card.query_fragments, "drawing"].join(" "),
     pins: [],
   };
