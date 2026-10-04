@@ -172,7 +172,7 @@ asyncio.run(main())
 | `http://localhost:8000/docs` | FastAPI 자동 문서 |
 | `http://localhost:3000` | 로컬 Langfuse UI. 가입 후 organization/project를 만들고 API key를 `.env`의 `LANGFUSE_PUBLIC_KEY`, `LANGFUSE_SECRET_KEY`에 입력 |
 
-Compose API 컨테이너는 Langfuse에 `http://langfuse-web:3000`으로 연결하며, 이 구성은 로컬 Langfuse 인프라 준비를 제공합니다. worker의 job trace lifecycle 코드는 구현됐지만, 실제 LLM 관측 데이터·원격 Prompt 등록·Dataset 연결·대시보드 측정은 별도 검증 대상입니다.
+Compose API 컨테이너는 기본적으로 Langfuse에 `http://langfuse-web:3000`으로 연결합니다. 공용 서버 사용 시 `LANGFUSE_APP_URL`과 해당 프로젝트 키를 설정합니다. GCP 배포·전환 명령·발표 후 정리는 [Langfuse 운영 가이드](./docs/langfuse-operations.md)를 따릅니다. worker의 job trace lifecycle 코드는 구현됐지만, 실제 LLM 관측 데이터·원격 Prompt 등록·Dataset 연결·대시보드 측정은 별도 검증 대상입니다.
 
 기동 후 PowerShell에서 설정과 health를 확인합니다. worker는 호스트 포트를 공개하지 않으므로 컨테이너 내부에서 검사합니다.
 
