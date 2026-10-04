@@ -54,4 +54,8 @@ LLM 출력 오류, Pin 검색 장애, generation 시간 계측 및 Sessions 연�
 - 토큰 상한만 올렸을 때도 확인 질문이 잘려 실패했다. nullable 슬롯과 기존 빈 배열 예시의 충돌을 명시적으로 보완한 후 로컬 실제 모델 3회 연속 및 마지막 Cloud Run 요청이 첫 시도에 통과했다.
 - 이 검증은 위 고정 입력과 실제 운영 연결에 대한 확인이며, 전체 평가셋의 새 품질 점수를 주장하지 않는다.
 
-CI 보완(2026-10-04): term-search의 전체 엔진 장애 fixture를 Google/DuckDuckGo/Pinterest 모두 unresponsive로 수정했다. 단일 Google 장애 뒤 정상 빈 fallback은 PIN_RESULTS_EMPTY 계약이다. backend 전체 497 passed / 28 skipped. 실행 코드 변경 없이 테스트만 보완했다.
+CI 보완(2026-10-04): term-search의 전체 엔진 장애 fixture를 Google/DuckDuckGo/Pinterest 모두 unresponsive로 수정했다. 단일 Google 장애 뒤 정상 빈 fallback은 PIN_RESULTS_EMPTY 계약이다. Windows 로컬 backend 전체 497 passed / 28 skipped. 같은 head a0596d7의 GitHub Actions run 37193819018 (Linux/Python 3.12)은 496 passed / 29 skipped이며 두 결과의 출처를 구분한다. 실행 코드 변경 없이 테스트만 보완했다.
+
+## 2026-10-05 재리뷰 보완
+최신 #111 설정을 통합했다. API 토큰 상한의 단일 기준은 cloudbuild.yaml deploy-api의 LLM_MAX_TOKENS=2048이며 새 환경에서도 같은 값을 적용한다. 배포 후 서비스 JSON에서 API 컨테이너의 해당 env 값 2048을 확인하는 절차는 vercel-deployment Spec에 명시한다. 비용 운영 승인이 없으면 신규 배포를 차단한다. 이번 재리뷰에서 실제 서비스를 재배포하지 않았으며, 위 10/4 revision/실모델 검증은 당시 고정 기록이다.
+최신 통합 후 Windows 로컬 전체 backend: 509 passed / 28 skipped (외부 LLM/trace 비활성화). Actions 결과는 별도 기록한다.
