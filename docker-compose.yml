@@ -1,7 +1,3 @@
-x-interpreter-pair-check:
-  path: ${INTERPRETER_PROMPT_PATH:+${INTERPRETER_PROMPT_VERSION:?Set both INTERPRETER_PROMPT_PATH and INTERPRETER_PROMPT_VERSION in .env}}
-  version: ${INTERPRETER_PROMPT_VERSION:+${INTERPRETER_PROMPT_PATH:?Set both INTERPRETER_PROMPT_PATH and INTERPRETER_PROMPT_VERSION in .env}}
-
 x-langfuse-env: &langfuse-env
   DATABASE_URL: postgresql://postgres:${LANGFUSE_POSTGRES_PASSWORD:?Set LANGFUSE_POSTGRES_PASSWORD in .env}@postgres:5432/postgres
   NEXTAUTH_URL: http://localhost:3000
@@ -128,11 +124,24 @@ services:
 
   api:
     build: .
+    command:
+      - python
+      - -c
+      - |
+        import os
+        import sys
+        path = os.environ.get("COMPOSE_PROMPT_PATH", "")
+        version = os.environ.get("COMPOSE_PROMPT_VERSION", "")
+        if bool(path) != bool(version):
+            sys.exit("Set both INTERPRETER_PROMPT_PATH and INTERPRETER_PROMPT_VERSION in .env")
+        os.execvp("uvicorn", ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"])
     ports:
       - "8000:8000"
     env_file:
       - .env
     environment:
+      COMPOSE_PROMPT_PATH: ${INTERPRETER_PROMPT_PATH:-}
+      COMPOSE_PROMPT_VERSION: ${INTERPRETER_PROMPT_VERSION:-}
       LLM_MODEL: ${LLM_MODEL:-openai/gpt-4.1-mini}
       INTERPRETER_PROMPT_PATH: ${INTERPRETER_PROMPT_PATH:-/app/prompts/uhkegryo-interpreter-v4.md}
       INTERPRETER_PROMPT_VERSION: ${INTERPRETER_PROMPT_VERSION:-uhkegryo-interpreter-v4}
