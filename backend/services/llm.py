@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -153,6 +154,12 @@ class LLMInterpretationAdapter:
         if system_message is None or user_template is None:
             path = prompt_path if prompt_path is not None else self._resolve_prompt_path()
             system_message, user_template = load_interpreter_prompt(_require_prompt_file(path))
+            declaration = re.search(r"\| Prompt 이름 \| `([^`]+)` \|", path.read_text(encoding="utf-8"))
+            if declaration and declaration[1] != self.prompt_version:
+                raise PromptConfigurationError(
+                    "프롬프트의 Prompt 이름과 INTERPRETER_PROMPT_VERSION이 다르다. "
+                    "INTERPRETER_PROMPT_PATH와 INTERPRETER_PROMPT_VERSION을 함께 설정해야 한다."
+                )
         self._structured_output = self.prompt_version == "uhkegryo-interpreter-v1"
         self._system_message = system_message
         if self._structured_output:

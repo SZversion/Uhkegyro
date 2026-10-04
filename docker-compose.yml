@@ -1,3 +1,7 @@
+x-interpreter-pair-check:
+  path: ${INTERPRETER_PROMPT_PATH:+${INTERPRETER_PROMPT_VERSION:?Set both INTERPRETER_PROMPT_PATH and INTERPRETER_PROMPT_VERSION in .env}}
+  version: ${INTERPRETER_PROMPT_VERSION:+${INTERPRETER_PROMPT_PATH:?Set both INTERPRETER_PROMPT_PATH and INTERPRETER_PROMPT_VERSION in .env}}
+
 x-langfuse-env: &langfuse-env
   DATABASE_URL: postgresql://postgres:${LANGFUSE_POSTGRES_PASSWORD:?Set LANGFUSE_POSTGRES_PASSWORD in .env}@postgres:5432/postgres
   NEXTAUTH_URL: http://localhost:3000

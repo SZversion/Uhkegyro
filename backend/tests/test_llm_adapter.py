@@ -750,3 +750,37 @@ def test_cloudbuild_hosts_mcp_next_to_searxng_and_grants_api_invoker():
     assert 'ingress_container="$(cat /workspace/api-ingress-container)"' in allow_host
     assert '--container="${ingress_container}"' in allow_host
     assert "MCP_BASE_URL=${mcp_url}/mcp" in allow_host
+
+
+@pytest.mark.parametrize("file_version,configured", [("v0", "v4"), ("v4", "v0"), ("v0", "v0"), ("v4", "v4")])
+def test_prompt_declaration_matches_version_even_when_renamed(tmp_path, file_version, configured):
+    prompt = tmp_path / "custom-name.md"
+    prompt.write_text((REPO_ROOT / f"prompts/uhkegryo-interpreter-{file_version}.md").read_text(encoding="utf-8"), encoding="utf-8")
+    settings = _real_settings().model_copy(update={"interpreter_prompt_version": f"uhkegryo-interpreter-{configured}"})
+    if file_version != configured:
+        with pytest.raises(llm.PromptConfigurationError, match="INTERPRETER_PROMPT_VERSION"):
+            llm.LLMInterpretationAdapter(settings=settings, prompt_path=prompt, client=object())
+    else:
+        assert llm.LLMInterpretationAdapter(settings=settings, prompt_path=prompt, client=object()).prompt_version.endswith(configured)
+
+
+@pytest.mark.parametrize("path,version,ok", [("", "", True), ("v0", "", False), ("", "v4", False), ("v0", "v0", True), ("v4", "v4", True)])
+def test_compose_prompt_pair_upgrade(tmp_path, path, version, ok):
+    import re, shutil, subprocess
+    cli = shutil.which("docker") or str(Path(os.environ.get("LOCALAPPDATA", "")) / "Programs/DockerDesktop/resources/bin/docker.exe")
+    if not Path(cli).is_file():
+        pytest.skip("Docker CLI required for Compose interpolation")
+    compose = (REPO_ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    (tmp_path / "docker-compose.yml").write_text(compose, encoding="utf-8")
+    (tmp_path / ".env").write_text(f"INTERPRETER_PROMPT_PATH={f'./prompts/uhkegryo-interpreter-{path}.md' if path else ''}\nINTERPRETER_PROMPT_VERSION={f'uhkegryo-interpreter-{version}' if version else ''}\n", encoding="utf-8")
+    env = {k: v for k, v in os.environ.items() if k not in ("INTERPRETER_PROMPT_PATH", "INTERPRETER_PROMPT_VERSION")}
+    env.update({key: "test-value" for key in re.findall(r"\$\{([A-Z_]+):\?", compose)})
+    for key in ("INTERPRETER_PROMPT_PATH", "INTERPRETER_PROMPT_VERSION"): env.pop(key, None)
+    result = subprocess.run([cli, "compose", "config", "--format", "json"], cwd=tmp_path, env=env, capture_output=True, text=True, timeout=30)
+    assert (result.returncode == 0) == ok, result.stderr
+    if ok:
+        config = json.loads(result.stdout)["services"]["api"]["environment"]
+        assert config["INTERPRETER_PROMPT_VERSION"] == f"uhkegryo-interpreter-{version or 'v4'}"
+        assert config["INTERPRETER_PROMPT_PATH"].endswith(f"{path or 'v4'}.md")
+    else:
+        assert "Set both INTERPRETER_PROMPT_PATH" in result.stderr
