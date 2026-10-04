@@ -139,6 +139,8 @@
 
 ## AC (Given-When-Then)
 
+- **AC-15 · 과금 배포 차단** — Given 운영 승인이 false 또는 시작일·종료일·예산·비용 부담자·결제 계정·종료 담당자·종료 절차 중 하나가 빈 값, When Cloud Build 시작, Then 이미지 빌드와 배포 전에 실패한다. 모든 값과 명시적 승인이 있을 때만 상시 worker 배포를 허용한다.
+
 - **AC-01 · 빌드** — Given Node.js 22.x와 lockfile, When frontend install/test/build 및 관련 backend 회귀 테스트를 실행, Then 모두 통과하고 배포 대상 commit을 기록한다.
 - **AC-02 · 배포 설정** — Given Cloud Run API revision, When service/revision 설정을 조회, Then instance-based billing, service min/max=1, 단일 uvicorn process, WORKER_CONCURRENCY=5 및 충돌 없는 scaling 설정을 확인한다.
 - **AC-03 · 실제 결과** — Given 정상 외부 의존성과 별도 세션 3개, When Preview에서 유효 입력을 제출, Then 각 요청은 202와 job_id를 반환하고 300초 이내 completed 결과와 용어·Pin 결과 또는 기존 부분 결과 안내를 표시한다.
@@ -153,3 +155,7 @@
 - **AC-12 · 운영 기간** — Given 팀 배포 준비, When 배포 기록을 검토, Then 시작일·종료일·비용 부담자·결제 계정·예산·종료 담당자가 모두 명시된다.
 - **AC-13 · 종료 인계** — Given 개인 배포가 준비된 팀 종료 시점, When 개인별 주요 사용자 흐름과 네트워크를 검사, Then 팀 backend·DB·MCP·LLM·관측 서비스 호출이 0건이고 실제 사용자 데이터와 공용 secret이 개인 배포에 포함되지 않는다.
 - **AC-14 · 비용 종료** — Given 소유자가 승인한 전용 리소스 종료 목록, When 정리와 trigger 중지를 수행, Then 종료 증거와 잔존 리소스·비용 담당자를 기록하고 Billing 반영 후 종료 이후 사용량을 확인한다. 미확인 비용은 0원으로 보고하지 않는다.
+
+운영 승인 gate: cloudbuild.yaml 첫 단계는 scripts/check-team-operation.py를 실행한다. _TEAM_OPERATION_APPROVED 기본 false, _TEAM_OPERATION_START/_END/_BUDGET/_BILLING_OWNER/_BILLING_ACCOUNT/_SHUTDOWN_OWNER/_SHUTDOWN_PROCEDURE 기본 빈 값이다. Cloud Build trigger substitutions에 비밀값 없이 승인 기록을 지정한다. false/공백은 배포 차단, true와 모든 기록은 허용한다. 이 gate는 기존 리소스를 종료하거나 예산을 자동 차단하지 않는다. 종료 담당자는 지정한 종료일에 Cloud Run/API/MCP 및 별도 Langfuse 리소스 종료·Billing 확인 절차를 수행한다.
+
+배포 재현성: API deploy-api의 단일 기준 환경변수는 LLM_MAX_TOKENS=2048을 명시한다. Given 새 API 배포, When revision 환경변수 확인, Then LLM_MAX_TOKENS는 2048이어야 한다. 배포 후 확인 명령: gcloud run services describe api-preview --project=proj2-509406 --region=asia-northeast3 --format=json. spec.template.spec.containers에서 API 컨테이너의 env를 확인하고 해당 항목이 없거나 값이 다르면 배포 검증 실패로 기록한다. 운영 승인이 없어 이번 보완에서 재배포하지 않는다.

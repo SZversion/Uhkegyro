@@ -110,3 +110,6 @@ Preview URL, remote revision/image digest, 실제 E2E 결과는 아직 없다. �
 - 사용자 요청: 2026-10-12 발표·시연, 10월 13일까지 Preview DB 유지.
 - Neon branch br-blue-lab-b4tpwu5w 만료를 2026-10-14 00:00:00 Asia/Seoul로 변경하고 저장 후 Expires 표시를 확인했다. 위 기록의 10월 11일 만료 예정일을 대체한다.
 - 기존 preview_app DB, 연결 주소와 데이터는 유지한다. Cloud Run 종료 예정일 및 예산은 여전히 미정이며 자동 종료는 설정하지 않았다.
+
+## 2026-10-05 再리뷰 보완
+최신 #110을 병합해 cloudbuild.yaml 충돌을 해결하고 기존 API 환경변수 보존·Compose prompt pair 검증을 유지했다. 현재 운영 기록은 미확정이므로 저장소 기본 배포는 check-team-operation 단계에서 차단한다. 비용 부담자가 승인하고 trigger substitutions에 시작/종료일·예산·담당자·결제 계정·종료 절차를 기록하기 전 상시 worker 설정은 새 배포에 적용되지 않는다. 이미 배포된 리소스에는 영향이 없으며 자동 종료나 무료 운영을 주장하지 않는다.

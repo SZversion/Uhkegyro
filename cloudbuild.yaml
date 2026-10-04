@@ -145,7 +145,7 @@ steps:
           --port=8000 \
           --cpu=1 \
           --memory=512Mi \
-          --update-env-vars=ENVIRONMENT=production,INTERPRETER_PROMPT_PATH=/app/prompts/uhkegryo-interpreter-v4.md,INTERPRETER_PROMPT_VERSION=uhkegryo-interpreter-v4,STRUCTURED_OUTPUT_SKILL_PATH=/app/skills/structured-output/SKILL.md,TERM_CARDS_PATH=/app/term-cards,LLM_MODEL=openai/gpt-4.1-mini,LLM_TIMEOUT_SECONDS=180,SEARXNG_BASE_URL=http://localhost:8080,MCP_ENABLED=true,WORKER_CONCURRENCY=5 \
+          --update-env-vars=ENVIRONMENT=production,INTERPRETER_PROMPT_PATH=/app/prompts/uhkegryo-interpreter-v4.md,INTERPRETER_PROMPT_VERSION=uhkegryo-interpreter-v4,STRUCTURED_OUTPUT_SKILL_PATH=/app/skills/structured-output/SKILL.md,TERM_CARDS_PATH=/app/term-cards,LLM_MODEL=openai/gpt-4.1-mini,LLM_TIMEOUT_SECONDS=180,LLM_MAX_TOKENS=2048,SEARXNG_BASE_URL=http://localhost:8080,MCP_ENABLED=true,WORKER_CONCURRENCY=5 \
           --set-secrets=OPENROUTER_API_KEY=OPENROUTER_API_KEY:latest \
           --set-secrets=LANGFUSE_PUBLIC_KEY=LANGFUSE_PUBLIC_KEY:latest \
           --set-secrets=LANGFUSE_SECRET_KEY=LANGFUSE_SECRET_KEY:latest \
