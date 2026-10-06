@@ -60,6 +60,7 @@
 
 #### 기존 공개 주소 갱신
 
+- 이 절은 공개 alias 갱신의 공통 절차다. 날짜별 GCP 주소 재연결 기록은 Vercel 설정 뒤에 별도로 보존하고, 해당 기록의 deployment ID 확인·복구는 이 절차를 따른다.
 - 사용자가 지정한 공개 주소: **https://uhkegryo.vercel.app/**.
 - 기존 프로젝트: `uhkegryo-team-preview`, project ID `prj_QKEYbMeTdXkvdP3kNXdsslEmy7hy`, account ID `team_46jAJPAj5m0xLdxRiAI0hyxo`.
 - 2026-10-06 확인: 공개 주소는 이전 deployment에 별도로 지정된 alias였다. 같은 프로젝트의 Production을 배포해도 이 alias가 이전 deployment에 남아 있어 명시적으로 갱신했다.
