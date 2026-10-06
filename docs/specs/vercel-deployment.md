@@ -58,6 +58,23 @@
 
 ### Vercel
 
+#### 기존 공개 주소 갱신
+
+- 사용자가 지정한 공개 주소: **https://uhkegryo.vercel.app/**.
+- 기존 프로젝트: `uhkegryo-team-preview`, project ID `prj_QKEYbMeTdXkvdP3kNXdsslEmy7hy`, account ID `team_46jAJPAj5m0xLdxRiAI0hyxo`.
+- 2026-10-06 확인: 공개 주소는 이전 deployment에 별도로 지정된 alias였다. 같은 프로젝트의 Production을 배포해도 이 alias가 이전 deployment에 남아 있어 명시적으로 갱신했다.
+- 배포 전 공개 주소가 가리키는 deployment ID와 project ID를 조회하고 이전 deployment ID를 복구용으로 기록한다. 로컬 `.vercel/project.json`의 프로젝트명이나 생성된 배포 URL만으로 대상 주소를 판단하지 않는다.
+- 기존 프로젝트에 요청된 commit을 배포하고 `READY`를 확인한 뒤, 새 deployment에 `uhkegryo.vercel.app` alias를 연결한다. CLI 인증이 있으면 아래 명령을 사용한다. `<new-deployment-url>`은 해당 배포 결과로 바꾼다.
+
+```bash
+vercel alias set <new-deployment-url> uhkegryo.vercel.app
+vercel inspect https://uhkegryo.vercel.app
+```
+
+- Vercel 연결 도구를 쓰면 `vercel_assign_alias`의 `id`에 새 deployment ID, `requestBody.alias`에 `uhkegryo.vercel.app`을 전달한다. 이후 `vercel_get_deployment`의 `idOrUrl`을 `uhkegryo.vercel.app`으로 조회해 새 deployment ID와 일치하는지 확인한다.
+- 공개 주소에서 페이지 HTTP 200, 최신 빌드 asset 일치, same-origin API 정상 응답을 검증하고 완료 보고에는 **https://uhkegryo.vercel.app/**를 제공한다. 생성된 deployment URL은 진단용으로만 기록한다.
+- Git 자동 배포가 차단되면 기존 프로젝트에 로컬 소스를 직접 업로드할 수 있다. 비밀 파일은 제외하고 실제 commit 출처를 유지한다. 권한이 없으면 사용자에게 접근 문제를 알린다. 별도 승인 없이 새 프로젝트 생성이나 다른 공개 주소로 대체하지 않는다.
+
 | 항목 | 계약 |
 | --- | --- |
 | Framework Preset | Next.js |
@@ -138,6 +155,8 @@
 - 승인된 전용 리소스 정리 후 Billing 보고서에서 사용일 기준 추가 사용량을 확인한다. 청구 반영 지연·이전 사용분은 별도로 구분한다. 예산 알림을 자동 지출 차단으로 취급하지 않는다.
 
 ## AC (Given-When-Then)
+
+- **AC-16 · 기존 공개 주소** — Given 기존 공개 주소 `https://uhkegryo.vercel.app/`와 기존 프로젝트에 생성한 `READY` deployment, When 배포 갱신과 alias 연결을 수행, Then 공개 주소 조회의 deployment ID가 새 ID와 일치하고 페이지 HTTP 200·최신 빌드 asset 일치·same-origin API 정상 응답을 확인하며 완료 보고에 기존 공개 주소를 사용한다.
 
 - **AC-15 · 과금 배포 차단** — Given 운영 승인이 false 또는 시작일·종료일·예산·비용 부담자·결제 계정·종료 담당자·종료 절차 중 하나가 빈 값, When Cloud Build 시작, Then 이미지 빌드와 배포 전에 실패한다. 모든 값과 명시적 승인이 있을 때만 상시 worker 배포를 허용한다.
 
