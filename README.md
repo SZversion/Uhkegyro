@@ -1,5 +1,7 @@
 # UH케그려 — 캐주얼 캐릭터 일러스트 레퍼런스 해석 Agent
 
+**배포 사이트:** [https://uhkegryo.vercel.app/](https://uhkegryo.vercel.app/)
+
 > 전문 용어가 낯선 초보자가 텍스트로 묘사한 캐주얼 캐릭터의 **체형/소체, 포즈, 구도**를 기초 드로잉 용어와 역할별 Pinterest 탐색 계획으로 바꾸는 Agent입니다.
 
 > **현재 상태: PostgreSQL job 저장, LLM → resolver → MCP 검색 → 응답 조립 worker, 결과·대화 UI 구현됨**
