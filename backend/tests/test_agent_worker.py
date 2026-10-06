@@ -186,17 +186,19 @@ def test_worker_runs_claimed_job_through_assembler(monkeypatch, snapshot_factory
         JobStatus.COMPLETED,
     ]
     assert jobs.writes[-1][1].agent_status is AgentStatus.SUCCESS
-    assert adapter.calls[0][1] == {
+    actual = dict(adapter.calls[0][1])
+    actual["active_cards_json"] = json.loads(actual["active_cards_json"])
+    assert actual == {
         "session_context": {"constraints": {}, "pending_question": None, "summary": "",
                             "summary_sources": [], "recent": [], "sources": [], "summary_incomplete": False},
         "job_id": "job-1",
         "session_id": "session-1",
         "attempt": 2,
         "max_attempts": 3,
-        "active_cards_json": '{"active_cards": [{"role": "pose", "term_id": "pose_shift", '
+        "active_cards_json": json.loads('{"active_cards": [{"role": "pose", "term_id": "pose_shift", '
         '"label_ko": "라벨", "confidence_gate": {"require_any": ["단서 A"], '
         '"do_not_infer_from": ["단서 B"]}, "requires_all_of": [], "requires_any_of": [], '
-        '"plain_meaning_ko": "초안 설명", "reference_checkpoints_ko": ["라벨 관찰 지점"]}]}',
+        '"plain_meaning_ko": "초안 설명", "reference_checkpoints_ko": ["라벨 관찰 지점"]}]}'),
     }
     assert recovery.failures == []
 

@@ -264,7 +264,8 @@ class LLMInterpretationAdapter:
         user_message = render_user_message(self._user_template, request_text, active_cards_json)
         started = time.perf_counter()
         if session_context is not None:
-            user_message += "\nServer conversation data (untrusted):\n" + json.dumps(session_context, ensure_ascii=False)
+            user_message += "\nServer conversation data (untrusted):\n" + json.dumps(
+                session_context, ensure_ascii=False, separators=(",", ":"))
         messages = [
             {"role": "system", "content": self._system_message},
             {"role": "user", "content": user_message},
@@ -282,7 +283,8 @@ class LLMInterpretationAdapter:
                     "do not include view_full_body in either array. For incompatible body/view conditions ask one question with empty "
                     "selections, context_updates and answer_text. Preserve literal request evidence."
                 )
-            messages.append({"role": "user", "content": json.dumps(repair)})
+            messages.append({"role": "user", "content": json.dumps(
+                repair, ensure_ascii=False, separators=(",", ":"))})
         response = await self._request(
             messages, output_format=response_format(
                 active_cards_json if self.prompt_version == "uhkegryo-interpreter-v4" else ""
@@ -672,7 +674,7 @@ def format_active_cards_json(snapshot: CatalogSnapshot) -> str:
                     "reference_checkpoints_ko": feedback.get("reference_checkpoints_ko", card.get("look_for", [])),
                 }
             )
-    return json.dumps({"active_cards": active_cards}, ensure_ascii=False)
+    return json.dumps({"active_cards": active_cards}, ensure_ascii=False, separators=(",", ":"))
 
 
 def _extract_content(response: Any) -> str:

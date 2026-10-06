@@ -23,7 +23,7 @@ def test_catalog_schema_limits_term_ids_to_their_role():
     ]})
     definitions = response_format(cards)["json_schema"]["schema"]["$defs"]
     for name in ("InterpretationSelection", "ContextUpdate"):
-        variants = definitions[name]["anyOf"]
+        variants = [definitions[f"{name}_{role}"] for role in ("view", "layout")]
         assert len(variants) == 2
         for variant in variants:
             properties = variant["properties"]
