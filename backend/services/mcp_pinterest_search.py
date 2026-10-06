@@ -13,6 +13,24 @@ from backend.services.response_assembler import RoleSearchOutcome
 
 logger = logging.getLogger(__name__)
 
+
+def pop_search_diagnostics(payload: dict) -> object:
+    """Remove observation-only diagnostics from structured and text MCP results."""
+    diagnostics = payload.pop("_search_trace", None)
+    for block in payload.get("content", []) if isinstance(payload.get("content"), list) else []:
+        if not isinstance(block, dict) or not isinstance(block.get("text"), str):
+            continue
+        try:
+            value = json.loads(block["text"])
+        except ValueError:
+            continue
+        if isinstance(value, dict) and "_search_trace" in value:
+            nested = value.pop("_search_trace")
+            if diagnostics is None:
+                diagnostics = nested
+            block["text"] = json.dumps(value, ensure_ascii=False)
+    return diagnostics
+
 def parse_search_result(role: Role, payload: object) -> RoleSearchOutcome:
     if isinstance(payload, Mapping) and isinstance(payload.get("content"), list):
         for block in payload["content"]:
