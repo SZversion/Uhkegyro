@@ -178,12 +178,14 @@ class LLMInterpretationAdapter:
             path = prompt_path if prompt_path is not None else self._resolve_prompt_path()
             system_message, user_template = load_interpreter_prompt(_require_prompt_file(path))
             declaration = re.search(r"\| Prompt 이름 \| `([^`]+)` \|", path.read_text(encoding="utf-8"))
-            if declaration and declaration[1] != self.prompt_version:
+            if (declaration and declaration[1] != self.prompt_version) or (
+                self.prompt_version == "uhkegryo-interpreter-v5" and not declaration
+            ):
                 raise PromptConfigurationError(
                     "프롬프트의 Prompt 이름과 INTERPRETER_PROMPT_VERSION이 다르다. "
                     "INTERPRETER_PROMPT_PATH와 INTERPRETER_PROMPT_VERSION을 함께 설정해야 한다."
                 )
-        self._structured_output = self.prompt_version in ("uhkegryo-interpreter-v1", "uhkegryo-interpreter-v4")
+        self._structured_output = self.prompt_version in ("uhkegryo-interpreter-v1", "uhkegryo-interpreter-v4", "uhkegryo-interpreter-v5")
         self._system_message = system_message
         if self.prompt_version == "uhkegryo-interpreter-v1":
             try:
@@ -191,7 +193,7 @@ class LLMInterpretationAdapter:
             except (OSError, ValueError) as exc:
                 raise PromptConfigurationError("Structured output Skill을 읽을 수 없다") from exc
             self._system_message += "\n\n" + output_rules
-        self._system_message += (
+        self._system_message += "" if self.prompt_version == "uhkegryo-interpreter-v5" else (
             "\nInclude answer_text in the output JSON: a Korean integrated explanation "
             "for a beginner learning to draw. Naturally connect the user's description to "
             "the Korean names of selected active terms, their plain meanings and reference observation points. "
@@ -261,6 +263,13 @@ class LLMInterpretationAdapter:
         session_context: dict | None = None,
         validation_feedback: list[dict] | None = None,
     ) -> InterpretationOutput:
+        if self.prompt_version == "uhkegryo-interpreter-v5":
+            try:
+                has_cards = bool(json.loads(active_cards_json).get("active_cards"))
+            except (ValueError, AttributeError):
+                has_cards = False
+            if not has_cards:
+                raise PromptConfigurationError("v5는 활성 카탈로그가 필요합니다")
         user_message = render_user_message(self._user_template, request_text, active_cards_json)
         started = time.perf_counter()
         if session_context is not None:
@@ -287,18 +296,21 @@ class LLMInterpretationAdapter:
                 repair, ensure_ascii=False, separators=(",", ":"))})
         response = await self._request(
             messages, output_format=response_format(
-                active_cards_json if self.prompt_version == "uhkegryo-interpreter-v4" else ""
+                active_cards_json if self.prompt_version in ("uhkegryo-interpreter-v4", "uhkegryo-interpreter-v5") else ""
             ) if self._structured_output else None
         )
 
         latency_ms = round((time.perf_counter() - started) * 1000, 1)
         content = _extract_content(response)
-        if self.prompt_version == "uhkegryo-interpreter-v4" and active_cards_json:
+        if self.prompt_version in ("uhkegryo-interpreter-v4", "uhkegryo-interpreter-v5") and active_cards_json:
             try:
                 payload = json.loads(content)
                 roles = ("body", "pose", "view", "perspective", "layout")
                 for field in ("selections", "context_updates"):
                     slots = payload.get(field) if isinstance(payload, dict) else None
+                    if self.prompt_version == "uhkegryo-interpreter-v5" and not isinstance(slots, dict):
+                        raise LLMInvalidStructuredOutput("v5는 역할별 객체 슬롯이 필요합니다",
+                            feedback=[{"path": [field], "code": "role_slots_required"}])
                     if isinstance(slots, dict):
                         if set(slots) != set(roles) or any(
                             value is not None and (not isinstance(value, dict) or value.get("role") != role)
