@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import uuid
+from time import perf_counter
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Header, Query, Request, Response
@@ -32,9 +33,25 @@ from backend.services.job_repository import JobRepository
 from backend.services.session_repository import SessionRepository
 from backend.services.failure_mapping import DATABASE_ERRORS, FAILURE_MESSAGE, classify_failure
 from backend.services.pinterest_widget import PinterestWidgetClient
+from backend.services.job_trace import JobTracer
 
 router = APIRouter(tags=["agent"])
 _pool: Any | None = None
+_result_tracer: JobTracer | None = None
+
+
+def get_result_tracer() -> JobTracer:
+    global _result_tracer
+    if _result_tracer is None:
+        _result_tracer = JobTracer.from_settings()
+    return _result_tracer
+
+
+def close_result_tracer() -> None:
+    global _result_tracer
+    if _result_tracer is not None:
+        _result_tracer.shutdown()
+        _result_tracer = None
 
 
 def get_widget_client() -> PinterestWidgetClient:
@@ -235,26 +252,48 @@ async def read_job(
     response: Response,
 ) -> JobEnvelope:
     """소유 세션만 자신의 job을 읽는다. `api-contract.md` AC-06."""
+    started = perf_counter()
     raw_cookie = request.cookies.get(SESSION_COOKIE_NAME)
     if not raw_cookie:
         raise ApiContractError(ApiErrorCode.SESSION_REQUIRED) from None
 
+    database_started = perf_counter()
     sessions, jobs = await _database_call(get_repositories())
     if not await _database_call(sessions.has_owner(raw_cookie)):
         raise ApiContractError(ApiErrorCode.SESSION_REQUIRED) from None
+    database_ms = (perf_counter() - database_started) * 1000
 
     # 조회가 성공하든 404여도 유효 세션의 활동이므로 쿠키를 갱신한다.
     set_session_cookie(response, raw_cookie, get_settings())
 
     try:
         job_id = str(uuid.UUID(job_id))
+        database_started = perf_counter()
         session_id = await _database_call(sessions.session_for_job(raw_cookie, job_id))
-        job = await _database_call(jobs.get(session_id=session_id, job_id=job_id))
+        database_ms += (perf_counter() - database_started) * 1000
     except (JobNotFound, ValueError):
         raise ApiContractError(
             ApiErrorCode.JOB_NOT_FOUND, session_token=raw_cookie
         ) from None
-    return await get_widget_client().enrich_job(job)
+    tracer = get_result_tracer()
+    with tracer.result_read(job_id, str(session_id)) as metrics:
+        try:
+            database_started = perf_counter()
+            try:
+                job = await _database_call(jobs.get(session_id=session_id, job_id=job_id))
+            except (JobNotFound, ValueError):
+                raise ApiContractError(ApiErrorCode.JOB_NOT_FOUND, session_token=raw_cookie) from None
+            finally:
+                metrics["database_ms"] = round(database_ms + (perf_counter() - database_started) * 1000, 3)
+            metrics["job_status"] = job.job_status.value
+            if job.job_status.value == "completed":
+                with tracer.phase("result-widget-refresh") as widget_metrics:
+                    job = await get_widget_client().enrich_job(job)
+                    terms = job.result.reference_plan.terms if job.result and job.result.reference_plan else []
+                    widget_metrics.update(tracer.pin_counts([pin for term in terms for pin in term.pins]))
+            return job
+        finally:
+            metrics["handler_elapsed_ms"] = round((perf_counter() - started) * 1000, 3)
 
 
 async def _owner(request: Request, response: Response, sessions: SessionRepository) -> str:
