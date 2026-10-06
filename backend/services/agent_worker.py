@@ -51,6 +51,7 @@ class AgentJobWorker:
         heartbeat_interval: float = 10,
         tracer: JobTracer | None = None,
     ) -> None:
+        self._pool = pool
         self._jobs = JobRepository(pool)
         self._memory = ConversationMemory(pool)
         self._recovery = JobRetryRecovery(pool)
@@ -385,6 +386,7 @@ class AgentJobWorker:
             trace.stale()
 
     async def run_forever(self, *, concurrency: int = WORKER_CONCURRENCY) -> None:
+        from backend.services.conversation_summary_worker import run_summary_loop
         async def recover_leases() -> None:
             while True:
                 try:
@@ -411,9 +413,16 @@ class AgentJobWorker:
                     )
                 await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
+        tasks = [asyncio.create_task(coro) for coro in (
+            recover_leases(), run_summary_loop(self._pool, self._tracer),
+            *(run_slot() for _ in range(concurrency)),
+        )]
         try:
-            await asyncio.gather(recover_leases(), *(run_slot() for _ in range(concurrency)))
+            await asyncio.gather(*tasks)
         finally:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
             await asyncio.to_thread(self._tracer.shutdown)
 
     async def _update(
