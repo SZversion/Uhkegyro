@@ -50,7 +50,7 @@ def _failure(error: Exception) -> Failure:
     return public_failure(error)
 
 
-def _validation_diagnostics(error: Exception) -> str | None:
+def validation_diagnostics(error: Exception) -> str | None:
     if not isinstance(error, LLMInvalidStructuredOutput):
         return None
     schema = response_format()["json_schema"]["schema"]
@@ -108,6 +108,9 @@ class JobRetryRecovery:
                         succeeded = NULL,
                         final_payload_json = NULL,
                         validation_feedback_json = $6::jsonb,
+                        validation_failure_history_json = CASE WHEN $7::jsonb IS NULL
+                            THEN validation_failure_history_json
+                            ELSE validation_failure_history_json || jsonb_build_object(($2::int)::text, $7::jsonb) END,
                         completed_at = NULL,
                         updated_at = now()
                     WHERE job_id = $1::uuid
@@ -123,6 +126,7 @@ class JobRetryRecovery:
                     retry_delay_ms(attempt, error),
                     _ACTIVE_STATUSES,
                     json.dumps(error.feedback) if isinstance(error, LLMInvalidStructuredOutput) else None,
+                    validation_diagnostics(error),
                 )
             else:
                 failure = _failure(error)
@@ -135,6 +139,9 @@ class JobRetryRecovery:
                         succeeded = FALSE,
                         final_payload_json = $4::jsonb,
                         validation_feedback_json = $6::jsonb,
+                        validation_failure_history_json = CASE WHEN $7::jsonb IS NULL
+                            THEN validation_failure_history_json
+                            ELSE validation_failure_history_json || jsonb_build_object(($2::int)::text, $7::jsonb) END,
                         completed_at = now(),
                         updated_at = now()
                     WHERE job_id = $1::uuid
@@ -148,7 +155,8 @@ class JobRetryRecovery:
                     max_attempts,
                     json.dumps(failure.model_dump(mode="json")),
                     _ACTIVE_STATUSES,
-                    _validation_diagnostics(error),
+                    validation_diagnostics(error),
+                    validation_diagnostics(error),
                 )
         return row is not None
 

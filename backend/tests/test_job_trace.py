@@ -12,7 +12,7 @@ from backend.schemas.models import InterpretationOutput, InterpretationSelection
 from backend.services import agent_worker
 from backend.services.agent_worker import AgentJobWorker
 from backend.services.job_trace import JobTracer
-from backend.services.llm import LLMTimeout, PromptConfigurationError
+from backend.services.llm import LLMTimeout, PromptConfigurationError, LLMInvalidStructuredOutput
 from backend.tests.test_agent_worker import EmptyMemory
 from backend.schemas.memory import RecallQuery
 
@@ -88,6 +88,23 @@ def _job(attempt, job_id="job-1"):
     return {"job_id": job_id, "session_id": "session-1", "request_text": "자세",
             "attempt": attempt, "max_attempts": 3,
             "session_token": "private-token", "thumbnail_url": "https://private-thumbnail"}
+
+
+def test_attempt_validation_diagnostics_survive_later_success():
+    client = FakeLangfuse()
+    tracer = JobTracer(client)
+    with tracer.attempt(_job(1)) as trace:
+        trace.failed(_job(1), LLMInvalidStructuredOutput("private exception",
+            stage="conversation_validation", feedback=[{"path": ["private field"],
+            "code": "selection_evidence_invalid", "input": "private value"}]))
+    with tracer.attempt(_job(2)) as trace:
+        trace.completed(SimpleNamespace(agent_status=SimpleNamespace(value="success"), reason_codes=[]))
+    assert client.records[0]["metadata"]["validation_diagnostics"] == [{
+        "stage": "conversation_validation", "path": ["unknown_field"],
+        "code": "selection_evidence_invalid"}]
+    assert client.records[0]["metadata"]["attempt"] == 1
+    assert "validation_diagnostics" not in client.records[1]["metadata"]
+    assert "private" not in json.dumps(client.records)
 
 
 def test_standard_session_attribute_is_scoped_to_attempt(monkeypatch):
