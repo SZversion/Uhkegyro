@@ -58,6 +58,22 @@
 
 ### Vercel
 
+#### 2026-10-06 GCP 주소 재연결
+
+- 기존 공개 주소와 프로젝트를 유지한다. 현재 조회한 API origin은 `https://api-fgdrdxsn6q-du.a.run.app`, MCP endpoint는 `https://mcp-fgdrdxsn6q-du.a.run.app/mcp`다.
+- Vercel의 Production/Preview `AGENT_API_ORIGIN`을 현재 API origin으로 갱신하고 `NEXT_PUBLIC_API_BASE_URL=/api`, `NEXT_PUBLIC_UI_DEMO=0`을 적용한다. 기존 프런트엔드 배포 소스를 재빌드하고 READY 이후 공개 alias를 연결한다.
+- API의 `MCP_BASE_URL`과 MCP의 `MCP_ALLOWED_HOST`가 실제 MCP 주소와 일치하면 변경하지 않는다. 신규 서비스 생성, DB migration, backend 이미지 교체는 이 주소 재연결 범위에 포함하지 않는다.
+- Given 재연결한 공개 주소, When 페이지와 쿠키 없는 `/api/sessions`를 조회, Then 페이지 200 및 backend 계약의 JSON 401 `session_required`가 반환된다.
+- Given 공개 주소에서 새 대화를 생성, When 같은 쿠키로 대화 목록을 조회, Then 생성 201 및 목록 200을 반환하고 HttpOnly/Secure/SameSite=Lax 쿠키가 전달된다.
+- Given 공개 주소에서 유효한 요청을 제출, When 같은 쿠키로 job을 조회, Then 제출 202 후 300초 이내 completed와 결과를 반환한다. 모델·검색 등 외부 의존성 실패는 연결 성공과 구분하여 기록한다.
+
+재연결 검증 결과 (2026-10-06 12:12 KST):
+- 이전 alias deployment `dpl_CAcS4dWGQ2CgSqXkQynCbX3M78tg`의 소스를 재빌드하여 `dpl_wjcXPr6HnSSQir9TEyAukN2VU5Wx`를 배포했다. READY와 기존 공개 alias의 새 deployment ID 일치를 확인했다. 소스 교체 없이 주소 환경변수만 갱신했다.
+- 공개 페이지 200, 생성된 배포와 정적 asset 11개 일치, 쿠키 없는 API JSON 401, 새 대화 생성 201, 대화 목록/이력 200, 쿠키 HttpOnly/Secure/SameSite=Lax/Path=/ 통과.
+- 실제 공개 주소에서 `캐릭터를 정면에서 전신으로 그릴 레퍼런스를 찾아줘`를 제출하여 202 후 300초 이내 completed/success와 정면 Pin/썸네일 8개를 반환했다. job `e7cbafb7-856f-4d0d-9703-c5e724df42d9`, attempt=3. 이 검증은 연결 복구 smoke이며 전체 해석 품질 검증은 아니다.
+- frontend 테스트 55 passed. MCP 무인증 접근 403 유지, API의 MCP_BASE_URL 및 MCP_ALLOWED_HOST 일치 확인. GCP 리소스/이미지 변경 및 GitHub commit/push/PR 없음.
+- 복구가 필요하면 기존 deployment ID에 공개 alias를 다시 연결할 수 있다. 단, 이전 배포는 변경 전 backend 주소를 참조하므로 API 404가 다시 발생할 수 있다.
+
 | 항목 | 계약 |
 | --- | --- |
 | Framework Preset | Next.js |
