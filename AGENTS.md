@@ -36,6 +36,13 @@ Only when the user explicitly authorizes GitHub changes for the current task, an
 
 Agents must never approve, merge, enable auto-merge, dismiss reviews, alter branch protection, or otherwise finalize another pull request. Human team members remain solely responsible for review, approval, and merge decisions.
 
+## Vercel Deployment Target
+
+- 기존 공개 주소는 `https://uhkegryo.vercel.app/`다. 사용자가 배포 갱신을 요청하면 이 주소를 갱신하고 완료 보고에도 이 주소를 사용한다.
+- 기존 프로젝트는 `uhkegryo-team-preview` (`prj_QKEYbMeTdXkvdP3kNXdsslEmy7hy`), 계정 ID는 `team_46jAJPAj5m0xLdxRiAI0hyxo`다. 새 프로젝트를 만들기 전에 기존 주소가 가리키는 deployment와 프로젝트를 확인한다.
+- `uhkegryo.vercel.app`은 별도로 지정된 alias이므로 Production 배포만으로 연결이 갱신된다고 가정하지 않는다. 새 deployment가 `READY`이면 이 alias를 연결하고, 기존 공개 주소가 새 deployment ID를 가리키며 페이지와 API가 정상 응답하는지 확인한다.
+- 상세 절차는 `docs/specs/vercel-deployment.md`의 "기존 공개 주소 갱신"을 따른다. 배포 권한이 없으면 이를 알리고 새 프로젝트나 다른 주소로 대체하지 않는다.
+
 ## Out-of-Scope Principle
 
 Agents must not add features that are not defined in the Spec. Do not expand the scope because something seems convenient to add.
