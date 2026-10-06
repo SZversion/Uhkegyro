@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 WORKER_CONCURRENCY = 5
 POLL_INTERVAL_SECONDS = 1
 SEARCH_RETRY_DELAYS_SECONDS = (1, 2)
+SEARCH_CONCURRENCY = 3
 MAX_MCP_TOOL_CALLS = 16
 PINTEREST_SEARCH_TOOL = "search_pinterest_pins"
 
@@ -57,6 +58,7 @@ class AgentJobWorker:
         self._adapter = adapter
         self._mcp_gateway = mcp_gateway
         self._widget_client = widget_client
+        self._search_slots = asyncio.Semaphore(SEARCH_CONCURRENCY)
         self._heartbeat_interval = heartbeat_interval
         self._tracer = tracer if tracer is not None else JobTracer.from_settings()
 
@@ -190,7 +192,10 @@ class AgentJobWorker:
                 "Use the registered MCP tools to fulfill the request. For Pinterest searches, "
                 "call search_pinterest_pins only with an approved role and that role's exact "
                 "query_fragments. Never invent or alter fragments. Use other listed tools "
-                "when needed. After a tool result, decide whether another tool call is needed."
+                "when needed. Select independent searches for all unfinished approved roles "
+                "together in one response, at most once per role. After tool results, retry "
+                "only unfinished roles; do not search completed roles again. "
+                "After a tool result, decide whether another tool call is needed."
             )},
             {"role": "user", "content": json.dumps({
                 "request": request_text,
@@ -219,14 +224,16 @@ class AgentJobWorker:
                     "function": {"name": name, "arguments": json.dumps(arguments)},
                 })
             messages.append({"role": "assistant", "content": None, "tool_calls": assistant_calls})
-            for call in calls:
+            batch_roles: set[Role] = set()
+
+            async def execute(call):
+                nonlocal tool_call_count
                 name, arguments, call_id = call["name"], call["arguments"], call["id"]
                 if tool_call_count >= MAX_MCP_TOOL_CALLS:
-                    messages.append({
+                    return {
                         "role": "tool", "tool_call_id": call_id,
                         "content": json.dumps({"error": "MCP tool-call limit reached"}),
-                    })
-                    continue
+                    }
                 tool_call_count += 1
                 result: dict
                 search_attempted = False
@@ -239,19 +246,25 @@ class AgentJobWorker:
                             raise ValueError("Pinterest search arguments are outside approved terms")
                         if fragments != list(approved[role]):
                             raise ValueError("Pinterest search arguments are outside approved terms")
+                        if role in batch_roles:
+                            raise ValueError("Duplicate Pinterest role in one response")
                         if attempts[role] >= 3:
                             raise ValueError("Pinterest search retry limit exceeded")
+                        batch_roles.add(role)
                         attempts[role] += 1
                         search_attempted = True
-                    result = await self._mcp_gateway.call_tool(name, arguments)
-                    if name == PINTEREST_SEARCH_TOOL:
-                        outcome = parse_search_result(role, result)
-                        if self._widget_client is not None:
-                            outcome = await self._widget_client.enrich_outcome(outcome)
+                    if search_attempted:
+                        async with self._search_slots:
+                            result = await self._mcp_gateway.call_tool(name, arguments)
+                            outcome = parse_search_result(role, result)
+                            if self._widget_client is not None:
+                                outcome = await self._widget_client.enrich_outcome(outcome)
                         if outcome.code is not ReasonCode.PIN_SEARCH_UNAVAILABLE or attempts[role] >= 3:
                             outcomes[role] = outcome
                         else:
                             await asyncio.sleep(SEARCH_RETRY_DELAYS_SECONDS[attempts[role] - 1])
+                    else:
+                        result = await self._mcp_gateway.call_tool(name, arguments)
                 except Exception as error:
                     if (isinstance(error, OperationalFailure)
                             and error.failure_code is FailureCode.CONFIGURATION_ERROR):
@@ -264,10 +277,29 @@ class AgentJobWorker:
                             )
                         else:
                             await asyncio.sleep(SEARCH_RETRY_DELAYS_SECONDS[attempts[role] - 1])
-                messages.append({
+                return {
                     "role": "tool", "tool_call_id": call_id,
                     "content": json.dumps(result, ensure_ascii=False),
-                })
+                }
+
+            async def flush(tasks):
+                try:
+                    messages.extend(await asyncio.gather(*tasks))
+                finally:
+                    for task in tasks:
+                        if not task.done():
+                            task.cancel()
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                    tasks.clear()
+
+            tasks = []
+            for call in calls:
+                if call["name"] == PINTEREST_SEARCH_TOOL:
+                    tasks.append(asyncio.create_task(execute(call)))
+                else:
+                    await flush(tasks)
+                    messages.append(await execute(call))
+            await flush(tasks)
         if set(approved) - set(outcomes):
             raise LLMInvalidStructuredOutput(
                 "LLM이 모든 승인 역할에 대한 Pinterest 검색 도구를 선택하지 않았다"
