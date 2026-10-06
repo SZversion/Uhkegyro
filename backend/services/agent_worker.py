@@ -21,7 +21,7 @@ from backend.services.llm import (
     LLMInvalidStructuredOutput,
 )
 from backend.services.llm import format_active_cards_json
-from backend.services.mcp_pinterest_search import parse_search_result
+from backend.services.mcp_pinterest_search import parse_search_result, pop_search_diagnostics
 from backend.services.mcp_tool_gateway import McpToolGateway
 from backend.services.pinterest_widget import PinterestWidgetClient
 from backend.services.resolver import ResolutionResult
@@ -255,10 +255,13 @@ class AgentJobWorker:
                         search_attempted = True
                     if search_attempted:
                         async with self._search_slots:
-                            result = await self._mcp_gateway.call_tool(name, arguments)
-                            outcome = parse_search_result(role, result)
-                            if self._widget_client is not None:
-                                outcome = await self._widget_client.enrich_outcome(outcome)
+                            with self._tracer.search(role.value, list(approved[role])) as search_span:
+                                result = await self._mcp_gateway.call_tool(name, arguments)
+                                diagnostics = pop_search_diagnostics(result)
+                                self._tracer.search_result(search_span, diagnostics)
+                                outcome = parse_search_result(role, result)
+                                if self._widget_client is not None:
+                                    outcome = await self._widget_client.enrich_outcome(outcome)
                         if outcome.code is not ReasonCode.PIN_SEARCH_UNAVAILABLE or attempts[role] >= 3:
                             outcomes[role] = outcome
                         else:

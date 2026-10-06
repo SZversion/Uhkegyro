@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from contextlib import contextmanager
 from typing import Any, Iterator
 
@@ -24,6 +25,41 @@ class JobTracer:
                 self.client.shutdown()
         except Exception:
             logger.debug("Langfuse shutdown failed")
+
+    @contextmanager
+    def search(self, role: str, fragments: list[str]) -> Iterator[Any]:
+        with self._observation(
+            name=f"pinterest-search-{role}", input={"role": role, "query_fragments": fragments},
+        ) as span:
+            try:
+                yield span
+            except BaseException as error:
+                AttemptTrace._update(span, level="WARNING", status_message="search interrupted",
+                                     output={"error_type": type(error).__name__})
+                raise
+
+    @staticmethod
+    def search_result(span: Any, attempts: Any) -> None:
+        engines = {"google images": "!goi", "duckduckgo images": "!ddi", "pinterest": "!pin"}
+        reasons = {None, "access_denied", "suspended", "captcha", "rate_limited",
+                   "timeout", "upstream_error", "malformed_response"}
+        safe = []
+        fields = ("engine", "bang", "latency_ms", "pin_count", "status", "failure_reason", "fallback")
+        for row in attempts[:3] if isinstance(attempts, list) else []:
+            if not isinstance(row, dict) or not all(key in row for key in fields):
+                continue
+            engine, elapsed, count = row.get("engine"), row.get("latency_ms"), row.get("pin_count")
+            if (not isinstance(engine, str) or engine not in engines
+                    or row.get("bang") != engines[engine]
+                    or type(elapsed) not in (int, float) or not math.isfinite(elapsed) or elapsed < 0
+                    or type(count) is not int or not 0 <= count <= 8
+                    or row.get("status") not in ("success", "empty", "unavailable")
+                    or not isinstance(row.get("failure_reason"), (str, type(None)))
+                    or row.get("failure_reason") not in reasons
+                    or type(row.get("fallback")) is not bool):
+                continue
+            safe.append({key: row[key] for key in fields})
+        AttemptTrace._update(span, output={"engine_attempts": safe})
 
     @classmethod
     def from_settings(cls) -> "JobTracer":

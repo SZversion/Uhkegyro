@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable, Mapping
 import logging
 import re
+import time
 from urllib.parse import urlparse
 
 import httpx
@@ -31,12 +32,14 @@ class SearXNGPinterestSearchProvider:
         base_url: str,
         json_loader: JsonLoader | None = None,
         suffix: str = "drawing",
+        engine_attempts: list[dict] | None = None,
     ) -> None:
         if suffix not in SEARCH_SUFFIXES:
             raise ValueError("지원하지 않는 검색 접미사입니다")
         self._suffix = suffix
         self._base_url = base_url.rstrip("/")
         self._json_loader = json_loader or _load_search_json
+        self._engine_attempts = engine_attempts
 
     async def search(
         self, role: Role, query_fragments: tuple[str, ...]
@@ -59,6 +62,20 @@ class SearXNGPinterestSearchProvider:
         return RoleSearchOutcome(role=role, pins=pins, code=code)
 
     async def _search_engine(self, role, query_fragments, bang, engine):
+        started = time.perf_counter()
+        record = {"engine": engine, "bang": f"!{bang}", "failure_reason": None}
+        outcome = await self._search_engine_request(role, query_fragments, bang, engine, record)
+        if self._engine_attempts is not None:
+            self._engine_attempts.append({
+                **record, "latency_ms": round((time.perf_counter() - started) * 1000, 3),
+                "pin_count": len(outcome.pins),
+                "status": "success" if outcome.code is None else (
+                    "empty" if outcome.code is ReasonCode.PIN_RESULTS_EMPTY else "unavailable"),
+                "fallback": bool(outcome.code is not None or not outcome.pins) and bang != "pin",
+            })
+        return outcome
+
+    async def _search_engine_request(self, role, query_fragments, bang, engine, record):
         params = {
             "q": f"!{bang} {' '.join(query_fragments)} {self._suffix} site:pinterest.com/pin",
             "categories": "images",
@@ -68,6 +85,7 @@ class SearXNGPinterestSearchProvider:
         try:
             payload = await self._json_loader(f"{self._base_url}/search", params)
         except Exception as error:
+            record["failure_reason"] = "timeout" if isinstance(error, (TimeoutError, httpx.TimeoutException)) else "upstream_error"
             code = classify_failure(error, context="search")
             if code is FailureCode.CONFIGURATION_ERROR:
                 raise OperationalFailure(code) from None
@@ -75,6 +93,7 @@ class SearXNGPinterestSearchProvider:
             return RoleSearchOutcome(role=role, pins=[], code=ReasonCode.PIN_SEARCH_UNAVAILABLE)
 
         if not isinstance(payload, Mapping) or not isinstance(payload.get("results"), list):
+            record["failure_reason"] = "malformed_response"
             logger.warning(
                 "SearXNG search unavailable",
                 extra={"failure_code": FailureCode.SEARCH_UPSTREAM_UNAVAILABLE.value},
@@ -90,6 +109,14 @@ class SearXNGPinterestSearchProvider:
             for engine_error in engine_errors
         )
         if engine_unresponsive:
+            reason = next((str(item[1]).casefold() for item in engine_errors
+                           if isinstance(item, (list, tuple)) and len(item) > 1
+                           and isinstance(item[0], str) and item[0].casefold() == engine), "")
+            record["failure_reason"] = next((label for token, label in (
+                ("suspended", "suspended"), ("access denied", "access_denied"),
+                ("captcha", "captcha"), ("too many requests", "rate_limited"),
+                ("timeout", "timeout"),
+            ) if token in reason), "upstream_error")
             logger.warning(
                 "SearXNG image engine unavailable",
                 extra={"failure_code": FailureCode.SEARCH_UPSTREAM_UNAVAILABLE.value},

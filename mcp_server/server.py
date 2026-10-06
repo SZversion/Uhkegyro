@@ -111,15 +111,17 @@ async def search_pinterest_pins(role: Role, query_fragments: list[str]) -> dict:
         `PIN_SEARCH_UNAVAILABLE`를 반환한다. 필수 설정 누락은
         `{"failure_code": "CONFIGURATION_ERROR"}`를 반환한다.
         각 Pin은 `pin_id`, `pin_url`, `thumbnail_url`, `status`를 포함한다.
+        `_search_trace`는 엔진별 시간·결과·fallback의 관측 전용 진단이다.
     """
     if _snapshot is None or not any(
         card.get("role") == role.value and card.get("query_fragments") == query_fragments
         for card in _snapshot.active_cards.values()
     ):
         return {"failure_code": "INVALID_SEARCH_TERMS"}
+    engine_attempts: list[dict] = []
     try:
         outcome = await SearXNGPinterestSearchProvider(
-            base_url=settings.searxng_base_url
+            base_url=settings.searxng_base_url, engine_attempts=engine_attempts,
         ).search(Role(role), tuple(query_fragments))
     except OperationalFailure as error:
         if error.failure_code is FailureCode.CONFIGURATION_ERROR:
@@ -129,6 +131,7 @@ async def search_pinterest_pins(role: Role, query_fragments: list[str]) -> dict:
         "role": outcome.role.value,
         "pins": [pin.model_dump(mode="json") for pin in outcome.pins],
         "code": outcome.code.value if outcome.code else None,
+        "_search_trace": engine_attempts,
     }
 
 
