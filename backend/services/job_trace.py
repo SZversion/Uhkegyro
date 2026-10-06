@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import math
+from time import perf_counter
 from contextlib import contextmanager
 from typing import Any, Iterator
 
@@ -27,9 +28,10 @@ class JobTracer:
             logger.debug("Langfuse shutdown failed")
 
     @contextmanager
-    def search(self, role: str, fragments: list[str]) -> Iterator[Any]:
+    def search(self, role: str, fragments: list[str], *, search_attempt: int | None = None) -> Iterator[Any]:
         with self._observation(
             name=f"pinterest-search-{role}", input={"role": role, "query_fragments": fragments},
+            metadata={"role": role, "search_attempt": search_attempt},
         ) as span:
             try:
                 yield span
@@ -37,6 +39,40 @@ class JobTracer:
                 AttemptTrace._update(span, level="WARNING", status_message="search interrupted",
                                      output={"error_type": type(error).__name__})
                 raise
+
+    @contextmanager
+    def phase(self, name: str, *, trace_context=None, **metadata):
+        with self._observation(name=name, metadata=metadata, trace_context=trace_context) as span:
+            started = perf_counter()
+            metrics = {"status": "completed"}
+            try:
+                yield metrics
+            except BaseException as error:
+                metrics.update(status="interrupted", error_type=type(error).__name__)
+                raise
+            finally:
+                metrics["elapsed_ms"] = round((perf_counter() - started) * 1000, 3)
+                AttemptTrace._update(span, output=metrics,
+                                     level="WARNING" if metrics["status"] == "interrupted" else "DEFAULT")
+
+    @contextmanager
+    def result_read(self, job_id: str, session_id: str):
+        context = None
+        if self.client is not None:
+            try:
+                context = {"trace_id": self.client.create_trace_id(seed=job_id)}
+            except Exception:
+                logger.debug("Langfuse result trace ID unavailable")
+        with self._session(session_id), self.phase(
+            "job-result-read", trace_context=context, job_id=job_id, session_id=session_id,
+        ) as metrics:
+            yield metrics
+
+    @staticmethod
+    def pin_counts(pins):
+        available = sum(pin.status.value == "available" for pin in pins)
+        return {"pin_count": len(pins), "available_count": available,
+                "unavailable_count": len(pins) - available}
 
     @staticmethod
     def search_result(span: Any, attempts: Any) -> None:

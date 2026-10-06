@@ -179,7 +179,8 @@ class AgentJobWorker:
         adapter = self._adapter
         if not hasattr(adapter, "request_mcp_tool_calls"):
             raise ValueError("해석 어댑터가 MCP tool calling을 지원하지 않습니다")
-        tools = await self._mcp_gateway.list_tools()
+        with self._tracer.phase("mcp-tools-list"):
+            tools = await self._mcp_gateway.list_tools()
         approved = {
             term.selection.role: tuple(term.card["query_fragments"])
             for term in resolution.terms
@@ -209,11 +210,20 @@ class AgentJobWorker:
                 ],
             }, ensure_ascii=False)},
         ]
-        for _ in range(MAX_MCP_TOOL_CALLS):
+        for call_round in range(1, MAX_MCP_TOOL_CALLS + 1):
             pending = [role for role in approved if role not in outcomes]
-            calls = await adapter.request_mcp_tool_calls(
-                messages, tools, required=bool(pending)
-            )
+            purpose = "tool_selection" if pending else "post_search_decision"
+            with self._tracer.phase(
+                "mcp-tool-selection" if pending else "mcp-post-search-decision",
+                call_round=call_round, purpose=purpose, pending_roles=[role.value for role in pending],
+            ) as metrics:
+                calls = await adapter.request_mcp_tool_calls(messages, tools, required=bool(pending))
+                metrics.update(call_count=len(calls), selected_roles=sorted({
+                    call["arguments"].get("role") for call in calls
+                    if call["name"] == PINTEREST_SEARCH_TOOL
+                    and isinstance(call["arguments"].get("role"), str)
+                    and call["arguments"].get("role") in {role.value for role in approved}
+                }))
             if not calls:
                 break
             assistant_calls = []
@@ -254,18 +264,27 @@ class AgentJobWorker:
                         attempts[role] += 1
                         search_attempted = True
                     if search_attempted:
-                        async with self._search_slots:
-                            with self._tracer.search(role.value, list(approved[role])) as search_span:
-                                result = await self._mcp_gateway.call_tool(name, arguments)
+                        trace_fields = {"role": role.value, "search_attempt": attempts[role]}
+                        with self._tracer.phase("search-slot-wait", **trace_fields):
+                            await self._search_slots.acquire()
+                        try:
+                            with self._tracer.search(role.value, list(approved[role]),
+                                                     search_attempt=attempts[role]) as search_span:
+                                with self._tracer.phase("mcp-search-call", **trace_fields):
+                                    result = await self._mcp_gateway.call_tool(name, arguments)
                                 diagnostics = pop_search_diagnostics(result)
                                 self._tracer.search_result(search_span, diagnostics)
                                 outcome = parse_search_result(role, result)
                                 if self._widget_client is not None:
-                                    outcome = await self._widget_client.enrich_outcome(outcome)
+                                    with self._tracer.phase("widget-enrichment", **trace_fields) as metrics:
+                                        outcome = await self._widget_client.enrich_outcome(outcome)
+                                        metrics.update(self._tracer.pin_counts(outcome.pins))
+                        finally:
+                            self._search_slots.release()
                         if outcome.code is not ReasonCode.PIN_SEARCH_UNAVAILABLE or attempts[role] >= 3:
                             outcomes[role] = outcome
                         else:
-                            await asyncio.sleep(SEARCH_RETRY_DELAYS_SECONDS[attempts[role] - 1])
+                            await self._search_backoff(role, attempts[role], "pin_search_unavailable")
                     else:
                         result = await self._mcp_gateway.call_tool(name, arguments)
                 except Exception as error:
@@ -279,7 +298,7 @@ class AgentJobWorker:
                                 role=role, pins=[], code=ReasonCode.PIN_SEARCH_UNAVAILABLE
                             )
                         else:
-                            await asyncio.sleep(SEARCH_RETRY_DELAYS_SECONDS[attempts[role] - 1])
+                            await self._search_backoff(role, attempts[role], "tool_error")
                 return {
                     "role": "tool", "tool_call_id": call_id,
                     "content": json.dumps(result, ensure_ascii=False),
@@ -308,6 +327,12 @@ class AgentJobWorker:
                 "LLM이 모든 승인 역할에 대한 Pinterest 검색 도구를 선택하지 않았다"
             )
         return outcomes
+
+    async def _search_backoff(self, role: Role, search_attempt: int, reason: str) -> None:
+        delay = SEARCH_RETRY_DELAYS_SECONDS[search_attempt - 1]
+        with self._tracer.phase("search-retry-wait", role=role.value, search_attempt=search_attempt) as metrics:
+            metrics.update(planned_ms=delay * 1000, reason=reason)
+            await asyncio.sleep(delay)
 
     async def _with_heartbeat(self, job: Any, operation: Any) -> None:
         stopped = asyncio.Event()

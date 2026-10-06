@@ -22,6 +22,7 @@
 
 ## How
 
+- 역할 span의 하위 시간 분리와 결과 API 측정은 [검색 지연 구간 분리](./search-latency-breakdown.md)를 따른다. 기존 engine_attempts 계약은 유지한다.
 - provider에 선택적 engine_attempts 목록을 전달한다. monotonic clock으로 각 요청 시간을 측정한다.
 - 기록 필드: engine, bang, latency_ms, pin_count, status(success/empty/unavailable), failure_reason(null/access_denied/suspended/captcha/rate_limited/timeout/upstream_error/malformed_response), fallback(bool).
 - MCP search_pinterest_pins 응답은 기존 필드 외 `_search_trace` 배열을 추가한다. 이는 관측 전용 선택 필드다.
