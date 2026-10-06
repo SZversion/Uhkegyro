@@ -12,3 +12,7 @@ search:
 engines:
   - name: google images
     disabled: false
+  - name: duckduckgo images
+    disabled: false
+  - name: pinterest
+    disabled: false

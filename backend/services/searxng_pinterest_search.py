@@ -46,8 +46,21 @@ class SearXNGPinterestSearchProvider:
         if not self._base_url:
             raise OperationalFailure(FailureCode.CONFIGURATION_ERROR)
 
+        outcomes = []
+        for bang, engine in (("goi", "google images"), ("ddi", "duckduckgo images"), ("pin", "pinterest")):
+            outcome = await self._search_engine(role, query_fragments, bang, engine)
+            if outcome.pins and outcome.code is None:
+                return outcome
+            outcomes.append(outcome)
+        pins = next((o.pins for o in outcomes if o.pins), [])
+        code = (ReasonCode.PIN_RESULTS_EMPTY if not pins and any(
+            o.code is ReasonCode.PIN_RESULTS_EMPTY for o in outcomes
+        ) else ReasonCode.PIN_SEARCH_UNAVAILABLE)
+        return RoleSearchOutcome(role=role, pins=pins, code=code)
+
+    async def _search_engine(self, role, query_fragments, bang, engine):
         params = {
-            "q": f"!goi {' '.join(query_fragments)} {self._suffix} site:pinterest.com/pin",
+            "q": f"!{bang} {' '.join(query_fragments)} {self._suffix} site:pinterest.com/pin",
             "categories": "images",
             "format": "json",
             "language": "en",
@@ -69,16 +82,16 @@ class SearXNGPinterestSearchProvider:
             return RoleSearchOutcome(role=role, pins=[], code=ReasonCode.PIN_SEARCH_UNAVAILABLE)
         pins = parse_search_results(payload)
         engine_errors = payload.get("unresponsive_engines", [])
-        google_images_unresponsive = isinstance(engine_errors, list) and any(
+        engine_unresponsive = isinstance(engine_errors, list) and any(
             isinstance(engine_error, (list, tuple))
             and engine_error
             and isinstance(engine_error[0], str)
-            and engine_error[0].casefold() == "google images"
+            and engine_error[0].casefold() == engine
             for engine_error in engine_errors
         )
-        if google_images_unresponsive:
+        if engine_unresponsive:
             logger.warning(
-                "SearXNG Google Images engine unavailable",
+                "SearXNG image engine unavailable",
                 extra={"failure_code": FailureCode.SEARCH_UPSTREAM_UNAVAILABLE.value},
             )
             return RoleSearchOutcome(
@@ -134,6 +147,8 @@ def _pin_id_from_url(url: str) -> str | None:
 
 async def _load_search_json(url: str, params: Mapping[str, str]) -> object:
     async with httpx.AsyncClient(timeout=15.0) as client:
-        response = await client.get(url, params=params)
+        response = await client.get(url, params=params, headers={
+            "X-Forwarded-For": "127.0.0.1", "X-Real-IP": "127.0.0.1",
+        })
         response.raise_for_status()
         return response.json()

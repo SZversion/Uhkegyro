@@ -90,6 +90,37 @@ def _job(attempt, job_id="job-1"):
             "session_token": "private-token", "thumbnail_url": "https://private-thumbnail"}
 
 
+def test_standard_session_attribute_is_scoped_to_attempt(monkeypatch):
+    import sys
+    session = ContextVar("test_session", default=None)
+    seen = []
+
+    @contextmanager
+    def propagate_attributes(*, session_id):
+        token = session.set(session_id)
+        try:
+            yield
+        finally:
+            session.reset(token)
+
+    monkeypatch.setitem(sys.modules, "langfuse", SimpleNamespace(
+        propagate_attributes=propagate_attributes))
+
+    class Client(FakeLangfuse):
+        @contextmanager
+        def start_as_current_observation(self, **kwargs):
+            seen.append(session.get())
+            with super().start_as_current_observation(**kwargs) as span:
+                yield span
+
+    tracer = JobTracer(Client())
+    with tracer.attempt(_job(1)):
+        with tracer._observation(name="interpretation"):
+            assert session.get() == "session-1"
+    assert seen == ["session-1", "session-1"]
+    assert session.get() is None
+
+
 def test_retry_attempts_share_trace_and_keep_private_fields_out(
     monkeypatch, snapshot_factory, card_factory
 ):

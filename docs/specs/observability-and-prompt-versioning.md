@@ -64,3 +64,5 @@ Worker의 Job trace 필수 필드와 수명주기 구현 범위는 [job-trace-re
 - GIVEN: 동일한 30건 평가셋으로 baseline 또는 변경 후 실행을 한다.
 - WHEN: 각 LLM 호출과 평가 실행을 기록한다.
 - THEN: 모델 provider·name, `prompt_version`, token 수, 요청당 비용, 단계별 지연과 p50/p95를 같은 실행 기록에서 비교할 수 있다.
+
+Generation 실제 호출 구간과 표준 session_id 전파는 [langfuse-generation-session-repair.md](langfuse-generation-session-repair.md)를 따른다. 해석·메모리·MCP 도구 선택 호출이 generation으로 기록된다.

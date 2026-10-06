@@ -23,6 +23,7 @@ API 재배포 시 서비스에 별도 설정된 LANGFUSE_HOST와 배포 목록 �
 - 파일의 Prompt 이름 선언이 있으면 설정 버전과 일치해야 하며, 불일치는 adapter 초기화 오류다. 사용자 지정 파일은 파일명으로 제한하지 않는다.
 - 경로와 버전을 함께 설정해야 v4 검증 피드백 분기가 적용된다. 배포 가이드·README는 이 계약을 따른다.
 
+- Preview 출력 계약과 2048 토큰 상한은 [interpreter-catalog-output-repair.md](interpreter-catalog-output-repair.md)를 따른다.
 - Cloud Build deploy-api는 --update-env-vars로 지정된 값만 갱신한다. --set-env-vars/--clear-env-vars/--remove-env-vars는 사용하지 않는다. MCP 배포는 이번 수정 범위 밖이다.
 
 ## AC

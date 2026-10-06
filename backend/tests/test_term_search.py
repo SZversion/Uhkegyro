@@ -91,7 +91,7 @@ def test_ac02_invalid_requests_do_not_search(search_setup, payload, status):
 
 @pytest.mark.parametrize("payload,code", [
     ({"results": []}, "PIN_RESULTS_EMPTY"),
-    ({"results": [], "unresponsive_engines": [["google images", "secret-error"]]},
+    ({"results": [], "unresponsive_engines": [[engine, "secret-error"] for engine in ("google images", "duckduckgo images", "pinterest")]},
      "PIN_SEARCH_UNAVAILABLE"), ({"bad": "secret-error"}, "PIN_SEARCH_UNAVAILABLE"),
 ])
 def test_ac03_empty_and_failed_search(search_setup, payload, code):

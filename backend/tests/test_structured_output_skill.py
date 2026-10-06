@@ -8,12 +8,90 @@ import pytest
 from backend.services import llm
 from backend.services.structured_output import response_format
 from backend.tests.test_llm_adapter import (
-    SELECT_JSON, _FakeClient, _FakeCompletions, _FakeResponse, _adapter, _real_settings,
+    CLARIFY_JSON, SELECT_JSON, _FakeClient, _FakeCompletions, _FakeResponse, _adapter, _real_settings,
     _langfuse_generation_kwargs,
 )
 
 ROOT = Path(__file__).resolve().parents[2]
 PROMPT = ROOT / "prompts" / "uhkegryo-interpreter-v1.md"
+
+
+def test_catalog_schema_limits_term_ids_to_their_role():
+    cards = json.dumps({"active_cards": [
+        {"role": "view", "term_id": "view_front"},
+        {"role": "layout", "term_id": "layout_center"},
+    ]})
+    definitions = response_format(cards)["json_schema"]["schema"]["$defs"]
+    for name in ("InterpretationSelection", "ContextUpdate"):
+        variants = definitions[name]["anyOf"]
+        assert len(variants) == 2
+        for variant in variants:
+            properties = variant["properties"]
+            role = properties["role"]["enum"][0]
+            term = properties["term_id"]
+            if name == "ContextUpdate":
+                assert term["anyOf"][1] == {"type": "null"}
+                term = term["anyOf"][0]
+            assert term["enum"] == ["view_front" if role == "view" else "layout_center"]
+            assert variant["additionalProperties"] is False
+
+
+def test_generation_stays_open_during_upstream_call(monkeypatch):
+    recorded, _ = _langfuse_generation_kwargs(monkeypatch)
+    events = []
+    fake = sys.modules["langfuse"].Langfuse
+    original = fake.start_as_current_observation
+    from contextlib import contextmanager
+
+    @contextmanager
+    def observation(self, **kwargs):
+        events.append("start")
+        with original(self, **kwargs) as generation:
+            yield generation
+        events.append("end")
+
+    monkeypatch.setattr(fake, "start_as_current_observation", observation)
+
+    class Completions(_FakeCompletions):
+        async def create(self, **kwargs):
+            assert events == ["start"]
+            events.append("call")
+            await asyncio.sleep(0.01)
+            return await super().create(**kwargs)
+
+    settings = _real_settings().model_copy(update={
+        "langfuse_public_key": "pk-test", "langfuse_secret_key": "sk-test",
+    })
+    adapter = _adapter(Completions(responses=[_FakeResponse(SELECT_JSON)]), settings=settings)
+    asyncio.run(adapter.interpret("반동", job_id="j", session_id="s", attempt=1, max_attempts=3))
+    assert events == ["start", "call", "end"]
+    assert recorded["generation_update"]["usage_details"]["total_tokens"] == 15
+
+
+@pytest.mark.parametrize("wrong_role", [False, True, "clarify"])
+def test_v4_role_slots_convert_to_existing_array_contract(wrong_role):
+    payload = json.loads(CLARIFY_JSON if wrong_role == "clarify" else SELECT_JSON)
+    roles = ("body", "pose", "view", "perspective", "layout")
+    payload["selections"] = dict.fromkeys(roles)
+    payload["selections"]["pose"] = {
+        "role": "view" if wrong_role else "pose", "term_id": "pose_contrapposto",
+        "evidence": ["반동"], "confidence": 0.9, "source_job_id": None,
+    }
+    if wrong_role == "clarify":
+        payload["selections"]["pose"] = None
+    payload["context_updates"] = dict.fromkeys(roles)
+    completions = _FakeCompletions(responses=[_FakeResponse(json.dumps(payload))])
+    adapter = _adapter(completions, settings=_real_settings().model_copy(update={
+        "interpreter_prompt_version": "uhkegryo-interpreter-v4"}))
+    call = adapter.interpret("반동", job_id="j", session_id="s", attempt=1, max_attempts=3,
+        active_cards_json=json.dumps({"active_cards": [{"role": "pose", "term_id": "pose_contrapposto"}]}))
+    if wrong_role is True:
+        with pytest.raises(llm.LLMInvalidStructuredOutput):
+            asyncio.run(call)
+    else:
+        output = asyncio.run(call)
+        assert len(output.selections) == (0 if wrong_role == "clarify" else 1)
+        assert output.context_updates == []
 
 
 def test_schema_preserves_code_types_and_requires_nullable_fields():
