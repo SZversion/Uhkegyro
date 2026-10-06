@@ -50,12 +50,23 @@ def observed_generation(method):
         bound = signature.bind(self, *args, **kwargs)
         metadata = {k: kwargs[k] for k in ("job_id", "session_id", "attempt", "max_attempts") if k in kwargs}
         metadata.update(bound.arguments.get("trace", {}))
+        generation_name = _generation_name(method.__name__, bound.arguments)
 
         async def run():
-            with self._generation(metadata):
+            with self._generation(metadata, name=generation_name):
                 return await method(self, *args, **kwargs)
         return run()
     return wrapper
+
+
+def _generation_name(method_name, arguments):
+    if method_name == "interpret":
+        return "interpreter"
+    if method_name == "memory":
+        return f"memory-{arguments['operation']}"
+    if method_name == "request_mcp_tool_calls":
+        return "mcp-tool-selection"
+    return method_name
 
 PROMPT_FILE_NAME = "uhkegryo-interpreter-v0.md"
 SYSTEM_HEADING = "## System message"
@@ -533,7 +544,7 @@ class LLMInterpretationAdapter:
                 logger.debug("Langfuse generation update unavailable")
 
     @contextmanager
-    def _generation(self, metadata):
+    def _generation(self, metadata, *, name):
         context = None
         token = _active_generation.set(None)
         try:
@@ -544,7 +555,7 @@ class LLMInterpretationAdapter:
                         secret_key=self.settings.langfuse_secret_key, host=self.settings.langfuse_host)
                     if client.get_current_trace_id():
                         context = client.start_as_current_observation(as_type="generation",
-                            name=self.prompt_version, model=self.settings.llm_model,
+                            name=name, model=self.settings.llm_model,
                             version=self.prompt_version, input=None, metadata=metadata)
                         _active_generation.set(context.__enter__())
                 except Exception:
