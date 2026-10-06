@@ -1,8 +1,8 @@
 """Langfuse Job trace boundary; only approved fields leave the worker."""
 from __future__ import annotations
 
-import logging
 import json
+import logging
 from contextlib import contextmanager
 from typing import Any, Iterator
 
