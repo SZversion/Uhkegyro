@@ -32,6 +32,7 @@
 - 역할당 최대 검색 호출은 3회다. retryable outcome은 `code == ReasonCode.PIN_SEARCH_UNAVAILABLE`일 때뿐이며 backoff는 호출 후 1,000ms, 2,000ms다. `PIN_RESULTS_EMPTY` 및 Pin별 Widget 접근 불가(`deleted`)는 재시도하지 않는다.
 - `run_once(search_outcomes=...)`에 결과가 직접 주어진 경우 테스트 seam을 유지하고 MCP 도구를 호출하지 않는다.
 - 검색 outcome의 조립과 공개 reason code는 기존 `assemble` 및 `RoleSearchOutcome` 계약을 재사용한다. 썸네일 비저장 규칙은 작업 12를 따른다.
+- 동일 LLM 응답의 독립 역할 검색은 [병렬 검색 Spec](./parallel-role-search.md)에 따라 worker 공유 한도 3개로 실행한다. 검색 외 도구는 순서 경계를 유지하고, 동일 응답의 중복 역할은 첫 유효 호출만 실행한다. 결과는 원래 호출 순서와 `tool_call_id`로 반환한다.
 
 ## AC
 
