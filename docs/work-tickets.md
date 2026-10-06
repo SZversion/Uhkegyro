@@ -43,28 +43,22 @@
 - AC 기반 테스트 통과 후에만 완료로 표시한다.
 - GitHub PR 승인 후 사람이 merge한다.
 
-## 현재 구현 현황
+## 현재 구현 현황 (2026-10-03 근거 정리)
 
-| 영역 | 상태 | 근거 |
+| 영역 | 상태 | 근거·다음 작업 |
 | --- | --- | --- |
-| FastAPI `GET /health` | ✅ 완료 | `backend/main.py` |
-| TERM_CARD 시작 검증·메모리 로드 | ✅ 완료 | `backend/services/catalog_repository.py`, `backend/tests/test_startup_catalog.py` |
-| 활성 TERM_CARD resolver | ✅ 완료 | `backend/services/resolver.py`, `backend/tests/test_resolver.py` |
-| 결정론 검색 URL builder | ✅ 완료 | `backend/services/search_url_builder.py`, `backend/tests/test_search_url_builder.py` |
-| 응답 조립·Pydantic 계약 | ✅ 완료 | `backend/services/response_assembler.py`, `backend/schemas/` |
-| 익명 세션 쿠키 발급·재사용 | ✅ 완료 | `backend/services/session_store.py`, `backend/tests/test_session_cookie_token.py` |
-| 인메모리 mock `POST /api/agent` | ✅ 완료 | `backend/routes/agent.py`, `backend/tests/test_agent_routes.py` |
-| 인메모리 mock `GET /api/jobs/{job_id}` | ✅ 완료 | `backend/routes/agent.py`, `backend/tests/test_agent_routes.py` |
-| OpenRouter LLM adapter 골조 | ✅ 완료 | `backend/services/llm.py`, `backend/tests/test_llm_adapter.py` |
-| `/mcp` 활성 카드 조회 도구 | ✅ 완료 | `backend/mcp/server.py`, `backend/mcp/main.py` |
-| Langfuse 운영 관측·Prompt 등록·Dataset 연결 | ⬜ 미검증 | LLM generation observation 일부 구현, 운영 검증 미완료 |
-| 관측 필수 필드·실패 코드 전체 검증 | 🟡 부분 완료 | 관련 Spec 대비 누락 작업 존재 |
-| PostgreSQL 세션·Job 영속화 | ⬜ 미착수 | Repository·migration 없음 |
-| PostgreSQL Job worker·lease recovery | ⬜ 미착수 | 실제 claim/retry worker 없음 |
-| Pinterest 서버 검색·widget 조회 | ⬜ 미착수 | provider 없음 |
-| Next.js 사용자 UI | ⬜ 미착수 | frontend 없음 |
-| 평가 실행·출시 보고서 | ⬜ 미착수 | `evals/run_evals.py` 없음 |
-| 실제 배포·외부 MCP client 증거 | ⬜ 미검증 | 실행 증거 없음 |
+| FastAPI·cookie·PostgreSQL 세션/Job | 구현됨 | routes·repository·migration, 최종 운영 검증 필요 |
+| worker·retry·lease recovery | 구현됨 | agent_worker·job_retry_recovery |
+| TERM_CARD·resolver·응답 계약 | 구현됨 | 활성 카드 검증·Pydantic·결정론 조립 |
+| OpenRouter·v4 해석 | 구현됨 | 이전 작업 트리 참고 30/30 + 10/10; 현재 PR 지문 불일치, 재평가 필요 |
+| MCP 검색·SearXNG·widget | 구현됨 | 후보 ddd7f93 실제 Pin 16개 연결 검증; 최종 main E2E 필요 |
+| Next.js 결과·대화 UI | 구현됨 | frontend/app/page.jsx·ConversationPanel; 운영 브라우저 검증 필요 |
+| Langfuse 수신·전환 | PR #108 병합됨 | 공용·로컬 합성 trace 검증; 실제 요청 관측 필요 |
+| 원격 Prompt·Dataset·정성 평가 | 미완료 | 파일 로딩과 자동 기대값 검사를 구분 |
+| 평가 리포트 | 기존 증거 정리됨 | EVAL_REPORT.md; 운영 지표·정성 점수·최종 비교 추가 필요 |
+| 사용자 배포·영상·스크린샷 | 미완료 | 실제 URL·정상/실패 화면·운영 trace 확보 |
+
+아래 번호별 티켓은 원래 작업 분할 계획이다. 완료 상태는 이 표와 EVAL_REPORT.md를 우선하며, 과거의 mock·골조 표기를 현재 기능 상태로 해석하지 않는다.
 
 ## 완료된 작업
 

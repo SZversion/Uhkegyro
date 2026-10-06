@@ -2,8 +2,8 @@
 
 > 전문 용어가 낯선 초보자가 텍스트로 묘사한 캐주얼 캐릭터의 **체형/소체, 포즈, 구도**를 기초 드로잉 용어와 역할별 Pinterest 탐색 계획으로 바꾸는 Agent입니다.
 
-> **현재 상태: PostgreSQL job 저장, LLM → resolver → Pinterest provider → 응답 조립 worker, frontend 입력·polling까지 구현됨**
-> `POST /api/agent`는 세션 쿠키와 queued job을 만들고, `GET /api/jobs/{job_id}`는 동일 세션의 job을 조회합니다. worker는 claim한 job을 LLM 해석·resolver 검증·Pinterest 검색·응답 조립까지 처리하고, 재시도와 lease 복구를 수행합니다. frontend는 입력·제출·job polling 상태를 표시하지만, 완료된 용어·Pin 결과를 화면에 표시하는 UI는 아직 병합되지 않았습니다. Langfuse adapter의 일부 관측 코드는 구현됐지만, worker trace 운영 검증·원격 Prompt 등록·Dataset 연결·대시보드 측정은 미완료입니다. 별도 MCP 서비스의 `get_active_term_card` FastMCP 도구는 Cloud Run IAM으로 배포됐으며, 로컬·운영 MCP client 호출을 검증했습니다. 아래의 목표 구조와 계획 항목은 완료 기능으로 해석하면 안 됩니다.
+> **현재 상태: PostgreSQL job 저장, LLM → resolver → MCP 검색 → 응답 조립 worker, 결과·대화 UI 구현됨**
+> `POST /api/agent`는 세션 쿠키와 queued job을 만들고, `GET /api/jobs/{job_id}`는 동일 세션의 job을 조회합니다. worker는 claim한 job을 LLM 해석·resolver 검증·Pinterest 검색·응답 조립까지 처리하고, 재시도와 lease 복구를 수행합니다. frontend는 입력·제출·polling, 완료 답변·용어·Pin 미리보기·대화 이력을 표시합니다. 실제 운영 브라우저 E2E는 별도 검증 대상입니다. Job trace와 generation 관측 코드는 구현됐습니다. PR #108에서 공용·로컬 합성 trace 수신을 검증했으며, 실제 LLM 요청 관측·원격 Prompt 운영·Dataset 연결은 미검증입니다. 별도 MCP 서비스의 `get_active_term_card` FastMCP 도구는 Cloud Run IAM으로 배포됐으며, 로컬·운영 MCP client 호출을 검증했습니다. 아래의 목표 구조와 계획 항목은 완료 기능으로 해석하면 안 됩니다.
 
 ## 한눈에 보기
 
@@ -73,11 +73,11 @@
 사용자 UI
   -> POST /api/agent (PostgreSQL에 세션·queued job 저장, 서버 세션 쿠키 발급·재사용, 202 + job_id)
   -> GET /api/jobs/{job_id} polling (PostgreSQL에서 소유권 확인 후 상태·결과 조회)
-Job worker / retry·lease recovery (LLM → resolver → Pinterest provider → response assembly 구현, 외부 E2E 미측정)
+Job worker / retry·lease recovery (LLM → resolver → MCP search → response assembly 구현, 외부 E2E 미측정)
   -> LLM: 일상어를 허용된 term_id와 역할로 구조화
   -> 결정론 코드: Pydantic 검증, 역할 순서, 허용 ID, URL 인코딩
   -> FastMCP: TERM_CARD JSON 카탈로그의 활성 카드 정보를 구조화 조회
-  -> SearXNG Google Images 검색 -> Pin URL 검증 -> widget 조회 -> 역할별 최대 8개 {pin_id, pin_url, thumbnail_url, status} 반환
+  -> MCP search_pinterest_pins -> SearXNG Google Images 검색 -> Pin URL 검증 -> widget 조회 -> 역할별 최대 8개 {pin_id, pin_url, thumbnail_url, status} 반환
   -> UI: 원격 썸네일을 원본 Pin 링크로 표시
 ```
 
@@ -105,11 +105,11 @@ SearXNG 검색 규칙은 [SearXNG Pinterest 검색 Spec](docs/specs/searxng-pint
 | --- | --- | --- |
 | `GET /health` | 구현됨. `{"status":"ok"}` 반환 | Cloud Run 상태 확인 |
 | `POST /api/agent` | PostgreSQL 영속화 구현됨. 세션 쿠키 발급·재사용, `202 + job_id` 반환 | 실제 환경 요청 증거 |
-| `GET /api/jobs/{job_id}` | PostgreSQL 영속화 구현됨. 소유 job의 상태·완료 결과·실패 조회 | frontend 결과 UI 연결 |
+| `GET /api/jobs/{job_id}` | PostgreSQL 영속화 구현됨. 소유 job의 상태·완료 결과·실패 조회 | 실제 운영 UI 연결 검증 |
 | DB 영속화·실제 worker | 구현됨. PostgreSQL job claim, LLM adapter·resolver·Pinterest provider·response assembler pipeline, retry·lease recovery | 실제 환경 실행 증거 |
 | LLM 해석·resolver 연동 | 구현됨. worker가 활성 TERM_CARD를 LLM에 전달하고 resolver·검색 결과를 조립해 저장 | 실제 모델 품질 평가 |
 | Pinterest 검색 실행 | worker 연결 구현됨. SearXNG Google Images 검색·widget enrichment 코드와 단위 테스트 존재 | 실제 SearXNG 인스턴스 연결·검색 결과 검증 |
-| Next.js UI | 입력·제출·polling 구현됨 | 완료 결과·질문·Pin 링크 표시 |
+| Next.js UI | 입력·제출·polling 구현됨 | 결과·질문·Pin 링크·대화 UI 구현, 운영 화면 검증 필요 |
 | `/docs` | FastAPI 기본 문서에서 확인 가능 | 요청·응답 모델 및 오류 응답 확인 |
 | `/mcp` | `backend.mcp.main:app`에 마운트된 Streamable HTTP endpoint를 Cloud Run IAM으로 배포함. 무인증 `403`, 인증된 도구 목록·`found`·`not_found` 호출을 검증함. [호출 증거](docs/mcp-client-evidence.md) | Streamable HTTP endpoint와 도구 호출 증거 |
 | TERM_CARD JSON 카탈로그 | 구현됨. API·MCP 시작 시 검증 후 역할별 활성 카드를 메모리에 로드 | 요청 중 재읽기·DB 적재 없이 활성 카드를 조회 |
@@ -119,7 +119,7 @@ SearXNG 검색 규칙은 [SearXNG Pinterest 검색 Spec](docs/specs/searxng-pint
 
 ## 로컬 실행
 
-현재 재현 절차의 계약은 [로컬 개발 재현 Spec](./docs/specs/local-development-reproduction.md)을 기준으로 합니다. 아래 절차는 API health와 frontend 입력·제출·polling까지의 현재 구현 범위를 실행합니다. **완료 결과를 화면에 표시하는 UI와 외부 Pinterest·LLM의 실제 E2E 성공은 아직 이 절차로 보장하지 않습니다.**
+현재 재현 절차의 계약은 [로컬 개발 재현 Spec](./docs/specs/local-development-reproduction.md)을 기준으로 합니다. 아래 절차는 API health와 frontend 입력·제출·polling까지의 현재 구현 범위를 실행합니다. **결과 UI는 구현되어 있으며 최종 버전의 실제 Pinterest·MCP·Langfuse·브라우저 E2E는 별도 검증 대상입니다.**
 
 ### 사전 준비
 
@@ -193,7 +193,7 @@ npm ci
 npm run dev -- --port 3001
 ```
 
-브라우저에서 `http://localhost:3001`을 열어 1~500자 입력의 유효성 검사, `POST /api/agent` 제출, job polling 상태 표시까지 확인합니다. 현재 main의 UI는 완료 상태만 표시하며, 결과 카드·Pin 링크 표시는 후속 UI 작업이 병합된 뒤에 확인합니다.
+브라우저에서 `http://localhost:3001`을 열어 1~500자 입력의 유효성 검사, `POST /api/agent` 제출, job polling 상태 표시까지 확인합니다. 현재 UI는 답변·질문·용어·Pin 미리보기·대화 이력을 표시합니다. demo가 아닌 실제 API 모드에서 새 요청으로 확인합니다.
 
 종료는 다음 명령으로 합니다.
 
@@ -203,7 +203,13 @@ docker compose down
 
 frontend 개발 서버도 해당 PowerShell 창에서 `Ctrl+C`로 중지합니다. `docker compose down`은 named volume을 삭제하지 않습니다.
 
-> 아직 새 환경에서 이 전체 절차를 끝까지 실행한 실측은 없습니다. 특히 실제 LLM·Pinterest 결과와 완료 결과 UI는 별도 검증 대상입니다. Langfuse 인프라 기동 확인은 LLM trace 기록 확인과 별개입니다. 원격 Prompt 등록·Dataset 연결·대시보드 측정과 결과 UI 구현 후 새 환경에서 절차를 다시 검증하고 결과를 갱신합니다.
+> 아직 새 환경에서 이 전체 절차를 끝까지 실행한 실측은 없습니다. 특히 최종 코드의 실제 LLM·MCP·Pinterest 결과와 브라우저 렌더링은 별도 검증 대상입니다. Langfuse 인프라 기동 확인은 LLM trace 기록 확인과 별개입니다. 원격 Prompt 등록·Dataset 연결·대시보드 측정을 완료한 뒤 새 환경에서 절차를 다시 검증하고 결과를 갱신합니다.
+
+## 제출 기준 설정과 실제 검증
+
+배포 구성·환경 변수 예시는 `LLM_MODEL=openai/gpt-4.1-mini`, `INTERPRETER_PROMPT_VERSION=uhkegryo-interpreter-v4`, v4 파일 경로를 함께 사용합니다. Cloud Run 이미지 경로는 `/app/prompts/uhkegryo-interpreter-v4.md`, 직접 Python은 `./prompts/uhkegryo-interpreter-v4.md`입니다. 기존 `.env`의 명시적 override도 세 값을 함께 맞춥니다. 구성 변경은 실제 클라우드 배포 완료를 뜻하지 않습니다.
+
+과거 실제 모델 평가 40/40은 이전 작업 트리의 참고 결과입니다. 당시 프롬프트·어댑터 지문이 현재 PR과 달라 현재 배포 후보의 품질 통과 근거로 사용할 수 없습니다. 현재 PR의 동일 평가 재실행과 운영·정성 검증은 남아 있습니다. [평가 리포트](EVAL_REPORT.md)와 [실제 서비스 검증 절차](docs/service-validation-guide.md)에서 근거·미검증 범위를 확인합니다. `scripts/run_live_eval.py`는 검색 fixture와 Langfuse 비활성화를 사용하므로 외부 E2E에는 실제 API/브라우저 경로를 사용합니다.
 
 ## 환경 변수와 보안
 
@@ -219,9 +225,9 @@ frontend 개발 서버도 해당 PowerShell 창에서 `Ctrl+C`로 중지합니�
 
 | 지표 | 현재 값 | 최종 기록 위치 |
 | --- | --- | --- |
-| 평가셋 품질 점수 | 미측정 | [EVAL_REPORT.md](./EVAL_REPORT.md) |
+| 평가셋 품질 점수 | 현재 PR 미검증; 과거 참고 기대값 30/30 + 대조 10/10 (검색 fixture) | [EVAL_REPORT.md](./EVAL_REPORT.md) |
 | 계약 준수율 | 미측정 | `EVAL_REPORT.md` |
-| p50 / p95 지연 | 미측정 | `EVAL_REPORT.md` |
+| p50 / p95 지연 | 과거 참고 fixture 평가 4.61초 / 9.89초; 현재 PR·운영 미측정 | `EVAL_REPORT.md` |
 | 요청당 평균 비용 | 미측정 | `EVAL_REPORT.md` |
 | LLM·MCP 오류율 | 미측정 | `EVAL_REPORT.md` |
 
@@ -272,8 +278,8 @@ git push -u origin feat/<작업내용>
 | --- | --- |
 | 사용자 UI URL | 미배포 |
 | Cloud Run Agent API URL | 미배포 |
-| 외부 MCP client 연결·도구 호출 증거 화면 | 미구현 |
-| Langfuse 대시보드 스크린샷 | 미측정 |
+| 외부 MCP client 연결·도구 호출 증거 화면 | 카드 조회 운영 검증 기록 있음; 최신 검색 경로 화면 정리 필요 |
+| Langfuse 대시보드 스크린샷 | 합성 trace 수신 검증 있음; 실제 요청 화면 정리 필요 |
 | 정상·실패 경로 데모 영상 | 미제작 |
 
 배포와 평가가 끝나면 실제 URL·실행 날짜·모델·프롬프트 버전·데이터셋 버전만 기록합니다. 추정 수치나 아직 존재하지 않는 URL은 적지 않습니다.
