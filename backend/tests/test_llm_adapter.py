@@ -371,9 +371,23 @@ def test_langfuse_metadata_keeps_job_id(monkeypatch):
 
 
 def test_langfuse_keeps_prompt_version(monkeypatch):
-    """trace 이름은 프롬프트 버전을 유지한다."""
+    """generation 이름은 프롬프트 버전과 독립적으로 해석 종류를 표시한다."""
     recorded, adapter = _langfuse_generation_kwargs(monkeypatch)
-    assert recorded["generation"]["name"] == adapter.prompt_version
+    assert recorded["generation"]["name"] == "interpreter"
+    assert recorded["generation"]["version"] == adapter.prompt_version
+
+
+@pytest.mark.parametrize(("method_name", "arguments", "expected"), [
+    ("interpret", {}, "interpreter"),
+    ("memory", {"operation": "classify"}, "memory-classify"),
+    ("memory", {"operation": "summarize"}, "memory-summarize"),
+    ("memory", {"operation": "answer"}, "memory-answer"),
+    ("request_mcp_tool_calls", {}, "mcp-tool-selection"),
+])
+def test_generation_name_identifies_call_kind(method_name, arguments, expected):
+    from backend.services.llm import _generation_name
+
+    assert _generation_name(method_name, arguments) == expected
 
 
 def test_langfuse_disabled_sends_nothing(monkeypatch):
