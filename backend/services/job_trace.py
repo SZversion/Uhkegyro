@@ -1,11 +1,12 @@
 """Langfuse Job trace boundary; only approved fields leave the worker."""
 from __future__ import annotations
 
+import json
 import logging
 from contextlib import contextmanager
 from typing import Any, Iterator
 
-from backend.services.job_retry_recovery import retry_delay_ms, should_retry
+from backend.services.job_retry_recovery import retry_delay_ms, should_retry, validation_diagnostics
 from backend.services.llm import LLMError
 from backend.services.failure_mapping import classify_failure
 
@@ -140,6 +141,14 @@ class AttemptTrace:
     def failed(self, job: Any, error: Exception) -> None:
         retry = should_retry(job["attempt"], job["max_attempts"], error)
         code = classify_failure(error)
+        diagnostics = validation_diagnostics(error)
+        if diagnostics is not None:
+            self._update(self._span, metadata={
+                "job_id": str(job["job_id"]), "session_id": str(job["session_id"]),
+                "attempt": job["attempt"], "max_attempts": job["max_attempts"],
+                "model": self._tracer.model, "prompt_version": self._tracer.prompt_version,
+                "validation_diagnostics": json.loads(diagnostics),
+            })
         self._update(self._span, output={
             "job_status": "queued" if retry else "failed",
             "agent_status": None,
