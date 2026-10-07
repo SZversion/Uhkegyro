@@ -5,12 +5,12 @@ from types import SimpleNamespace
 
 import pytest
 
-from backend.services import agent_worker, conversation_summary_worker
+from backend.services import agent_worker
 from backend.services.agent_worker import AgentJobWorker
 from backend.services.mcp_tool_gateway import McpToolGateway
 
 
-async def _idle_summary(*args):
+async def _idle_task(*args):
     await asyncio.Future()
 
 
@@ -33,8 +33,7 @@ def test_worker_prewarms_before_claiming_jobs(monkeypatch, snapshot_factory):
             await gateway.list_tools()
             return False
         monkeypatch.setattr(worker, "run_once", run_once)
-        monkeypatch.setattr(worker._recovery, "recover_expired_leases", _idle_summary)
-        monkeypatch.setattr(conversation_summary_worker, "run_summary_loop", _idle_summary)
+        monkeypatch.setattr(worker._recovery, "recover_expired_leases", _idle_task)
         task = asyncio.create_task(worker.run_forever(concurrency=1))
         try:
             await asyncio.wait_for(listed.wait(), 1)
@@ -73,11 +72,10 @@ def test_worker_refreshes_periodically_and_cancels_refresh(monkeypatch, snapshot
             }])
 
         monkeypatch.setattr(agent_worker.asyncio, "sleep", record_sleep)
-        monkeypatch.setattr(conversation_summary_worker, "run_summary_loop", _idle_summary)
         worker = AgentJobWorker(None, snapshot_factory([]),
                                 mcp_gateway=McpToolGateway(mcp_url="http://mcp/mcp", operation_caller=operation),
                                 tracer=SimpleNamespace(shutdown=lambda: None))
-        monkeypatch.setattr(worker._recovery, "recover_expired_leases", _idle_summary)
+        monkeypatch.setattr(worker._recovery, "recover_expired_leases", _idle_task)
         task = asyncio.create_task(worker.run_forever(concurrency=0))
         try:
             await asyncio.wait_for(refresh_started.wait(), 1)
@@ -108,11 +106,10 @@ def test_failed_periodic_refresh_retries_without_stopping_worker(monkeypatch, sn
                                            "inputSchema": {"type": "object"}}])
 
         monkeypatch.setattr(agent_worker, "MCP_TOOL_REFRESH_INTERVAL_SECONDS", .01)
-        monkeypatch.setattr(conversation_summary_worker, "run_summary_loop", _idle_summary)
         gateway = McpToolGateway(mcp_url="http://mcp/mcp", operation_caller=operation)
         worker = AgentJobWorker(None, snapshot_factory([]), mcp_gateway=gateway,
                                 tracer=SimpleNamespace(shutdown=lambda: None))
-        monkeypatch.setattr(worker._recovery, "recover_expired_leases", _idle_summary)
+        monkeypatch.setattr(worker._recovery, "recover_expired_leases", _idle_task)
         task = asyncio.create_task(worker.run_forever(concurrency=0))
         try:
             await asyncio.wait_for(recovered.wait(), 1)
@@ -144,8 +141,7 @@ def test_failed_prewarm_does_not_block_polling(monkeypatch, snapshot_factory, fa
             polled.set()
             return False
         monkeypatch.setattr(worker, "run_once", run_once)
-        monkeypatch.setattr(worker._recovery, "recover_expired_leases", _idle_summary)
-        monkeypatch.setattr(conversation_summary_worker, "run_summary_loop", _idle_summary)
+        monkeypatch.setattr(worker._recovery, "recover_expired_leases", _idle_task)
         task = asyncio.create_task(worker.run_forever(concurrency=1))
         try:
             await asyncio.wait_for(polled.wait(), 1)

@@ -40,11 +40,6 @@ class RecallQuery(MemoryModel):
         return self
 
 
-class SummaryOutput(MemoryModel):
-    text: str = Field(min_length=1, max_length=600)
-    source_job_ids: list[UUID] = Field(default_factory=list, max_length=20)
-
-
 class Citation(MemoryModel):
     job_id: UUID
     quote: str = Field(min_length=1, max_length=500)

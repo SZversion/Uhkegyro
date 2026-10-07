@@ -1,27 +1,22 @@
-# 요청 완료 후 필요한 대화 요약
+# 자동 요약 제거와 원본 기반 대화 기억
 ## Why
-긴 대화의 사용자는 요약 때문에 답변을 기다리거나 요청 없이 요약 비용이 발생하는 것을 원하지 않는다. 기존 1초 조회와 watermark 구간 누적 방식을 제거한다. 유휴 DB 조회·요약 호출 수, 요청 완료와 요약 시작 순서, 요약 중 DB 슬롯 가용성을 검증한다.
+사용자의 핵심 작업은 최근 요청의 조건 유지와 레퍼런스 검색이다. 일반 대화 요약은 원본 검색 이력을 대신하지 못하며 추가 LLM 비용·길이 실패·백그라운드 작업을 만든다. 요약 호출 수 0과 최근 조건/원본 회상의 유지 여부를 검증한다.
 ## Goal
-새 요청 결과가 정상 저장된 이후 해당 대화에 요약할 원문이 있을 때만 실행한다. 요청/대상 없이 요약 조회 및 LLM 호출은 0회다. 워터마크·배치 순회·주기 재시도는 제거한다. 답변은 기존 요약과 최근 6개 원문으로 처리한다. UI/API/모델/배포/운영 데이터 일괄 삭제는 제외한다.
+자동 요약 생성 및 모든 본문/회상 프롬프트의 요약 입력을 제거한다. 현재 constraints, pending_question, 최근 6개 종결 원문, 검증된 원본 출처와 검색 결과를 유지한다. 오래된 취향의 자동 종합, 회상 검색 확장, UI/API/배포/운영 데이터 일괄 삭제는 제외한다.
 ## What
-요청 완료 후 최근 6개 밖 원문을 읽고 기존 요약 입력과 다르면 작업을 등록한다. 같은 대화의 대기 신호는 합친다. 백그라운드 작업은 해당 대화만 다시 확인하고 요약 전체를 재작성한다. 실패/취소/재시작은 자동 실행하지 않고 다음 완료 요청 때 다시 필요 여부를 확인한다. 짧은 대화·이미 동일한 입력·실패/stale/안전 거절 요청은 등록하지 않는다.
+새 요청은 현재 조건과 최근 원문으로 해석한다. 명시적 과거 질문은 같은 대화의 전체 선행 원본에서 기존 필터로 조회하고 인용을 검증한다. 26개를 넘는 대화의 오래된 기록도 원본 검색 범위에 포함한다. 모호한 오래된 지시에는 확인 질문을 사용한다. 요청 완료/서버 시작/유휴 상태에는 요약 작업이 없다.
 ## How
-- sessions.memory_json의 summary와 summary_sources는 유지한다. summarized_through를 읽거나 생성하지 않는다. 정상 저장 시 오래된 메타데이터를 제거하되 기존 요약 및 jobs 원문은 일괄 삭제하지 않는다.
-- 오래된 종결 기록 중 가장 최근 20개를 시간순으로 정제한다. 입력은 최대 48,000자이며 초과 시 가장 오래된 기록부터 제외한다. 누락 여부를 summary_truncated에 저장하고 summary_incomplete로 본문 해석에 알린다. 오래된 원문 회상 검색은 유지한다.
-- 정제된 records와 truncated의 SHA-256(summary_input_hash)을 비교하여 동일 입력의 불필요한 재작성을 생략한다. 이 값은 구간 경계가 아니며 새 요약에는 이전 summary를 넣지 않는다. LLM 호출은 한 번, 30초 제한, 출처는 이번 records에 포함된 Job ID만 허용한다.
-- SummaryOutput.text는 1~600자를 허용한다. 프롬프트는 필요한 내용이 많을 때 400~600자를 목표로 하되 짧은 대화의 요약을 억지로 늘리지 않는다. 결과는 sessions.memory_json.summary에 저장하며 600자를 넘는 출력은 잘라 저장하지 않고 계약 위반으로 처리해 기존 요약을 보존한다.
-- worker별 asyncio.Queue와 대기 session 집합을 사용한다. 완료 저장 후 필요한 경우만 등록하고 idle에서는 queue.get만 기다린다. startup 스캔·sleep·전체 대화 스캔·시간 기반 재시도 없음. 한 worker의 요약 동시성은 1개다.
-- replica 중복 실행은 session별 summary_claim(token, expires_at)의 원자적 조건 UPDATE로 제어한다. 유효기간 60초, LLM 제한 30초다. 작업 소유권과 만료 시각을 확인한 결과만 저장한다. 만료·실패·종료 시 다음 요청이 재확보 가능하다. 서로 다른 replica의 다른 대화는 별도 작업이며 전역 advisory lock은 제거한다.
-- 조회·claim·저장·해제는 짧은 DB 작업이다. LLM 동안 연결/트랜잭션/DB 잠금을 유지하지 않는다. 닫힌 연결 정리는 기존 summary_connection context를 짧은 DB 작업에 사용한다.
-- foreground 저장은 DB의 최신 요약 필드와 작업 소유권을 보존한다. background 저장은 summary 관련 필드만 병합하고 조건/질문/Job 상태는 변경하지 않는다.
-- conversation-summary-background 아래 memory-summary/generation을 기록한다. 신규 완료 Job의 trace 정보와 동일 대화 ID를 사용한다. shutdown은 요약을 취소·회수한 뒤 tracer를 닫는다.
+- worker의 SummaryRequests, 결과 저장 후 등록, 요약 루프 시작/종료를 제거한다. 일반 Job 처리·lease 복구·MCP 도구 캐시 갱신은 유지한다.
+- conversation_summary_worker 및 SummaryOutput을 제거한다. memory는 classify/answer만 허용하며 summarize 요청은 LLM 호출 전에 거부한다.
+- prepare는 memory.load만 수행한다. 오래된 요약 후보 조회, 입력 hash, watermark, 요약 필요 여부 계산, oldest_recent 경계를 제거한다.
+- prompt_context는 constraints/pending_question/recent/sources만 반환한다. summary/summary_sources/summary_incomplete 및 요약 관련 메타데이터를 넘기지 않는다. v4의 Memory summarize 지침과 요약 진행 안내를 제거한다.
+- load의 state는 constraints/pending_question만 사용한다. complete는 DB의 기존 memory_json에 이 두 필드만 병합한다. legacy summary/summary_sources/hash/claim/watermark는 사용하지 않으며 운영 DB 일괄 삭제 없이 보존한다. jobs의 원본 및 Pin ID/URL/상태를 보존한다.
+- 원본 회상은 기존 session/선행 기록/역할/용어/키워드/날짜/ID 필터와 20개 상한·범위 좁히기 안내를 유지한다. 다른 대화/없는 인용/잘못된 출처는 거부한다.
+- Spec 및 제거된 요약 전용 테스트를 정리하고 요약 없는 기억의 AC 테스트로 대체한다. 기존 질문 보존 테스트의 baseline 실패는 별도로 보고한다.
 ## AC
-- Given 요청이 없음, When startup 및 유휴 대기, Then 요약 DB 조회와 LLM 호출이 없다.
-- Given 완료 저장된 요청과 최근 6개 밖 새 원문, When 필요 여부 확인, Then 해당 대화만 등록하고 답변은 요약 완료를 기다리지 않는다.
-- Given 짧은 대화/동일 입력/실패 또는 stale 저장, When 처리, Then 요약 LLM은 호출되지 않는다.
-- Given 긴 대화, When 요약 실행, Then 단일 입력으로 한 번 호출하고 watermark 없이 bounded 입력과 실제 출처를 저장한다.
-- Given 같은 대화의 동시 실행 또는 만료된 소유권, When claim/저장, Then 유효한 소유자만 저장하고 이전 소유자는 최신 결과를 덮어쓰지 못한다.
-- Given pool max_size=1과 LLM 대기, When 다른 DB 작업, Then timeout 없이 연결을 사용하고 foreground 완료도 가능하다.
-- Given 요약 실패/취소/재시작, When 새 완료 요청이 없음, Then 자동 재시도가 없으며 기존 요약은 유지한다.
-- Given 신규 요청과 요약 완료 저장이 겹침, When 저장 완료, Then 조건·질문·최신 요약과 claim이 서로 덮어써지지 않는다.
-- Given 요약 출력, When 검증, Then 1~600자는 허용하고 빈 문자열/601자 이상은 거부한다. 짧은 결과를 400자로 늘리지 않으며 거부 시 기존 summary와 입력 hash는 유지한다.
+- Given 긴 대화 또는 legacy 요약 필드, When 요청 처리, Then summarize 호출/등록/실행 및 요약 후보 조회 없이 처리하고 본문/회상 입력에는 요약 필드와 텍스트가 없다.
+- Given 체형 조건과 확인 질문, When 포즈만 수정하는 짧은 답변, Then 기존 체형과 질문을 입력에 유지하고 명시한 포즈만 갱신한다.
+- Given 40개 선행 기록과 첫 레퍼런스를 묻는 명시적 요청, When 원본 회상, Then 최근 6개 밖의 첫 기록을 조회·인용하며 원본과 저장된 Pin 데이터는 유지된다.
+- Given 다른 대화 또는 위조 출처, When 회상/완료 검증, Then 접근/저장을 거부한다.
+- Given 서버 시작/종료, When worker 실행, Then 요약 task 없이 Job/lease/MCP 루프를 실행·취소한다.
+- Given legacy 요약 데이터와 저장된 조건, When 새 요청 완료, Then 기존 데이터는 일괄 삭제하지 않고 현재 조건/질문만 갱신한다.

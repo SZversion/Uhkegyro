@@ -1,6 +1,5 @@
 """Read only this conversation; commit memory with the authoritative job attempt."""
 import json
-import hashlib
 from uuid import UUID
 
 from backend.schemas.enums import JobStatus
@@ -32,17 +31,6 @@ def record(row):
     return result
 
 
-def summary_input(context, rows):
-    records = [record(row) for row in rows]
-    truncated = context.get("summary_truncated", False)
-    while records and len(json.dumps(records, ensure_ascii=False)) > 48_000:
-        records.pop(0)
-        truncated = True
-    serialized = json.dumps({"records": records, "truncated": truncated}, ensure_ascii=False, sort_keys=True)
-    return {"records": records, "truncated": truncated,
-            "input_hash": hashlib.sha256(serialized.encode()).hexdigest()}
-
-
 def evidence_text(item):
     return "\n".join([item["request_text"], item.get("question") or "",
                       item.get("message") or ""] +
@@ -65,11 +53,12 @@ class ConversationMemory:
                AND status IN ('completed','failed') ORDER BY created_at DESC,job_id DESC LIMIT 6""",
             job["session_id"], job["created_at"], job["job_id"],
         )
-        state = decode(memory)
+        stored = decode(memory)
+        state = {key: stored[key] for key in ("constraints", "pending_question") if key in stored}
         pinned = [value["source_job_id"] for value in state.get("constraints", {}).values()]
         sources = await self.records(job, pinned) if pinned else []
         return {"state": state, "recent": [record(r) for r in reversed(rows)],
-                "sources": sources, "oldest_recent": rows[-1] if rows else None}
+                "sources": sources}
 
     async def records(self, job, ids):
         rows = await self.pool.fetch(
@@ -81,19 +70,6 @@ class ConversationMemory:
         if len(rows) != len(set(str(value) for value in ids)):
             raise LLMInvalidStructuredOutput("기억의 출처가 현재 대화의 선행 기록에 없습니다")
         return [record(row) for row in rows]
-
-    async def older(self, job, context):
-        boundary = context["oldest_recent"]
-        if boundary is None:
-            return []
-        rows = await self.pool.fetch(
-            """SELECT * FROM jobs WHERE session_id=$1 AND (created_at,job_id)<($2,$3)
-               AND status IN ('completed','failed')
-               ORDER BY created_at DESC,job_id DESC LIMIT 21""",
-            job["session_id"], boundary["created_at"], boundary["job_id"],
-        )
-        context["summary_truncated"] = len(rows) > 20
-        return list(reversed(rows[:20]))
 
     async def search(self, job, query):
         if query.source_job_ids:
@@ -130,22 +106,16 @@ class ConversationMemory:
         async with self.pool.acquire() as connection:
             async with connection.transaction():
                 live = await connection.fetchval(
-                    """SELECT memory_json FROM sessions WHERE session_id=$1
+                    """SELECT session_id FROM sessions WHERE session_id=$1
                        AND last_activity_at + interval '3 months' > now() FOR UPDATE""",
                     job["session_id"],
                 )
                 if live is None:
                     raise StaleJobAttempt
-                state = dict(state)
-                current = decode(live)
-                state.pop("summarized_through", None)
-                for key in ("summary", "summary_sources", "summary_input_hash", "summary_truncated", "summary_claim"):
-                    state.pop(key, None)
-                    if key in current:
-                        state[key] = current[key]
+                state = {key: state[key] for key in ("constraints", "pending_question") if key in state}
                 await JobRepository(connection).update_status(
                     job_id=str(job["job_id"]), attempt=job["attempt"],
                     status=JobStatus.COMPLETED, result=result,
                 )
-                await connection.execute("UPDATE sessions SET memory_json=$2::jsonb WHERE session_id=$1",
+                await connection.execute("UPDATE sessions SET memory_json=memory_json || $2::jsonb WHERE session_id=$1",
                                          job["session_id"], json.dumps(state, ensure_ascii=False))
