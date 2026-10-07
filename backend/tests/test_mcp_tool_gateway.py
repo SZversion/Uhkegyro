@@ -75,3 +75,112 @@ def test_rejects_mcp_error_malformed_tool_list_and_missing_url():
     with pytest.raises(OperationalFailure) as error:
         asyncio.run(McpToolGateway(mcp_url="").list_tools())
     assert error.value.failure_code is FailureCode.CONFIGURATION_ERROR
+
+
+def test_reuses_validated_tool_list_without_exposing_mutable_cache():
+    calls = []
+    schema = {"type": "object", "properties": {"term_id": {"type": "string"}},
+              "required": ["term_id"], "additionalProperties": False}
+
+    async def operation(url, action, name=None, arguments=None):
+        calls.append(action)
+        if action == "list_tools":
+            return SimpleNamespace(tools=[{"name": "lookup", "inputSchema": schema}])
+        return SimpleNamespace(isError=False, structuredContent={"status": "found"})
+
+    async def case():
+        gateway = McpToolGateway(mcp_url="http://mcp:8001/mcp", operation_caller=operation)
+        first = await gateway.list_tools()
+        first[0]["inputSchema"]["required"].clear()
+        second = await gateway.list_tools()
+        assert second[0]["inputSchema"]["required"] == ["term_id"]
+        with pytest.raises(ValueError, match="arguments"):
+            await gateway.call_tool("lookup", {})
+        assert await gateway.call_tool("lookup", {"term_id": "pose_x"}) == {"status": "found"}
+        assert calls == ["list_tools", "call_tool"]
+
+    asyncio.run(case())
+
+
+def test_expired_or_unknown_tool_refreshes_schema(monkeypatch):
+    from backend.services import mcp_tool_gateway
+
+    clock = [100.0]
+    monkeypatch.setattr(mcp_tool_gateway, "monotonic", lambda: clock[0])
+    calls = []
+
+    async def operation(url, action, name=None, arguments=None):
+        calls.append(action)
+        if action == "list_tools":
+            tool = "lookup" if len(calls) == 1 else "new_lookup"
+            return SimpleNamespace(tools=[{"name": tool, "inputSchema": {
+                "type": "object", "properties": {"term_id": {"type": "string"}},
+                "required": ["term_id"], "additionalProperties": False,
+            }}])
+        return SimpleNamespace(isError=False, structuredContent={"status": "found"})
+
+    async def case():
+        gateway = McpToolGateway(mcp_url="http://mcp:8001/mcp", operation_caller=operation)
+        assert (await gateway.list_tools())[0]["name"] == "lookup"
+        clock[0] = 399.0
+        assert (await gateway.list_tools())[0]["name"] == "lookup"
+        assert (await gateway.call_tool("new_lookup", {"term_id": "pose_x"}))["status"] == "found"
+        assert calls == ["list_tools", "list_tools", "call_tool"]
+        clock[0] = 700.0
+        assert (await gateway.list_tools())[0]["name"] == "new_lookup"
+        assert calls.count("list_tools") == 3
+
+    asyncio.run(case())
+
+
+def test_concurrent_first_requests_share_one_tool_discovery():
+    calls = 0
+    started = asyncio.Event()
+    release = asyncio.Event()
+
+    async def operation(url, action, name=None, arguments=None):
+        nonlocal calls
+        calls += 1
+        started.set()
+        await release.wait()
+        return SimpleNamespace(tools=[{"name": "lookup", "inputSchema": {"type": "object"}}])
+
+    async def case():
+        gateway = McpToolGateway(mcp_url="http://mcp:8001/mcp", operation_caller=operation)
+        first = asyncio.create_task(gateway.list_tools())
+        await started.wait()
+        second = asyncio.create_task(gateway.list_tools())
+        release.set()
+        assert await asyncio.gather(first, second) == [[{
+            "name": "lookup", "description": "", "inputSchema": {"type": "object"}
+        }]] * 2
+        assert calls == 1
+
+    asyncio.run(case())
+
+
+def test_failed_refresh_does_not_poison_tool_cache(monkeypatch):
+    from backend.services import mcp_tool_gateway
+
+    clock = [100.0]
+    monkeypatch.setattr(mcp_tool_gateway, "monotonic", lambda: clock[0])
+    calls = 0
+
+    async def operation(url, action, name=None, arguments=None):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            return SimpleNamespace(tools=[{"name": "lookup", "inputSchema": {
+                "type": "invalid-schema-type"}}])
+        return SimpleNamespace(tools=[{"name": "lookup", "inputSchema": {"type": "object"}}])
+
+    async def case():
+        gateway = McpToolGateway(mcp_url="http://mcp:8001/mcp", operation_caller=operation)
+        await gateway.list_tools()
+        clock[0] = 401.0
+        with pytest.raises(ValueError, match="tool schema"):
+            await gateway.list_tools()
+        assert (await gateway.list_tools())[0]["name"] == "lookup"
+        assert calls == 3
+
+    asyncio.run(case())
