@@ -17,7 +17,10 @@ worker는 선행 종결 job만 사용한다. job 완료와 memory_json 갱신은
 - Given A의 체형, When B 요청, Then A 기록은 prompt에 없다.
 - Given 앞선 체형과 포즈, When 포즈만 변경 요청, Then 체형 검색·Pin은 유지하고 포즈만 검색해 전체 보드를 반환한다. 상세 계약은 selective-reference-update.md를 따른다.
 - Given 확인 질문, When 짧은 답, Then 이전 질문이 prompt에 포함된다.
+- Given 확정된 체형과 모호한 후속 요청, When 모델이 질문과 체형 clear 후보를 반환, Then 서버가 조립한 최종 질문만 pending_question에 저장해 다음 prompt에 전달하고 체형 조건은 보존한다. 마지막 포즈 변경 응답은 체형과 새 포즈를 함께 반환한다.
 - Given 타 대화 출처/없는 인용/비활성 카드, When 출력 검증, Then 결과와 기억 저장을 거부한다.
 - Given 현재 요청에는 없고 동일 대화의 선행 요청 또는 카드 라벨에만 있는 인용과 유효한 source_job_id, When 원본 검증과 resolver를 실행, Then selection을 허용한다.
 - Given 선행 출처 인용이 있지만 검증된 출처 텍스트가 없거나 카드가 비활성·역할 불일치, When resolver를 실행, Then selection을 거부한다.
 - Given stale attempt, When 완료, Then job과 memory 모두 변경되지 않는다.
+
+검증(2026-10-07): 현재 계약에 맞춘 두 PostgreSQL 통합 테스트와 진단 보존 관련 테스트 15개 통과. 기존 로컬 Langfuse 변경을 제외한 PR 작업 폴더에 동일 테스트 수정을 적용해 전체 backend 636개 통과(실제 임시 PostgreSQL 16, LLM·검색 fixture).

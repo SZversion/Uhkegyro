@@ -30,4 +30,4 @@
 - Given 연속 전체 교체, When 다음 job 실행, Then 직전 보드의 Pin을 제외하고 같은 카드 조건을 사용한다.
 - Given 악의적인 LLM 제외 목록, When 도구 실행, Then 서버의 이전 Pin ID만 실제 제외 목록으로 전달한다.
 
-검증: 2026-10-07 최신 main(d9f5d39) 기준 원래 로컬 및 PR 작업 폴더의 신규 수용 기준 16개 통과(임시 PostgreSQL 16 포함). frontend 55개 통과. PR 코드 전체 backend는 634개 통과/2개 실패이며 두 실패는 변경 전 최신 main에서도 동일하게 재현했다: test_eval27_followup_preserves_body_and_pending_question, test_retry_and_lease_recovery_follow_postgres_contract. 실제 LLM·외부 검색은 fixture로 대체했고 실제 서비스 연동은 미검증이다.
+검증: 2026-10-07 최신 main(d9f5d39) 기준 신규 수용 기준 16개 및 frontend 55개 통과. 현재 계약에 맞춘 기존 테스트 수정 후 PR 작업 폴더의 전체 backend 636개 통과(임시 PostgreSQL 16). 기존 Langfuse 작업이 포함된 원래 로컬은 634개 통과/별도 test_live_eval EVAL-01 테스트 2개 실패. 실제 LLM·외부 검색은 fixture로 대체했고 실제 서비스 연동은 미검증이다.
