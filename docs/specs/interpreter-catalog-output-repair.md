@@ -13,6 +13,7 @@
 - 잘못된 출력은 기존 최대 3회 재시도와 안전한 피드백을 유지한다.
 ## How
 - v4에 코드 유래 strict JSON Schema를 사용한다. 카탈로그가 있으면 selection/context update의 role별 term ID enum을 공급한다.
+- 역할별 정의는 로컬 `$ref`로 공유한다. 검증 제약과 전체 카드 입력은 유지하며 전송 표현만 압축한다. 세부 기준은 [interpretation-input-compression.md](./interpretation-input-compression.md)를 따른다.
 - 모델 전송 형식의 selections/context_updates는 body·pose·view·perspective·layout 키를 가진 객체다. 각 슬롯은 해당 역할 객체 또는 null이며, 역할 중복을 구조적으로 막는다. 어댑터가 역할 순서의 배열로 변환한 후 기존 검증을 적용한다. 외부 API 형식은 유지한다.
 - one-card-per-role, 역할 순서, evidence, 상태 규칙은 Pydantic/resolver가 계속 강제한다.
 - 기존 v4 계약 보강이며 파일 Prompt/모델/version은 유지한다. v0 JSON mode, v1 기존 schema는 유지한다.

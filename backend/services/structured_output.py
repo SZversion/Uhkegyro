@@ -25,7 +25,7 @@ def response_format(active_cards_json: str = "") -> dict:
         cards = json.loads(active_cards_json).get("active_cards", [])
         for name in ("InterpretationSelection", "ContextUpdate"):
             original = schema["$defs"][name]
-            variants = []
+            references = {}
             for role in ("body", "pose", "view", "perspective", "layout"):
                 ids = [c["term_id"] for c in cards if c["role"] == role]
                 if not ids:
@@ -36,13 +36,15 @@ def response_format(active_cards_json: str = "") -> dict:
                 variant["properties"]["term_id"] = (
                     {"anyOf": [term, {"type": "null"}]} if name == "ContextUpdate" else term
                 )
-                variants.append(variant)
-            if variants:
-                schema["$defs"][name] = {"anyOf": variants}
+                definition = f"{name}_{role}"
+                schema["$defs"][definition] = variant
+                references[role] = {"$ref": f"#/$defs/{definition}"}
+            if references:
+                del schema["$defs"][name]
                 field = "selections" if name == "InterpretationSelection" else "context_updates"
-                slots = {role: {"anyOf": [next((v for v in variants
-                    if v["properties"]["role"]["enum"] == [role]), {"type": "null"}),
-                    {"type": "null"}]} for role in ("body", "pose", "view", "perspective", "layout")}
+                slots = {role: {"anyOf": [references[role], {"type": "null"}]}
+                    if role in references else {"type": "null"}
+                    for role in ("body", "pose", "view", "perspective", "layout")}
                 schema["properties"][field] = {"type": "object", "properties": slots,
                     "required": list(slots), "additionalProperties": False,
                     "description": "One nullable slot per role. Direction takes priority over full-body framing in view."}
