@@ -56,6 +56,8 @@ class AgentJobWorker:
         self._pool = pool
         self._jobs = JobRepository(pool)
         self._memory = ConversationMemory(pool)
+        from backend.services.conversation_summary_worker import SummaryRequests
+        self._summary_requests = SummaryRequests(pool)
         self._recovery = JobRetryRecovery(pool)
         self._snapshot = snapshot
         self._adapter = adapter
@@ -161,6 +163,10 @@ class AgentJobWorker:
                     return
                 await self._memory.complete(job, result, state)
             trace.completed(result)
+            try:
+                await self._summary_requests.request(job)
+            except Exception as error:
+                logger.warning("conversation summary request failed", extra={"error_type": type(error).__name__})
         except StaleJobAttempt:
             trace.stale()
         except Exception as error:
@@ -440,7 +446,7 @@ class AgentJobWorker:
                 await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
         coroutines = [
-            recover_leases(), run_summary_loop(self._pool, self._tracer),
+            recover_leases(), run_summary_loop(self._pool, self._tracer, self._summary_requests),
             *(run_slot() for _ in range(concurrency)),
         ]
         if self._mcp_gateway is not None:

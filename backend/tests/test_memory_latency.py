@@ -53,7 +53,7 @@ async def seed(pool):
     return uuid.UUID(session)
 
 
-def test_background_refresh_restart_lock_and_concurrent_completion():
+def test_background_snapshot_claim_and_concurrent_completion():
     async def case(pool):
         session = await seed(pool)
         jobs, memory = JobRepository(pool), ConversationMemory(pool)
@@ -69,13 +69,13 @@ def test_background_refresh_restart_lock_and_concurrent_completion():
             await release.wait()
             return await original(*args, **kwargs)
         adapter.memory = blocked
-        task = asyncio.create_task(refresh_once(pool, tracer, adapter))
+        task = asyncio.create_task(refresh_once(pool, tracer, adapter, session_id=session))
         await asyncio.wait_for(started.wait(), 2)
-        assert not await refresh_once(pool, tracer, adapter)
+        assert not await refresh_once(pool, tracer, adapter, session_id=session)
         release.set()
         assert await task
         saved = json.loads(await pool.fetchval("SELECT memory_json FROM sessions WHERE session_id=$1", session))
-        assert saved["summarized_through"] and adapter.summary_calls == 1
+        assert saved["summary_input_hash"] and adapter.summary_calls == 1
         # A foreground context loaded before refresh must preserve its newer summary.
         for status in (JobStatus.VALIDATING, JobStatus.RENDERING):
             await jobs.update_status(job_id=str(new.job_id), attempt=1, status=status)
@@ -84,9 +84,9 @@ def test_background_refresh_restart_lock_and_concurrent_completion():
                               context["state"] | {"pending_question": "자세?"})
         state = json.loads(await pool.fetchval("SELECT memory_json FROM sessions WHERE session_id=$1", session))
         assert state["summary"] == saved["summary"] and state["pending_question"] == "자세?"
-        # A new worker instance picks up newly aged-out records, then reaches no backlog.
-        assert await refresh_once(pool, JobTracer(), MemoryAdapter())
-        assert not await refresh_once(pool, JobTracer(), MemoryAdapter())
+        # A newly completed request changes the snapshot; identical input is skipped.
+        assert await refresh_once(pool, JobTracer(), MemoryAdapter(), session_id=session)
+        assert not await refresh_once(pool, JobTracer(), MemoryAdapter(), session_id=session)
         assert json.loads(await pool.fetchval("SELECT memory_json FROM sessions WHERE session_id=$1", session))["pending_question"] == "자세?"
     asyncio.run(database_case(case))
 
@@ -99,9 +99,9 @@ def test_summary_source_validation_preserves_watermark():
         async def invalid(*args, **kwargs):
             return SummaryOutput(text="요약", source_job_ids=[uuid.uuid4()])
         with pytest.raises(LLMInvalidStructuredOutput):
-            await refresh_once(pool, JobTracer(), SimpleNamespace(memory=invalid))
+            await refresh_once(pool, JobTracer(), SimpleNamespace(memory=invalid), session_id=session)
         assert json.loads(await pool.fetchval("SELECT memory_json FROM sessions WHERE session_id=$1", session)) == {}
-        assert await refresh_once(pool, JobTracer(), MemoryAdapter())
+        assert await refresh_once(pool, JobTracer(), MemoryAdapter(), session_id=session)
     asyncio.run(database_case(case))
 
 
@@ -161,7 +161,7 @@ def test_cancelled_summary_is_resumable_and_does_not_block_answer():
             started.set()
             await asyncio.Event().wait()
         adapter.memory = blocked
-        task = asyncio.create_task(refresh_once(pool, JobTracer(), adapter))
+        task = asyncio.create_task(refresh_once(pool, JobTracer(), adapter, session_id=session))
         await asyncio.wait_for(started.wait(), 2)
         memory = ConversationMemory(pool)
         job = await pool.fetchrow("SELECT *, now() AS cutoff FROM jobs WHERE session_id=$1 LIMIT 1", session)
@@ -172,5 +172,5 @@ def test_cancelled_summary_is_resumable_and_does_not_block_answer():
         with pytest.raises(asyncio.CancelledError):
             await task
         assert json.loads(await pool.fetchval("SELECT memory_json FROM sessions WHERE session_id=$1", session)) == {}
-        assert await refresh_once(pool, JobTracer(), MemoryAdapter())
+        assert await refresh_once(pool, JobTracer(), MemoryAdapter(), session_id=session)
     asyncio.run(database_case(case))

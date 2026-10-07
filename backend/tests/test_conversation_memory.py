@@ -71,7 +71,7 @@ def test_memory_adapter_keeps_history_in_user_message(monkeypatch):
     assert "untrusted_marker" in messages[1]["content"]
 
 
-def test_long_history_summary_budget_and_continuation(monkeypatch):
+def test_long_history_snapshot_budget_and_new_input(monkeypatch):
     from backend.services import conversation_context
     from backend.services.conversation_memory import ConversationMemory
     from backend.services.llm import LLMTimeout
@@ -100,8 +100,12 @@ def test_long_history_summary_budget_and_continuation(monkeypatch):
         await jobs.submit(session_id=session, request_text="새 요청", idempotency_key=str(uuid.uuid4()))
         job = await jobs.claim_next()
         context = await conversation_context.summarize(memory, job, adapter, trace)
-        assert adapter.calls == 2 and context["summary_incomplete"]
-        mark = context["state"]["summarized_through"]
+        assert adapter.calls == 1 and context["summary_incomplete"]
+        mark = context["state"]["summary_input_hash"]
+        assert "summarized_through" not in context["state"]
+        from backend.services.conversation_summary_worker import refresh_once
+        from backend.services.job_trace import JobTracer
+        assert await refresh_once(pool, JobTracer(), adapter, session_id=uuid.UUID(session))
         await jobs.update_status(job_id=str(job["job_id"]), attempt=1, status=agent_worker.JobStatus.VALIDATING)
         await jobs.update_status(job_id=str(job["job_id"]), attempt=1, status=agent_worker.JobStatus.RENDERING)
         await memory.complete(job, AgentResult(agent_status="memory_answer",
@@ -113,12 +117,12 @@ def test_long_history_summary_budget_and_continuation(monkeypatch):
         with pytest.raises(LLMTimeout):
             await conversation_context.summarize(memory, next_job, adapter, trace)
         assert time.monotonic() - start < 0.5
-        assert json.loads(await pool.fetchval("SELECT memory_json FROM sessions WHERE session_id=$1", uuid.UUID(session)))["summarized_through"] == mark
+        assert json.loads(await pool.fetchval("SELECT memory_json FROM sessions WHERE session_id=$1", uuid.UUID(session)))["summary_input_hash"] == mark
         adapter.delay = False
         before = adapter.calls
         continued = await conversation_context.summarize(memory, next_job, adapter, trace)
-        assert adapter.calls - before == 2 and continued["summary_incomplete"]
-        assert continued["state"]["summarized_through"] != mark
+        assert adapter.calls - before == 1 and continued["summary_incomplete"]
+        assert continued["state"]["summary_input_hash"] != mark
 
     asyncio.run(database_case(case))
 
@@ -218,7 +222,7 @@ def test_invalid_context_cannot_change_memory(snapshot_factory, card_factory, ba
     asyncio.run(database_case(case))
 
 
-def test_summary_failure_retries_without_advancing_memory(snapshot_factory, card_factory):
+def test_summary_failure_preserves_completed_answer_and_snapshot(snapshot_factory, card_factory):
     from backend.services.llm import LLMTimeout
     async def case(pool):
         sessions, jobs, adapter = SessionRepository(pool), JobRepository(pool), MemoryAdapter()
@@ -241,11 +245,11 @@ def test_summary_failure_retries_without_advancing_memory(snapshot_factory, card
         from backend.services.conversation_summary_worker import refresh_once
         from backend.services.job_trace import JobTracer
         with pytest.raises(LLMTimeout):
-            await refresh_once(pool, JobTracer(), adapter)
+            await refresh_once(pool, JobTracer(), adapter, session_id=uuid.UUID(session))
         after = await pool.fetchval("SELECT memory_json FROM sessions WHERE session_id=$1", uuid.UUID(session))
-        assert json.loads(after).get("summarized_through") == json.loads(before).get("summarized_through")
+        assert json.loads(after).get("summary_input_hash") == json.loads(before).get("summary_input_hash")
         adapter.memory = original
-        assert await refresh_once(pool, JobTracer(), adapter)
+        assert await refresh_once(pool, JobTracer(), adapter, session_id=uuid.UUID(session))
     asyncio.run(database_case(case))
 
 
