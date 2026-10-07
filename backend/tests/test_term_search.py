@@ -64,7 +64,7 @@ def test_ac01_real_provider_and_url_use_same_suffix(search_setup, suffix):
     assert response.status_code == 200
     result = response.json()
     query = f"standing pose gesture drawing {suffix or 'drawing'}"
-    assert search_setup.queries[0]["q"] == f"!goi {query} site:pinterest.com/pin"
+    assert search_setup.queries[0]["q"] == f"!pin {query}"
     assert parse_qs(urlparse(result["search_url"]).query)["q"] == [query]
     assert (result["term_id"], result["role"], result["plain_meaning_ko"]) == (
         "pose_standing", "pose", "서 있는 자세")
@@ -91,7 +91,7 @@ def test_ac02_invalid_requests_do_not_search(search_setup, payload, status):
 
 @pytest.mark.parametrize("payload,code", [
     ({"results": []}, "PIN_RESULTS_EMPTY"),
-    ({"results": [], "unresponsive_engines": [[engine, "secret-error"] for engine in ("google images", "duckduckgo images", "pinterest")]},
+    ({"results": [], "unresponsive_engines": [["pinterest", "secret-error"]]},
      "PIN_SEARCH_UNAVAILABLE"), ({"bad": "secret-error"}, "PIN_SEARCH_UNAVAILABLE"),
 ])
 def test_ac03_empty_and_failed_search(search_setup, payload, code):

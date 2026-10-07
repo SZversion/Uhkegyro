@@ -96,7 +96,7 @@ npm run dev -- --hostname 127.0.0.1 --port 3001
 
 - API health: `GET http://127.0.0.1:8000/health` → 200.
 - 실행 중인 API의 `GET /openapi.json`에서 `AgentResult.properties.answer_text`가 있는지 확인한다.
-- SearXNG: `GET http://127.0.0.1:8080/search`에 `q=!goi contrapposto drawing site:pinterest.com/pin`, `categories=images`, `format=json`, `language=en`을 URL 인코딩해 전달한다. `results`와 `unresponsive_engines`를 확인한다.
+- SearXNG: `GET http://127.0.0.1:8080/search`에 `q=!pin contrapposto drawing`, `categories=images`, `format=json`, `language=en`을 URL 인코딩해 전달한다. `results[].url`이 Pinterest Pin ID 기반 canonical URL인지, `unresponsive_engines`를 확인한다.
 - 프론트 origin `http://127.0.0.1:3001`에서 `POST /api/agent`에 아래 입력과 UUID `Idempotency-Key`를 보낸다. 응답 쿠키를 유지해 `GET /api/jobs/{job_id}`를 polling한다. 브라우저 입력창을 사용하면 프론트가 이 처리를 수행한다.
 - 종결 후 `result.answer_text`, `reference_plan.terms`, 역할별 `pins`, `reason_codes`를 확인한다. 이미지 URL은 HEAD 응답의 200과 이미지 Content-Type으로 확인하며 이미지 파일은 내려받지 않는다.
 

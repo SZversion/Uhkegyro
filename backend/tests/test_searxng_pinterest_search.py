@@ -1,4 +1,4 @@
-"""SearXNG Google Images provider contract tests."""
+"""SearXNG Pinterest engine provider contract tests."""
 
 import asyncio
 import pytest
@@ -35,7 +35,7 @@ def test_parse_search_results_limits_to_first_eight_unique_pins():
     assert [pin.pin_id for pin in parse_search_results(payload)] == [str(i) for i in range(1, 9)]
 
 
-def test_provider_sends_only_google_images_and_card_query():
+def test_provider_sends_only_pinterest_engine_and_card_query():
     received = []
 
     async def load(url, params):
@@ -47,7 +47,7 @@ def test_provider_sends_only_google_images_and_card_query():
     ).search(Role.POSE, ("standing pose", "weight shift reference")))
 
     assert received == [("http://searxng:8080/search", {
-        "q": "!goi standing pose weight shift reference drawing site:pinterest.com/pin",
+        "q": "!pin standing pose weight shift reference drawing",
         "categories": "images",
         "format": "json",
         "language": "en",
@@ -68,32 +68,31 @@ def test_provider_marks_successful_empty_search():
     assert outcome.code is ReasonCode.PIN_RESULTS_EMPTY
 
 
-@pytest.mark.parametrize("first", [
-    {"results": [], "unresponsive_engines": [["google images", "CAPTCHA"]]},
+@pytest.mark.parametrize("payload", [
+    {"results": [], "unresponsive_engines": [["pinterest", "CAPTCHA"]]},
     {"results": [{"url": "https://example.com/not-a-pin"}]},
 ])
-def test_duckduckgo_recovers_google_failure_or_invalid_results(first):
+def test_provider_does_not_fallback_when_pinterest_fails_or_has_no_valid_pins(payload):
     calls = []
 
     async def load(url, params):
         calls.append(params["q"])
-        return first if len(calls) == 1 else {
-            "results": [{"url": "https://pinterest.com/pin/456/"}]}
+        return payload
 
     outcome = asyncio.run(SearXNGPinterestSearchProvider(
         base_url="http://searxng:8080", json_loader=load,
     ).search(Role.POSE, ("standing",)))
-    assert len(calls) == 2
-    assert calls[0].startswith("!goi ") and calls[1].startswith("!ddi ")
-    assert [pin.pin_id for pin in outcome.pins] == ["456"]
-    assert outcome.code is None
+    assert len(calls) == 1 and calls[0].startswith("!pin ")
+    assert outcome.pins == []
+    assert outcome.code is (ReasonCode.PIN_SEARCH_UNAVAILABLE if "unresponsive_engines" in payload
+                            else ReasonCode.PIN_RESULTS_EMPTY)
 
 
 @pytest.mark.parametrize("engine_error", ["timeout", "CAPTCHA", "too many requests"])
-def test_provider_marks_google_images_engine_error_unavailable(engine_error, caplog):
+def test_provider_marks_pinterest_engine_error_unavailable(engine_error, caplog):
     async def load(url, params):
-        engine = {"!goi": "google images", "!ddi": "duckduckgo images", "!pin": "pinterest"}[params["q"].split()[0]]
-        return {"results": [], "unresponsive_engines": [[engine, engine_error]]}
+        assert params["q"].startswith("!pin ")
+        return {"results": [], "unresponsive_engines": [["pinterest", engine_error]]}
 
     outcome = asyncio.run(SearXNGPinterestSearchProvider(
         base_url="http://searxng:8080", json_loader=load,
@@ -110,24 +109,6 @@ def test_provider_marks_missing_endpoint_unavailable():
             Role.BODY, ("slim body",)
         ))
     assert error.value.failure_code is FailureCode.CONFIGURATION_ERROR
-
-
-def test_pinterest_engine_recovers_both_image_engine_failures():
-    calls = []
-
-    async def load(url, params):
-        bang = params["q"].split()[0]
-        calls.append(bang)
-        if bang == "!pin":
-            return {"results": [{"url": "https://pinterest.com/pin/789/"}]}
-        return {"results": [], "unresponsive_engines": [[
-            "google images" if bang == "!goi" else "duckduckgo images", "HTTP error 403"]]}
-
-    outcome = asyncio.run(SearXNGPinterestSearchProvider(
-        base_url="http://searxng:8080", json_loader=load,
-    ).search(Role.POSE, ("standing",)))
-    assert calls == ["!goi", "!ddi", "!pin"]
-    assert outcome.code is None and outcome.pins[0].pin_id == "789"
 
 
 def test_provider_marks_invalid_json_shape_unavailable():

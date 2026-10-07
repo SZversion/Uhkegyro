@@ -85,10 +85,10 @@ def test_mounted_mcp_client_lists_tool_and_calls_found_and_not_found(monkeypatch
         assert payload["role"] == "pose"
         assert payload["pins"][0]["pin_url"] == "https://www.pinterest.com/pin/123/"
         assert len(payload["_search_trace"]) == 1
-        assert payload["_search_trace"][0]["engine"] == "google images"
+        assert payload["_search_trace"][0]["engine"] == "pinterest"
         assert payload["_search_trace"][0]["status"] == "success"
         assert requests[0][1]["q"] == (
-            "!goi contrapposto pose standing reference drawing site:pinterest.com/pin"
+            "!pin contrapposto pose standing reference drawing"
         )
 
         for request_id, fragments in (

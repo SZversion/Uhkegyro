@@ -98,7 +98,8 @@ async def search_pinterest_pins(role: Role, query_fragments: list[str]) -> dict:
     """활성 TERM_CARD 검색 조각으로 Pinterest Pin 링크를 검색한다.
 
     검증된 카드의 조각만 전달한다. 조각은 공백으로 결합하고 도구가
-    `drawing site:pinterest.com/pin`을 추가해 SearXNG Google Images에서 검색한다.
+    `drawing`을 추가해 SearXNG Pinterest 엔진에서 검색한다. Pin ID는 canonical
+    Pinterest Pin URL로 반환된다.
     완성 검색어, 사용자 원문, 추가 검색 조건은 전달하지 않는다.
 
     Args:
@@ -111,7 +112,7 @@ async def search_pinterest_pins(role: Role, query_fragments: list[str]) -> dict:
         `PIN_SEARCH_UNAVAILABLE`를 반환한다. 필수 설정 누락은
         `{"failure_code": "CONFIGURATION_ERROR"}`를 반환한다.
         각 Pin은 `pin_id`, `pin_url`, `thumbnail_url`, `status`를 포함한다.
-        `_search_trace`는 엔진별 시간·결과·fallback의 관측 전용 진단이다.
+        `_search_trace`는 단일 Pinterest 엔진 요청의 시간·결과 관측 전용 진단이다.
     """
     if _snapshot is None or not any(
         card.get("role") == role.value and card.get("query_fragments") == query_fragments

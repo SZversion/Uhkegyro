@@ -1,4 +1,4 @@
-"""SearXNG Google Images 기반 Pinterest Pin 검색 provider."""
+"""SearXNG Pinterest 엔진 기반 Pin 검색 provider."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ _CANONICAL_PIN_URL = "https://www.pinterest.com/pin/{pin_id}/"
 
 
 class SearXNGPinterestSearchProvider:
-    """SearXNG Google Images JSON 결과에서 Pin 링크만 반환한다."""
+    """SearXNG Pinterest 엔진 JSON 결과에서 Pin 링크만 반환한다."""
 
     def __init__(
         self,
@@ -49,17 +49,7 @@ class SearXNGPinterestSearchProvider:
         if not self._base_url:
             raise OperationalFailure(FailureCode.CONFIGURATION_ERROR)
 
-        outcomes = []
-        for bang, engine in (("goi", "google images"), ("ddi", "duckduckgo images"), ("pin", "pinterest")):
-            outcome = await self._search_engine(role, query_fragments, bang, engine)
-            if outcome.pins and outcome.code is None:
-                return outcome
-            outcomes.append(outcome)
-        pins = next((o.pins for o in outcomes if o.pins), [])
-        code = (ReasonCode.PIN_RESULTS_EMPTY if not pins and any(
-            o.code is ReasonCode.PIN_RESULTS_EMPTY for o in outcomes
-        ) else ReasonCode.PIN_SEARCH_UNAVAILABLE)
-        return RoleSearchOutcome(role=role, pins=pins, code=code)
+        return await self._search_engine(role, query_fragments, "pin", "pinterest")
 
     async def _search_engine(self, role, query_fragments, bang, engine):
         started = time.perf_counter()
@@ -77,7 +67,7 @@ class SearXNGPinterestSearchProvider:
 
     async def _search_engine_request(self, role, query_fragments, bang, engine, record):
         params = {
-            "q": f"!{bang} {' '.join(query_fragments)} {self._suffix} site:pinterest.com/pin",
+            "q": f"!{bang} {' '.join(query_fragments)} {self._suffix}",
             "categories": "images",
             "format": "json",
             "language": "en",
