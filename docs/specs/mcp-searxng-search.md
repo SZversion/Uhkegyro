@@ -8,7 +8,7 @@
 
 ## Goal
 
-- `search_pinterest_pins` 입력을 활성 TERM_CARD와 대조한 뒤 SearXNG Google Images 우선, DuckDuckGo Images, Pinterest 대체 검색을 실행한다.
+- `search_pinterest_pins` 입력을 활성 TERM_CARD와 대조한 뒤 SearXNG Pinterest 엔진만 호출한다.
 - 로컬 Compose에서는 `mcp`가 `searxng` 서비스에 연결하고, Cloud Run에서는 MCP 서비스의 SearXNG sidecar에 localhost로 연결한다.
 - 역할별 worker 전환, LLM 도구 선택 및 재시도는 후속 worker 연동 Spec의 범위다.
 - **범위 밖**: worker 연결, widget 조회 변경, 이미지 저장, term 카드 선택 변경.
@@ -17,7 +17,7 @@
 
 1. MCP client가 `search_pinterest_pins(role, query_fragments)`를 호출한다.
 2. MCP 서버가 입력의 역할과 조각 배열이 활성 TERM_CARD와 정확히 일치하는지 확인한다. 불일치는 `INVALID_SEARCH_TERMS`로 거부하고 SearXNG를 호출하지 않는다.
-3. 일치하면 `!goi {fragments} drawing site:pinterest.com/pin`을 `categories=images`, `format=json`, `language=en`으로 검색한다.
+3. 일치하면 `!pin {fragments} drawing site:pinterest.com/pin`을 `categories=images`, `format=json`, `language=en`으로 검색한다.
 4. HTTPS Pinterest host의 숫자 `/pin/{id}` 결과를 순서대로 중복 없이 최대 8개 반환한다.
 5. 정상 빈 결과, 검색 장애 및 필수 설정 누락을 각각 `PIN_RESULTS_EMPTY`, `PIN_SEARCH_UNAVAILABLE`, `CONFIGURATION_ERROR`로 구분한다.
 
@@ -37,4 +37,4 @@
 - **Given** Cloud Run MCP가 배포되면, **When** 유효한 IAM 인증 MCP client가 서비스 Host를 사용하면, **Then** Host 검사에서 차단되지 않으며 SearXNG sidecar 주소가 설정된다.
 - **Given** 신규·이름 있는 기존·이름 없는 기존 Cloud Run 서비스 설정이 있으면, **When** Cloud Build가 MCP를 배포하면, **Then** 기존 ingress 하나와 SearXNG sidecar 하나만 구성하고 Host 허용값을 ingress에 설정한다.
 
-엔진 장애/유효 Pin 0건 시 DuckDuckGo Images/Pinterest 순차 대체는 [pin-search-engine-recovery.md](pin-search-engine-recovery.md)를 따른다.
+엔진 장애 또는 유효 Pin 0건이면 다른 검색 엔진으로 대체하지 않고 [pin-search-engine-recovery.md](pin-search-engine-recovery.md)에 정의된 실패 코드를 반환한다.

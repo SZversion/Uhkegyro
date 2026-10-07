@@ -36,7 +36,7 @@
 1. 사용자가 만들고 싶은 캐릭터를 일상어로 입력합니다.
 2. Agent가 체형/소체, 포즈, 시점, 원근, 배치를 구분해 해석합니다.
 3. 각 조건을 쉬운 말과 드로잉 용어로 설명하고, 확신하지 못한 조건은 질문 또는 한계로 표시합니다.
-4. 서버가 선택된 역할별 `query_fragments`에 `drawing site:pinterest.com/pin`을 붙여 SearXNG Google Images 검색을 수행하고, 유효한 Pin 링크 최대 8개를 찾습니다. 각 Pin ID는 widget endpoint로 조회해 원격 썸네일 URL을 현재 응답에만 넣습니다.
+4. 서버가 선택된 역할별 `query_fragments`에 `drawing site:pinterest.com/pin`을 붙여 SearXNG Pinterest 엔진 검색을 수행하고, 유효한 Pin 링크 최대 8개를 찾습니다. 각 Pin ID는 widget endpoint로 조회해 원격 썸네일 URL을 현재 응답에만 넣습니다.
 5. UI는 서버가 반환한 원격 썸네일을 원본 Pin 링크로 표시합니다. 서비스는 이미지 파일·썸네일 URL·Pin 본문 등 부가 메타데이터를 저장하지 않습니다.
 6. 사용자는 하나의 ‘정답 이미지’가 아니라 역할별 레퍼런스를 조합해 러프를 시작합니다.
 
@@ -79,7 +79,7 @@ Job worker / retry·lease recovery (LLM → resolver → MCP search → response
   -> LLM: 일상어를 허용된 term_id와 역할로 구조화
   -> 결정론 코드: Pydantic 검증, 역할 순서, 허용 ID, URL 인코딩
   -> FastMCP: TERM_CARD JSON 카탈로그의 활성 카드 정보를 구조화 조회
-  -> MCP search_pinterest_pins -> SearXNG Google Images 검색 -> Pin URL 검증 -> widget 조회 -> 역할별 최대 8개 {pin_id, pin_url, thumbnail_url, status} 반환
+  -> MCP search_pinterest_pins -> SearXNG Pinterest 엔진 검색 -> Pin URL 검증 -> widget 조회 -> 역할별 최대 8개 {pin_id, pin_url, thumbnail_url, status} 반환
   -> UI: 원격 썸네일을 원본 Pin 링크로 표시
 ```
 
@@ -110,7 +110,7 @@ SearXNG 검색 규칙은 [SearXNG Pinterest 검색 Spec](docs/specs/searxng-pint
 | `GET /api/jobs/{job_id}` | PostgreSQL 영속화 구현됨. 소유 job의 상태·완료 결과·실패 조회 | 실제 운영 UI 연결 검증 |
 | DB 영속화·실제 worker | 구현됨. PostgreSQL job claim, LLM adapter·resolver·Pinterest provider·response assembler pipeline, retry·lease recovery | 실제 환경 실행 증거 |
 | LLM 해석·resolver 연동 | 구현됨. worker가 활성 TERM_CARD를 LLM에 전달하고 resolver·검색 결과를 조립해 저장 | 실제 모델 품질 평가 |
-| Pinterest 검색 실행 | worker 연결 구현됨. SearXNG Google Images 검색·widget enrichment 코드와 단위 테스트 존재 | 실제 SearXNG 인스턴스 연결·검색 결과 검증 |
+| Pinterest 검색 실행 | worker 연결 구현됨. SearXNG Pinterest 엔진 검색·widget enrichment 코드와 단위 테스트 존재 | 실제 SearXNG 인스턴스 연결·검색 결과 검증 |
 | Next.js UI | 입력·제출·polling 구현됨 | 결과·질문·Pin 링크·대화 UI 구현, 운영 화면 검증 필요 |
 | `/docs` | FastAPI 기본 문서에서 확인 가능 | 요청·응답 모델 및 오류 응답 확인 |
 | `/mcp` | `backend.mcp.main:app`에 마운트된 Streamable HTTP endpoint를 Cloud Run IAM으로 배포함. 무인증 `403`, 인증된 도구 목록·`found`·`not_found` 호출을 검증함. [호출 증거](docs/mcp-client-evidence.md) | Streamable HTTP endpoint와 도구 호출 증거 |
@@ -248,7 +248,7 @@ frontend 개발 서버도 해당 PowerShell 창에서 `Ctrl+C`로 중지합니�
 | [로컬 개발 재현](./docs/specs/local-development-reproduction.md) | clone 뒤 API·migration·frontend를 현재 구현 범위까지 시작하는 절차 |
 | [로컬 Langfuse Compose](./docs/specs/local-langfuse-compose.md) | 로컬 Langfuse와 필수 저장 서비스 구성 |
 | [로컬 SearXNG Compose](./docs/specs/local-searxng-compose.md) | 로컬 SearXNG 서비스·JSON API 설정 |
-| [SearXNG Pinterest 검색](./docs/specs/searxng-pinterest-search.md) | Google Images 검색 요청·Pin URL 검증·실패 처리 계약 |
+| [SearXNG Pinterest 검색](./docs/specs/searxng-pinterest-search.md) | Pinterest 단일 엔진 검색 요청·Pin URL 검증·실패 처리 계약 |
 | [MCP 계약](./docs/specs/mcp-contract.md) | JSON 카탈로그 기반 `get_active_term_card` 도구의 입력·출력·접근 제어 |
 | [NOT_BUILD.md](./NOT_BUILD.md) | MVP에서 의도적으로 만들지 않는 기능과 이유 |
 | [EVAL_REPORT.md](./EVAL_REPORT.md) | 관측, 프롬프트 운영, 평가, 비용·지연, 출시 게이트 |

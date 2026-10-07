@@ -99,7 +99,7 @@ def test_searxng_search_returns_thumbnail_and_original_pin_url_together():
     outcome = asyncio.run(provider.search(Role.POSE, ("standing pose",)))
     pin = outcome.pins[0]
 
-    assert search_calls[0][1]["q"] == "!goi standing pose drawing site:pinterest.com/pin"
+    assert search_calls[0][1]["q"] == "!pin standing pose drawing site:pinterest.com/pin"
     assert pin.pin_url == "https://www.pinterest.com/pin/77/"
     assert pin.thumbnail_url == "https://i.pinimg.com/77.jpg"
 

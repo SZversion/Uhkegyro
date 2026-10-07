@@ -77,12 +77,12 @@ class JobTracer:
 
     @staticmethod
     def search_result(span: Any, attempts: Any) -> None:
-        engines = {"google images": "!goi", "duckduckgo images": "!ddi", "pinterest": "!pin"}
+        engines = {"pinterest": "!pin"}
         reasons = {None, "access_denied", "suspended", "captcha", "rate_limited",
                    "timeout", "upstream_error", "malformed_response"}
         safe = []
         fields = ("engine", "bang", "latency_ms", "pin_count", "status", "failure_reason", "fallback")
-        for row in attempts[:3] if isinstance(attempts, list) else []:
+        for row in attempts[:1] if isinstance(attempts, list) else []:
             if not isinstance(row, dict) or not all(key in row for key in fields):
                 continue
             engine, elapsed, count = row.get("engine"), row.get("latency_ms"), row.get("pin_count")

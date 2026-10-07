@@ -11,7 +11,7 @@
 
 ## What
 
-신뢰 원본은 시작 검증을 통과해 메모리에 로드된 TERM_CARD JSON 카탈로그와 서버 결정론 코드다. LLM 출력은 후보일 뿐이며 resolver가 역할·활성·조건을 다시 검증한다. 검색 provider는 검증된 `query_fragments`에 고정 검색 제한어를 추가해 SearXNG Google Images API를 호출한다. 검색 결과의 Pin ID·`pin_url`·widget `thumbnail_url`은 표시용 untrusted data이며 카드·검색어·프롬프트를 바꾸지 않는다.
+신뢰 원본은 시작 검증을 통과해 메모리에 로드된 TERM_CARD JSON 카탈로그와 서버 결정론 코드다. LLM 출력은 후보일 뿐이며 resolver가 역할·활성·조건을 다시 검증한다. 검색 provider는 검증된 `query_fragments`에 고정 검색 제한어를 추가해 SearXNG Pinterest 엔진 API만 호출한다. 검색 결과의 Pin ID·`pin_url`·widget `thumbnail_url`은 표시용 untrusted data이며 카드·검색어·프롬프트를 바꾸지 않는다.
 
 ## How
 

@@ -26,7 +26,7 @@ FastMCP startup -> JSON catalog validation -> immutable active-card memory
 | LLM adapter | 카드 후보·근거·모호성 신호 생성 | 자유 term ID·검색 URL·최종 상태 결정 |
 | FastMCP TERM_CARD tool | 시작 검증을 통과한 JSON 메모리에서 활성 카드 한 건을 구조화 조회 | 외부 어휘 병합·새 카드 생성·검색 실행 |
 | Card resolver | MCP가 반환한 카드의 역할·활성·조건을 재검증 | 외부 어휘 병합 |
-| SearXNG Pinterest search provider | 서버에서 활성 카드의 검색 조각을 Google Images 카테고리로 검색하고 Pin URL을 검증한 뒤 widget endpoint로 Pin 결과 반환 | Pinterest 페이지 브라우저 크롤링, API v5 사용, 이미지·썸네일 URL 저장 |
+| SearXNG Pinterest search provider | 서버에서 활성 카드의 검색 조각을 Pinterest 엔진으로 검색하고 Pin URL을 검증한 뒤 widget endpoint로 Pin 결과 반환 | Pinterest 페이지 브라우저 크롤링, API v5 사용, 이미지·썸네일 URL 저장 |
 | Response assembler | 상태·카드 피드백·Pin 결과 조립 | 오류 원문·비밀값 노출 |
 
 ## 3. 비동기 job과 실패
@@ -43,7 +43,7 @@ LLM·SearXNG search provider·worker의 회복과 최종 실패 경계는 [api-c
 
 ## 5. 데이터·보안·관측
 
-세션·job 영속 구조와 Pin 결과의 보관·widget 재조회는 [session-job-persistence.md](./specs/session-job-persistence.md)와 [pinterest-widget-crawler.md](./specs/pinterest-widget-crawler.md)가 단일 기준이다. [SearXNG Pinterest 검색 Spec](./specs/searxng-pinterest-search.md)에 따라 서버는 활성 카드의 `query_fragments`만 검색어로 사용하고 Google Images 결과 URL에서 Pinterest Pin ID를 검증한다. widget의 이미지 바이트·`thumbnail_url`과 부가 Pin 필드는 저장·LLM 입력·trace·로그에 사용하지 않는다. Langfuse trace에는 사용자 원문, `job_id` UUID 원문, `session_id` UUID 원문과 비밀이 아닌 운영 필드를 남기되 일반 애플리케이션 로그와 LLM 원본 응답에는 남기지 않는다. 세션 쿠키 토큰 원문·해시, API key, `anonymous_user_id` 원문은 trace·로그에 남기지 않는다. trace는 job당 하나이며 worker가 생명주기를 관리하고 adapter와 각 처리 단계가 observation/span을 추가한다.
+세션·job 영속 구조와 Pin 결과의 보관·widget 재조회는 [session-job-persistence.md](./specs/session-job-persistence.md)와 [pinterest-widget-crawler.md](./specs/pinterest-widget-crawler.md)가 단일 기준이다. [SearXNG Pinterest 검색 Spec](./specs/searxng-pinterest-search.md)에 따라 서버는 활성 카드의 `query_fragments`만 검색어로 사용하고 Pinterest 엔진 결과 URL에서 Pinterest Pin ID를 검증한다. widget의 이미지 바이트·`thumbnail_url`과 부가 Pin 필드는 저장·LLM 입력·trace·로그에 사용하지 않는다. Langfuse trace에는 사용자 원문, `job_id` UUID 원문, `session_id` UUID 원문과 비밀이 아닌 운영 필드를 남기되 일반 애플리케이션 로그와 LLM 원본 응답에는 남기지 않는다. 세션 쿠키 토큰 원문·해시, API key, `anonymous_user_id` 원문은 trace·로그에 남기지 않는다. trace는 job당 하나이며 worker가 생명주기를 관리하고 adapter와 각 처리 단계가 observation/span을 추가한다.
 
 ## 6. 검증
 

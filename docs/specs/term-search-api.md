@@ -27,10 +27,10 @@
 - 응답: HTTP 200 `TermResult`. 역할·라벨·설명은 시작 시 로드된
   `app.state.catalog`의 활성 카드와 feedback만 사용한다. 사용자 검색어·URL은 받지 않는다.
 - 검색: `SearXNGPinterestSearchProvider`에 카드 query_fragments와 검증한 suffix를
-  전달한다. `!goi {fragments} {suffix} site:pinterest.com/pin`으로 검색하고
+  전달한다. `!pin {fragments} {suffix} site:pinterest.com/pin`으로 검색하고
   `PinterestWidgetClient`로 원격 썸네일을 조회한다. 카드 조각 자체는 수정하지 않는다.
 - 반환 search_url은 기존 Pinterest URL builder에 같은 suffix를 전달한다.
-  Pinterest 직접 검색 페이지와 Google Images의 Pin 검색 결과가 같음을 보장하지 않는다.
+  Pinterest 직접 검색 페이지와 SearXNG Pinterest 엔진의 Pin 검색 결과가 같음을 보장하지 않는다.
 - 정상 0건은 `PIN_RESULTS_EMPTY`, 엔진/통신 장애와 전체 25초 timeout은
   `PIN_SEARCH_UNAVAILABLE`로 반환한다. 설정 누락은 503과 고정 detail 안내를 반환한다.
 - 프로세스/app당 동시 도구 요청은 2건. 대기열 없이 추가 요청은 429와

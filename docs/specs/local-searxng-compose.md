@@ -9,7 +9,7 @@
 ## Goal
 
 - Compose에 로컬 SearXNG 서비스를 추가하고 API worker와 MCP 서버가 사용할 내부 주소를 `http://searxng:8080`으로 고정한다.
-- JSON Search API와 Google Images 엔진 설정을 제공한다.
+- JSON Search API와 Pinterest 엔진 설정을 제공한다.
 - **범위 밖**: SearXNG 외부 배포, 검색 품질 보장, Pinterest 검색 pipeline 연결 자체.
 
 ## What
@@ -21,7 +21,7 @@
 
 ## How
 
-- 설정 파일: `searxng/settings.yml`; 기본 설정을 유지하면서 JSON format과 `google images` 엔진을 활성화한다.
+- 설정 파일: `searxng/settings.yml`; 기본 설정을 유지하면서 JSON format과 `pinterest` 엔진을 활성화한다.
 - 컨테이너 image: `docker.io/searxng/searxng:latest`.
 - 포트 공개: `127.0.0.1:8080:8080`.
 - 비밀값은 저장소에 기록하지 않고 `.env`에서만 읽는다.

@@ -4,11 +4,11 @@ Widget 결과 조립과 완료 Job 응답의 세부 계약은 [pinterest-widget-
 
 ## Why
 
-선택된 TERM_CARD의 검색 조각으로 외부 레퍼런스 링크와 응답 전용 미리보기를 제공해야 한다. 검색 호출은 [SearXNG Pinterest 검색 Spec](./searxng-pinterest-search.md)에 따라 Google Images 카테고리를 사용한다. 사용자는 역할별 원본 Pin 링크를 열어 레퍼런스를 확인하고, 서비스는 이미지 파일을 보관하지 않는다.
+선택된 TERM_CARD의 검색 조각으로 외부 레퍼런스 링크와 응답 전용 미리보기를 제공해야 한다. 검색 호출은 [SearXNG Pinterest 검색 Spec](./searxng-pinterest-search.md)에 따라 Pinterest 엔진을 사용한다. 사용자는 역할별 원본 Pin 링크를 열어 레퍼런스를 확인하고, 서비스는 이미지 파일을 보관하지 않는다.
 
 ## Goal
 
-- 서버 SearXNG 검색 provider가 Google Images 결과에서 역할별 Pin ID와 `pin_url`을 수집한다.
+- 서버 SearXNG 검색 provider가 Pinterest 엔진 결과에서 역할별 Pin ID와 `pin_url`을 수집한다.
 - 모든 수집 Pin ID는 `https://widgets.pinterest.com/v3/pidgets/pins/info/?pin_ids={pin_id}`로 조회해 이미지 URL을 얻는다.
 - 세션·job 이력에는 결과의 `pin_id`, `pin_url`, `status`만 포함하고, `thumbnail_url`과 이미지 바이트는 저장하지 않는다.
 
@@ -16,8 +16,8 @@ Pinterest API v5, `GET /v5/pins/{pin_id}`, Pinterest 페이지 직접 크롤링,
 
 ## What
 
-1. resolver는 LLM이 고른 활성 TERM_CARD의 `query_fragments`만 검색 provider에 전달한다. SearXNG provider는 검색어를 `!goi {query_fragments} drawing site:pinterest.com/pin`으로 만든다. 사용자 원문이나 LLM 자유 텍스트는 추가하지 않는다.
-2. SearXNG Google Images 결과에서 역할별 최대 8개의 고유 Pin ID와 원본 `pin_url`을 수집한다.
+1. resolver는 LLM이 고른 활성 TERM_CARD의 `query_fragments`만 검색 provider에 전달한다. SearXNG provider는 검색어를 `!pin {query_fragments} drawing site:pinterest.com/pin`으로 만든다. 사용자 원문이나 LLM 자유 텍스트는 추가하지 않는다.
+2. SearXNG Pinterest 엔진 결과에서 역할별 최대 8개의 고유 Pin ID와 원본 `pin_url`을 수집한다.
 3. 수집한 각 Pin ID에 widget endpoint를 요청한다. 응답의 `images` 항목 중 가장 큰 면적의 URL을 `thumbnail_url`로 사용한다.
 4. widget 응답에 이미지 URL이 없거나 widget·원본 Pin에 접근할 수 없으면 해당 결과는 `status="deleted"`, `thumbnail_url=null`이다.
 5. widget 응답의 이미지 URL은 현재 API 응답에만 넣는다. 세션·job 이력, 로그, trace, 카탈로그에는 저장하지 않는다.
@@ -29,7 +29,7 @@ Pinterest API v5, `GET /v5/pins/{pin_id}`, Pinterest 페이지 직접 크롤링,
 - `FakePinterestProvider`는 역할별로 미리 주입한 `RoleSearchOutcome`의 복사본을 반환한다. 미설정 역할은 `KeyError`로 실패해 테스트 데이터 누락을 숨기지 않는다. 이 단계는 Pinterest·widget HTTP, Playwright, 검색 URL 생성, DB·trace·로그 저장을 수행하지 않는다.
 - SearXNG 검색과 widget 조회는 서버에서만 수행하며 Next.js UI·일반 브라우저는 검색 또는 widget endpoint를 직접 호출하지 않는다.
 - SearXNG 검색 요청 timeout은 15초, widget 요청 timeout은 10초다.
-- 검색 요청과 검색어 조립은 [SearXNG Pinterest 검색 Spec](./searxng-pinterest-search.md)을 따른다. 예를 들어 `pose_gesture` 카드의 조각이 `gesture drawing`, `action line reference`이면 요청 검색어는 `!goi gesture drawing action line reference drawing site:pinterest.com/pin`이다.
+- 검색 요청과 검색어 조립은 [SearXNG Pinterest 검색 Spec](./searxng-pinterest-search.md)을 따른다. 예를 들어 `pose_gesture` 카드의 조각이 `gesture drawing`, `action line reference`이면 요청 검색어는 `!pin gesture drawing action line reference drawing site:pinterest.com/pin`이다.
 - SearXNG URL에서 HTTPS, Pinterest 도메인, 숫자 Pin ID를 모두 확인한 결과만 후보로 사용한다. 중복 Pin ID는 역할 안에서 하나만 유지한다.
 - 결과가 없으면 `pins=[]`, `reason_codes=["PIN_RESULTS_EMPTY"]`를 반환한다.
 - 수집한 Pin의 widget 요청 실패, 차단, timeout, 형식 오류 또는 이미지 URL 부재는 `status="deleted"`로 제공한다. 검색 자체가 실패해 Pin을 수집하지 못한 경우만 `PIN_SEARCH_UNAVAILABLE`로 분류한다.
