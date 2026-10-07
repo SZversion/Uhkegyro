@@ -57,8 +57,16 @@ class ConversationMemory:
         state = {key: stored[key] for key in ("constraints", "pending_question") if key in stored}
         pinned = [value["source_job_id"] for value in state.get("constraints", {}).values()]
         sources = await self.records(job, pinned) if pinned else []
+        previous = await self.pool.fetchval(
+            """SELECT final_payload_json FROM jobs WHERE session_id=$1
+               AND (created_at,job_id)<($2,$3) AND status='completed'
+               AND final_payload_json->>'agent_status' IN ('success','partial_result')
+               AND jsonb_typeof(final_payload_json->'reference_plan')='object'
+               ORDER BY created_at DESC,job_id DESC LIMIT 1""",
+            job["session_id"], job["created_at"], job["job_id"],
+        )
         return {"state": state, "recent": [record(r) for r in reversed(rows)],
-                "sources": sources}
+                "sources": sources, "previous_result": decode(previous)}
 
     async def records(self, job, ids):
         rows = await self.pool.fetch(

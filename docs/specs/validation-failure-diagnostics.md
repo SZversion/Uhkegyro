@@ -24,6 +24,7 @@
 
 ## AC
 - Given 검증 오류, When 최종 시도가 실패하면, Then 단계·경로·코드를 보존한다.
+- Given role_duplicate 검증 오류로 마지막 attempt가 실패, When PostgreSQL 종결 상태를 조회, Then status=failed이며 validation_feedback_json에 interpretation_schema 단계·빈 path·role_duplicate 코드가 있고 해당 attempt의 validation_failure_history_json에도 동일 진단이 남는다.
 - Given 원문을 담은 임의 진단값, When 저장하면, Then 원문은 고정 대체값으로 치환된다.
 - Given 비검증 오류, When 최종 실패하면, Then 진단값은 null이고 공개 실패 계약은 동일하다.
 - Given 대화 근거 불일치, When 검증하면, Then 고정 원인 코드와 conversation_validation 단계가 발생한다.
@@ -35,3 +36,5 @@
 
 ## 검증 경계
 모의 DB 테스트 및 관련 회귀 테스트로 확인한다. 실제 유료 LLM 요청과 Neon 쓰기 테스트는 별도 승인 없이는 실행하지 않는다.
+
+검증(2026-10-07): 현재 계약에 맞춘 두 PostgreSQL 통합 테스트와 진단 보존 관련 테스트 15개 통과. 기존 로컬 Langfuse 변경을 제외한 PR 작업 폴더에 동일 테스트 수정을 적용해 전체 backend 636개 통과(실제 임시 PostgreSQL 16, LLM·검색 fixture).

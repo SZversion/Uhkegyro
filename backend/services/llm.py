@@ -482,6 +482,21 @@ class LLMInterpretationAdapter:
         except ValueError as error:
             raise PromptConfigurationError("메모리 prompt 구성이 없습니다") from error
         if operation == "classify":
+            rules += ("\nreference_action separates condition changes from image replacement. "
+                "Role changes, ordinary searches and historical questions use update with refresh_roles=[]. "
+                "'포즈만 앉은 모습으로 바꿔줘' is update, never refresh_all. "
+                "'체형·포즈 조건은 유지하고 모든 참고 이미지를 새로 찾아줘' is refresh_all with refresh_roles=[]. "
+                "'전부 다 새로운 레퍼런스를 원해' is refresh_all. "
+                "Keeping card conditions does not mean keeping their current images. "
+                "'체형과 포즈는 그대로 두면서 나머지는 전부 다른 레퍼런스로 찾아줘' is NEVER refresh_all: "
+                "use refresh_roles for current_reference_roles minus body and pose. "
+                "'체형·포즈 이미지는 그대로 두고 나머지만 다른 레퍼런스로 찾아줘' follows the same rule. "
+                "With current_reference_roles=[body,pose,view], both remaining-only examples use refresh_roles=[view]. "
+                "'시점 이미지만 새로 찾아줘' uses reference_action=refresh_roles and refresh_roles=[view]. "
+                "Use only existing current_reference_roles for image refresh. If the scope is unclear or empty, "
+                "use reference_action=refresh_roles and refresh_roles=[] so the server asks for clarification. "
+                "Never expand an empty remaining scope to refresh_all. "
+                "This action does not change mode: image replacement alone is mode none.")
             rules += ("\nClassify ONLY the current request's intent. Matching an earlier request is NOT recall. "
                 "'마른 캐릭터가 한쪽 다리에 체중을 싣고 서 있는 자세 레퍼런스를 찾아줘' is ALWAYS none, "
                 "even verbatim repeated in history. '포즈만 앉은 모습으로 바꿔줘' is none. "

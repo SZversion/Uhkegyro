@@ -121,4 +121,6 @@ def test_oldest_reference_is_recalled_after_40_turns_and_other_session_is_exclud
         assert history[0]["result"]["reference_plan"]["terms"][0]["pins"][0]["pin_url"] == "https://www.pinterest.com/pin/123/"
         state = await ConversationMemory(pool).load(await pool.fetchrow("SELECT * FROM jobs WHERE job_id=$1", request.job_id))
         assert set(state["state"]) <= {"constraints", "pending_question"}
+        assert state["previous_result"] == payload
+        assert "oldest_recent" not in state
     asyncio.run(database_case(case))

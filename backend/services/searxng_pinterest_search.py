@@ -33,6 +33,7 @@ class SearXNGPinterestSearchProvider:
         json_loader: JsonLoader | None = None,
         suffix: str = "drawing",
         engine_attempts: list[dict] | None = None,
+        exclude_pin_ids: tuple[str, ...] = (),
     ) -> None:
         if suffix not in SEARCH_SUFFIXES:
             raise ValueError("지원하지 않는 검색 접미사입니다")
@@ -40,6 +41,7 @@ class SearXNGPinterestSearchProvider:
         self._base_url = base_url.rstrip("/")
         self._json_loader = json_loader or _load_search_json
         self._engine_attempts = engine_attempts
+        self._exclude_pin_ids = frozenset(exclude_pin_ids)
 
     async def search(
         self, role: Role, query_fragments: tuple[str, ...]
@@ -89,7 +91,7 @@ class SearXNGPinterestSearchProvider:
                 extra={"failure_code": FailureCode.SEARCH_UPSTREAM_UNAVAILABLE.value},
             )
             return RoleSearchOutcome(role=role, pins=[], code=ReasonCode.PIN_SEARCH_UNAVAILABLE)
-        pins = parse_search_results(payload)
+        pins = parse_search_results(payload, exclude_pin_ids=self._exclude_pin_ids)
         engine_errors = payload.get("unresponsive_engines", [])
         engine_unresponsive = isinstance(engine_errors, list) and any(
             isinstance(engine_error, (list, tuple))
@@ -121,7 +123,7 @@ class SearXNGPinterestSearchProvider:
         )
 
 
-def parse_search_results(payload: object, limit: int = 8) -> list[PinResult]:
+def parse_search_results(payload: object, limit: int = 8, *, exclude_pin_ids=frozenset()) -> list[PinResult]:
     """SearXNG JSON에서 유효한 Pinterest Pin 결과를 최대 ``limit``개 정규화한다."""
     if limit < 1:
         raise ValueError("limit은 1 이상이어야 합니다")
@@ -134,7 +136,7 @@ def parse_search_results(payload: object, limit: int = 8) -> list[PinResult]:
         if not isinstance(result, Mapping) or not isinstance(result.get("url"), str):
             continue
         pin_id = _pin_id_from_url(result["url"])
-        if pin_id is None or pin_id in seen_pin_ids:
+        if pin_id is None or pin_id in seen_pin_ids or pin_id in exclude_pin_ids:
             continue
         seen_pin_ids.add(pin_id)
         pins.append(

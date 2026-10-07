@@ -11,8 +11,9 @@
 - prepare는 memory.load만 수행한다. 오래된 요약 후보 조회, 입력 hash, watermark, 요약 필요 여부 계산, oldest_recent 경계를 제거한다.
 - prompt_context는 constraints/pending_question/recent/sources만 반환한다. summary/summary_sources/summary_incomplete 및 요약 관련 메타데이터를 넘기지 않는다. v4의 Memory summarize 지침과 요약 진행 안내를 제거한다.
 - load의 state는 constraints/pending_question만 사용한다. complete는 DB의 기존 memory_json에 이 두 필드만 병합한다. legacy summary/summary_sources/hash/claim/watermark는 사용하지 않으며 운영 DB 일괄 삭제 없이 보존한다. jobs의 원본 및 Pin ID/URL/상태를 보존한다.
+- 최신 main의 선택적 레퍼런스 갱신에 필요한 previous_result 조회를 유지한다. 이전 보드 원본은 서버 내부에서 재사용하며 prompt_context의 네 필드와 요약 제거 계약은 유지한다.
 - 원본 회상은 기존 session/선행 기록/역할/용어/키워드/날짜/ID 필터와 20개 상한·범위 좁히기 안내를 유지한다. 다른 대화/없는 인용/잘못된 출처는 거부한다.
-- Spec 및 제거된 요약 전용 테스트를 정리하고 요약 없는 기억의 AC 테스트로 대체한다. 기존 질문 보존 테스트의 baseline 실패는 별도로 보고한다.
+- Spec 및 제거된 요약 전용 테스트를 정리하고 요약 없는 기억의 AC 테스트로 대체한다. 최신 main과 통합한 전체 backend 테스트 결과를 보고한다.
 ## AC
 - Given 긴 대화 또는 legacy 요약 필드, When 요청 처리, Then summarize 호출/등록/실행 및 요약 후보 조회 없이 처리하고 본문/회상 입력에는 요약 필드와 텍스트가 없다.
 - Given 체형 조건과 확인 질문, When 포즈만 수정하는 짧은 답변, Then 기존 체형과 질문을 입력에 유지하고 명시한 포즈만 갱신한다.
@@ -20,3 +21,4 @@
 - Given 다른 대화 또는 위조 출처, When 회상/완료 검증, Then 접근/저장을 거부한다.
 - Given 서버 시작/종료, When worker 실행, Then 요약 task 없이 Job/lease/MCP 루프를 실행·취소한다.
 - Given legacy 요약 데이터와 저장된 조건, When 새 요청 완료, Then 기존 데이터는 일괄 삭제하지 않고 현재 조건/질문만 갱신한다.
+- Given 이전 성공 보드와 legacy 요약 데이터, When 맥락 로딩 및 선택적 레퍼런스 갱신, Then previous_result는 유지하고 요약 필드와 oldest_recent는 입력에 포함하지 않는다.

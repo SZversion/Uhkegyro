@@ -122,6 +122,21 @@ class ReferencePlan(BaseModel):
         return self
 
 
+class ReferenceUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    replaced_roles: list[Role] = Field(default_factory=list, max_length=5)
+    preserved_roles: list[Role] = Field(default_factory=list, max_length=5)
+    removed_roles: list[Role] = Field(default_factory=list, max_length=5)
+
+    @model_validator(mode="after")
+    def disjoint_roles(self):
+        roles = self.replaced_roles + self.preserved_roles + self.removed_roles
+        if len(roles) != len(set(roles)):
+            raise ValueError("reference update roles must be unique and disjoint")
+        return self
+
+
 class AgentResult(BaseModel):
     """API 응답 결과 — 서버가 조립한 최종 상태.
 
@@ -138,6 +153,7 @@ class AgentResult(BaseModel):
     agent_status: AgentStatus
     reason_codes: list[ReasonCode] = Field(default_factory=list)
     reference_plan: ReferencePlan | None = None
+    reference_update: ReferenceUpdate | None = None
     clarifying_question: str | None = None
     user_message: str = ""
     answer_text: Annotated[str, Field(strict=True, max_length=4000)] = ""
@@ -147,6 +163,16 @@ class AgentResult(BaseModel):
     @model_validator(mode="after")
     def _validate_state_rules(self) -> "AgentResult":
         codes = set(self.reason_codes)
+        if update := self.reference_update:
+            if self.agent_status in (AgentStatus.SUCCESS, AgentStatus.PARTIAL_RESULT):
+                final = {term.role for term in self.reference_plan.terms} if self.reference_plan else set()
+                if final != set(update.replaced_roles + update.preserved_roles):
+                    raise ValueError("reference update must cover the final board")
+            elif self.agent_status is AgentStatus.NEEDS_CLARIFICATION:
+                if update.replaced_roles or update.removed_roles:
+                    raise ValueError("clarification cannot replace or remove references")
+            else:
+                raise ValueError("reference update requires a board result or clarification")
         if self.memory_answer and not self.sources and self.memory_answer not in (NO_RECORDS, TOO_MANY):
             raise ValueError("a factual memory answer requires original sources")
         if self.sources and not self.memory_answer:

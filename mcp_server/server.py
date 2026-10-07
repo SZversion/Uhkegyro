@@ -94,7 +94,7 @@ async def get_active_term_card(term_id: str) -> dict:
 
 
 @mcp.tool()
-async def search_pinterest_pins(role: Role, query_fragments: list[str]) -> dict:
+async def search_pinterest_pins(role: Role, query_fragments: list[str], exclude_pin_ids: list[str] | None = None) -> dict:
     """활성 TERM_CARD 검색 조각으로 Pinterest Pin 링크를 검색한다.
 
     검증된 카드의 조각만 전달한다. 조각은 공백으로 결합하고 도구가
@@ -105,6 +105,7 @@ async def search_pinterest_pins(role: Role, query_fragments: list[str]) -> dict:
     Args:
         role: 결과를 연결할 역할. `body`, `pose`, `view`, `perspective`, `layout` 중 하나.
         query_fragments: 활성 TERM_CARD에서 가져온 비어 있지 않은 검색어 조각 배열.
+        exclude_pin_ids: 전체 교체 시 서버가 전달하는 이전 보드 Pin ID, 최대 40개.
 
     Returns:
         정상 검색: `role`, 검증된 `pins` 배열(최대 8개), nullable `code`.
@@ -114,6 +115,10 @@ async def search_pinterest_pins(role: Role, query_fragments: list[str]) -> dict:
         각 Pin은 `pin_id`, `pin_url`, `thumbnail_url`, `status`를 포함한다.
         `_search_trace`는 단일 Pinterest 엔진 요청의 시간·결과 관측 전용 진단이다.
     """
+    if exclude_pin_ids and (len(exclude_pin_ids) > 40 or any(
+        not pin.isascii() or not pin.isdigit() for pin in exclude_pin_ids
+    )):
+        return {"failure_code": "INVALID_SEARCH_TERMS"}
     if _snapshot is None or not any(
         card.get("role") == role.value and card.get("query_fragments") == query_fragments
         for card in _snapshot.active_cards.values()
@@ -123,6 +128,7 @@ async def search_pinterest_pins(role: Role, query_fragments: list[str]) -> dict:
     try:
         outcome = await SearXNGPinterestSearchProvider(
             base_url=settings.searxng_base_url, engine_attempts=engine_attempts,
+            exclude_pin_ids=tuple(exclude_pin_ids or ()),
         ).search(Role(role), tuple(query_fragments))
     except OperationalFailure as error:
         if error.failure_code is FailureCode.CONFIGURATION_ERROR:
