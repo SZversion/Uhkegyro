@@ -287,7 +287,7 @@ async def read_job(
                 metrics["database_ms"] = round(database_ms + (perf_counter() - database_started) * 1000, 3)
             metrics["job_status"] = job.job_status.value
             if job.job_status.value == "completed":
-                with tracer.phase("result-widget-refresh") as widget_metrics:
+                with tracer.phase("result-widget-refresh", trace_context=metrics["trace_context"]) as widget_metrics:
                     job = await get_widget_client().enrich_job(job)
                     terms = job.result.reference_plan.terms if job.result and job.result.reference_plan else []
                     widget_metrics.update(tracer.pin_counts([pin for term in terms for pin in term.pins]))
