@@ -134,7 +134,7 @@ def test_cancelled_slot_wait_records_time(monkeypatch, snapshot_factory):
 
 
 @pytest.mark.parametrize("state", ["queued", "completed", "denied", "missing_cookie"])
-def test_result_api_timing_ownership_and_counts(monkeypatch, state):
+def test_result_api_omits_polling_trace_and_preserves_ownership_and_counts(monkeypatch, state):
     stored = _completed_job()
     if state == "queued":
         stored.job_status, stored.result, stored.poll_after_ms = JobStatus.QUEUED, None, 1000
@@ -161,18 +161,20 @@ def test_result_api_timing_ownership_and_counts(monkeypatch, state):
     with TestClient(app) as client:
         if state != "missing_cookie":
             client.cookies.set(SESSION_COOKIE_NAME, "private-token")
-        response = client.get("/api/jobs/00000000-0000-0000-0000-000000000001")
+        for _ in range(3):
+            response = client.get("/api/jobs/00000000-0000-0000-0000-000000000001")
     if state in ("denied", "missing_cookie"):
         assert response.status_code == (404 if state == "denied" else 401)
         assert not client_trace.records
         return
     assert response.status_code == 200 and response.json()["job_status"] == state
-    root = client_trace.records[0]
-    assert root["trace_id"] == "trace:00000000-0000-0000-0000-000000000001"
-    assert root["output"]["handler_elapsed_ms"] >= root["output"]["database_ms"] >= 0
-    assert len(client_trace.records) == (2 if state == "completed" else 1)
+    assert not any(r["name"] == "job-result-read" for r in client_trace.records)
+    assert len(client_trace.records) == (3 if state == "completed" else 0)
     if state == "completed":
-        assert client_trace.records[1]["output"]["available_count"] == 1
+        assert all(r["name"] == "result-widget-refresh" for r in client_trace.records)
+        assert all(r["trace_id"] == "trace:00000000-0000-0000-0000-000000000001"
+                   and r["output"]["available_count"] == 1 for r in client_trace.records)
+        assert response.json()["result"]["reference_plan"]["terms"][0]["pins"][0]["thumbnail_url"] is not None
         assert stored.result.reference_plan.terms[0].pins[0].thumbnail_url is None
     assert all(value not in json.dumps(client_trace.records) for value in ("private-token", "private-thumbnail"))
 
@@ -196,6 +198,7 @@ def test_telemetry_failure_is_nonfatal(failure):
     with JobTracer(client).result_read("job", "session") as metrics:
         metrics["job_status"] = "completed"
     assert metrics["status"] == "completed"
+    assert not client.records
 
 
 def test_result_tracer_reuse_and_lifespan_shutdown(monkeypatch):

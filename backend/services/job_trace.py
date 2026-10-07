@@ -64,10 +64,9 @@ class JobTracer:
                 context = {"trace_id": self.client.create_trace_id(seed=job_id)}
             except Exception:
                 logger.debug("Langfuse result trace ID unavailable")
-        with self._session(session_id), self.phase(
-            "job-result-read", trace_context=context, job_id=job_id, session_id=session_id,
-        ) as metrics:
-            yield metrics
+        # Polling must not create observations; keep context for widget refresh.
+        with self._session(session_id):
+            yield {"status": "completed", "trace_context": context}
 
     @staticmethod
     def pin_counts(pins):
