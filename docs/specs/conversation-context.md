@@ -15,7 +15,7 @@ needs_clarification 완료에서는 context_updates를 적용하지 않고 pendi
 worker는 선행 종결 job만 사용한다. job 완료와 memory_json 갱신은 attempt/상태/만료를 확인한 한 transaction이다. failed·stale attempt는 기억을 쓰지 않는다.
 ## AC
 - Given A의 체형, When B 요청, Then A 기록은 prompt에 없다.
-- Given 앞선 체형과 포즈, When 포즈만 변경 요청, Then 현재 체형을 유지하고 포즈 결과만 반환한다.
+- Given 앞선 체형과 포즈, When 포즈만 변경 요청, Then 체형 검색·Pin은 유지하고 포즈만 검색해 전체 보드를 반환한다. 상세 계약은 selective-reference-update.md를 따른다.
 - Given 확인 질문, When 짧은 답, Then 이전 질문이 prompt에 포함된다.
 - Given 타 대화 출처/없는 인용/비활성 카드, When 출력 검증, Then 결과와 기억 저장을 거부한다.
 - Given 현재 요청에는 없고 동일 대화의 선행 요청 또는 카드 라벨에만 있는 인용과 유효한 source_job_id, When 원본 검증과 resolver를 실행, Then selection을 허용한다.

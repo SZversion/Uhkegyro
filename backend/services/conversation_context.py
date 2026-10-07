@@ -67,6 +67,7 @@ async def recall(memory, job, context, adapter, trace):
         query = await adapter.memory("classify", {
             "request_text": job["request_text"], "session_context": prompt_context(context),
         }, RecallQuery, **trace_args(job))
+        context["reference_action"] = query.reference_action if query.mode != "recall" else "update"
         if query.mode == "none":
             return None, False
         records = await memory.search(job, query)
@@ -91,6 +92,8 @@ async def recall(memory, job, context, adapter, trace):
 
 def is_clear_new_request(text, context):
     text = text.casefold().strip()
+    if context.get("previous_result") and re.search(r"새|다른|\b(new|different)\b", text):
+        return False
     if context["state"].get("pending_question") or len(text) < 12:
         return False
     historical = ("아까|이전|전에|지난|그때|방금|추천|기억|했|였|뭐|무엇|어떤|그거|그것|똑같|"

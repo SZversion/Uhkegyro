@@ -480,6 +480,13 @@ class LLMInterpretationAdapter:
         except ValueError as error:
             raise PromptConfigurationError("메모리 prompt 구성이 없습니다") from error
         if operation == "classify":
+            rules += ("\nreference_action is refresh_all ONLY for an explicit request to replace ALL "
+                "current reference images while keeping the body/pose/other conditions. "
+                "'체형과 포즈는 그대로, 전부 다른 레퍼런스로 찾아줘' is refresh_all. "
+                "'전부 다 새로운 레퍼런스를 원해' is refresh_all. "
+                "Role changes, ordinary searches and historical questions use update. "
+                "A change such as '포즈만 앉은 모습으로 바꿔줘' is update, never refresh_all. "
+                "This action does not change mode: image replacement alone is mode none.")
             rules += ("\nClassify ONLY the current request's intent. Matching an earlier request is NOT recall. "
                 "'마른 캐릭터가 한쪽 다리에 체중을 싣고 서 있는 자세 레퍼런스를 찾아줘' is ALWAYS none, "
                 "even verbatim repeated in history. '포즈만 앉은 모습으로 바꿔줘' is none. "

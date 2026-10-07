@@ -21,6 +21,7 @@ class ContextUpdate(MemoryModel):
 
 class RecallQuery(MemoryModel):
     mode: Literal["none", "recall", "mixed"]
+    reference_action: Literal["update", "refresh_all"] = "update"
     role: Role | None = None
     term_id: str | None = Field(default=None, max_length=200)
     keywords: list[str] = Field(default_factory=list, max_length=5)

@@ -11,6 +11,7 @@ from backend.schemas.models import AgentResult
 from backend.services.catalog_repository import CatalogSnapshot
 from backend.services.conversation_memory import ConversationMemory
 from backend.services import conversation_context
+from backend.services import reference_update
 from backend.services.input_safety import is_out_of_scope_input, is_unsafe_input
 from backend.services.job_repository import JobRepository, StaleJobAttempt
 from backend.services.job_retry_recovery import JobRetryRecovery
@@ -130,31 +131,46 @@ class AgentJobWorker:
             if recall_only:
                 result = recalled
             else:
+                previous = reference_update.previous_terms(context, self._snapshot)
+                refresh = context.get("reference_action") == "refresh_all"
+                interpretation = None
                 with trace.stage("validating"):
                     feedback = job.get("validation_feedback_json")
                     if isinstance(feedback, str):
                         feedback = json.loads(feedback)
-                    interpretation = await self._adapter.interpret(
-                        job["request_text"], **conversation_context.trace_args(job),
-                        active_cards_json=format_active_cards_json(self._snapshot),
-                        session_context=conversation_context.prompt_context(context),
-                        **({"validation_feedback": feedback} if feedback else {}),
-                    )
-                    resolution = await conversation_context.validate(
-                        self._memory, job, interpretation, self._snapshot)
+                    if refresh:
+                        resolution = reference_update.refresh_resolution(previous, self._snapshot, context)
+                    else:
+                        interpretation = await self._adapter.interpret(
+                            job["request_text"], **conversation_context.trace_args(job),
+                            active_cards_json=format_active_cards_json(self._snapshot),
+                            session_context=conversation_context.prompt_context(context),
+                            **({"validation_feedback": feedback} if feedback else {}),
+                        )
+                        resolution = await conversation_context.validate(
+                            self._memory, job, interpretation, self._snapshot)
+                        resolution = reference_update.select_searches(resolution, previous)
                 with trace.stage("searching"):
                     if not await self._update(job_id, attempt, JobStatus.SEARCHING):
                         trace.stale()
                         return
                     if search_outcomes is None:
                         search_outcomes = await self._search_outcomes(
-                            resolution, request_text=str(job["request_text"])
+                            resolution, request_text=str(job["request_text"]),
+                            **({"exclude_pin_ids": {role: list(dict.fromkeys(pin.pin_id
+                                for term in previous.values() for pin in term.pins))
+                                for role in previous}} if refresh else {}),
                         )
                 result = assemble(resolution, self._snapshot, search_outcomes,
-                                  answer_text=interpretation.answer_text)
+                    answer_text="기존 조건은 유지하고 전체 레퍼런스를 다시 찾았어요." if refresh else interpretation.answer_text)
+                if refresh and result.reason_codes:
+                    result.answer_text = "기존 조건은 유지했지만 일부 새 레퍼런스를 찾지 못했어요. 검색 결과 안내를 확인해 주세요."
+                if not refresh:
+                    result = reference_update.merge_preserved(result, previous, interpretation)
                 if recalled is not None:
                     result.memory_answer, result.sources = recalled.memory_answer, recalled.sources
-                state = conversation_context.next_state(context, job, interpretation, result)
+                if not refresh:
+                    state = conversation_context.next_state(context, job, interpretation, result)
             with trace.stage("rendering"):
                 if not await self._update(job_id, attempt, JobStatus.RENDERING):
                     trace.stale()
@@ -175,7 +191,7 @@ class AgentJobWorker:
             await self._handle_failure(job, error, trace)
 
     async def _search_outcomes(
-        self, resolution: ResolutionResult, *, request_text: str
+        self, resolution: ResolutionResult, *, request_text: str, exclude_pin_ids=None
     ) -> Mapping[Role, RoleSearchOutcome]:
         if self._mcp_gateway is None or not resolution.terms:
             return {}
@@ -274,10 +290,20 @@ class AgentJobWorker:
                             with self._tracer.search(role.value, list(approved[role]),
                                                      search_attempt=attempts[role]) as search_span:
                                 with self._tracer.phase("mcp-search-call", **trace_fields):
-                                    result = await self._mcp_gateway.call_tool(name, arguments)
+                                    actual_arguments = {"role": role.value, "query_fragments": list(approved[role])}
+                                    excluded = (exclude_pin_ids or {}).get(role, [])
+                                    if excluded:
+                                        actual_arguments["exclude_pin_ids"] = excluded
+                                    result = await self._mcp_gateway.call_tool(name, actual_arguments)
                                 diagnostics = pop_search_diagnostics(result)
                                 self._tracer.search_result(search_span, diagnostics)
                                 outcome = parse_search_result(role, result)
+                                if excluded:
+                                    outcome.pins = [pin for pin in outcome.pins if pin.pin_id not in excluded]
+                                    if not outcome.pins and outcome.code is None:
+                                        outcome.code = ReasonCode.PIN_RESULTS_EMPTY
+                                    result = {"role": role.value, "code": outcome.code.value if outcome.code else None,
+                                              "pin_count": len(outcome.pins)}
                                 if self._widget_client is not None:
                                     with self._tracer.phase("widget-enrichment", **trace_fields) as metrics:
                                         outcome = await self._widget_client.enrich_outcome(outcome)
