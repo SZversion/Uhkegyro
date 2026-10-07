@@ -21,7 +21,7 @@
 
 ## How
 
-- 설정 파일: `searxng/settings.yml`; 기본 설정을 유지하면서 JSON format과 `pinterest` 엔진을 활성화한다.
+- 설정 파일: `searxng/settings.yml`; 기본 설정과 JSON format을 유지하고 세 엔진을 활성화한다. Pin 검색 provider는 Pinterest 엔진만 호출한다.
 - 컨테이너 image: `docker.io/searxng/searxng:latest`.
 - 포트 공개: `127.0.0.1:8080:8080`.
 - 비밀값은 저장소에 기록하지 않고 `.env`에서만 읽는다.
