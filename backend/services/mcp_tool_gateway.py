@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping
+from copy import deepcopy
 import os
+from time import monotonic
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -14,50 +17,60 @@ from jsonschema.validators import validator_for
 from backend.schemas.enums import FailureCode
 from backend.services.failure_mapping import OperationalFailure
 
+TOOL_CACHE_TTL_SECONDS = 4 * 60 * 60
+
 
 class McpToolGateway:
     def __init__(self, *, mcp_url: str, operation_caller=None) -> None:
         self._mcp_url = mcp_url
         self._operation_caller = operation_caller or _call_mcp_operation
         self._tools: dict[str, dict] = {}
+        self._cache_expires_at = 0.0
+        self._list_lock = asyncio.Lock()
 
-    async def list_tools(self) -> list[dict]:
+    async def list_tools(self, *, refresh: bool = False) -> list[dict]:
         if not self._mcp_url:
             raise OperationalFailure(FailureCode.CONFIGURATION_ERROR)
-        result = await self._operation_caller(self._mcp_url, "list_tools")
-        raw_tools = getattr(result, "tools", None)
-        if not isinstance(raw_tools, list):
-            raise ValueError("MCP tool list is malformed")
+        if not refresh and monotonic() < self._cache_expires_at:
+            return deepcopy(list(self._tools.values()))
+        async with self._list_lock:
+            if not refresh and monotonic() < self._cache_expires_at:
+                return deepcopy(list(self._tools.values()))
+            result = await self._operation_caller(self._mcp_url, "list_tools")
+            raw_tools = getattr(result, "tools", None)
+            if not isinstance(raw_tools, list):
+                raise ValueError("MCP tool list is malformed")
 
-        tools = []
-        for raw_tool in raw_tools:
-            item = _to_mapping(raw_tool)
-            name = item.get("name")
-            description = item.get("description")
-            input_schema = item.get("inputSchema", item.get("input_schema"))
-            if not isinstance(name, str) or not name or not isinstance(input_schema, Mapping):
-                raise ValueError("MCP tool schema is malformed")
-            try:
-                validator_for(input_schema).check_schema(input_schema)
-            except SchemaError as error:
-                raise ValueError("MCP tool schema is malformed") from error
-            if description is not None and not isinstance(description, str):
-                raise ValueError("MCP tool schema is malformed")
-            normalized = {
-                "name": name,
-                "description": description or "",
-                "inputSchema": dict(input_schema),
-            }
-            tools.append(normalized)
-        self._tools = {tool["name"]: tool for tool in tools}
-        return tools
+            tools = []
+            for raw_tool in raw_tools:
+                item = _to_mapping(raw_tool)
+                name = item.get("name")
+                description = item.get("description")
+                input_schema = item.get("inputSchema", item.get("input_schema"))
+                if not isinstance(name, str) or not name or not isinstance(input_schema, Mapping):
+                    raise ValueError("MCP tool schema is malformed")
+                try:
+                    validator_for(input_schema).check_schema(input_schema)
+                except SchemaError as error:
+                    raise ValueError("MCP tool schema is malformed") from error
+                if description is not None and not isinstance(description, str):
+                    raise ValueError("MCP tool schema is malformed")
+                tools.append({
+                    "name": name, "description": description or "",
+                    "inputSchema": deepcopy(dict(input_schema)),
+                })
+            self._tools = {tool["name"]: tool for tool in tools}
+            self._cache_expires_at = monotonic() + TOOL_CACHE_TTL_SECONDS
+            return deepcopy(tools)
 
     async def call_tool(self, name: str, arguments: dict) -> dict:
-        if not self._tools:
-            await self.list_tools()
+        await self.list_tools()
         tool = self._tools.get(name)
         if tool is None:
-            raise ValueError(f"MCP tool is not listed: {name}")
+            await self.list_tools(refresh=True)
+            tool = self._tools.get(name)
+            if tool is None:
+                raise ValueError(f"MCP tool is not listed: {name}")
         if not isinstance(arguments, dict):
             raise ValueError("MCP tool arguments must be an object")
         try:
