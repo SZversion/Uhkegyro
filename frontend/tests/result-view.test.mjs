@@ -16,6 +16,42 @@ test("결과는 완료된 success/partial_result에만 노출한다", () => {
   assert.deepEqual(view.resultTerms({ job_status: "searching" }), []);
 });
 
+test("역할 부분 갱신은 유지 역할의 이전 검색 데이터와 Pin을 보존한다", () => {
+  const previousBody = term("body", { term_id: "old-body", pins: [{ pin_id: "body-pin", status: "available" }] });
+  const previousPose = term("pose", { term_id: "old-pose", pins: [{ pin_id: "old-pose-pin", status: "available" }] });
+  const replacedPose = term("pose", { term_id: "new-pose", pins: [{ pin_id: "new-pose-pin", status: "available" }] });
+  const turns = [
+    { id: "first", job: { job_id: "first", job_status: "completed", result: { agent_status: "success", reference_plan: { terms: [previousBody, previousPose] } } } },
+    { id: "second", job: { job_id: "second", job_status: "completed", result: {
+      agent_status: "success",
+      reference_plan: { terms: [term("body", { term_id: "new-body" }), replacedPose] },
+      reference_update: { replaced_roles: ["pose"], preserved_roles: ["body"], removed_roles: [] },
+    } } },
+  ];
+
+  const rendered = view.renderedResultTerms(turns[1].job, turns);
+  assert.deepEqual(rendered, [previousBody, replacedPose]);
+  assert.equal(rendered[0].pins[0].pin_id, "body-pin");
+  assert.equal(rendered[1].pins[0].pin_id, "new-pose-pin");
+});
+
+test("역할 부분 갱신은 삭제 역할을 제외하고 확인 질문에서는 이전 보드를 유지한다", () => {
+  const body = term("body", { term_id: "body", pins: [{ pin_id: "body-pin", status: "available" }] });
+  const pose = term("pose", { term_id: "pose", pins: [{ pin_id: "pose-pin", status: "available" }] });
+  const first = { job_id: "first", job_status: "completed", result: { agent_status: "success", reference_plan: { terms: [body, pose] } } };
+  const removed = { job_id: "removed", job_status: "completed", result: {
+    agent_status: "success", reference_plan: { terms: [body] },
+    reference_update: { replaced_roles: [], preserved_roles: ["body"], removed_roles: ["pose"] },
+  } };
+  const clarification = { job_id: "clarify", job_status: "completed", result: {
+    agent_status: "needs_clarification", reference_plan: null,
+    reference_update: { replaced_roles: [], preserved_roles: ["body", "pose"], removed_roles: [] },
+  } };
+
+  assert.deepEqual(view.renderedResultTerms(removed, [{ job: first }, { job: removed }]), [body]);
+  assert.deepEqual(view.renderedResultTerms(clarification, [{ job: first }, { job: clarification }]), [body, pose]);
+});
+
 test("실패와 빈 카테고리 및 접근 불가 Pin을 순서대로 보존한다", () => {
   const rows = view.createGalleryRows(createMindMapSlots([
     term("body", { reason_codes: ["PIN_SEARCH_UNAVAILABLE"], pins: [] }),
