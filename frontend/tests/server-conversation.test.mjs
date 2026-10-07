@@ -1,10 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { restoreConversation, createConversation, resumeConversation, createHistoryLoader } from "../lib/server-conversation.mjs";
+import { restoreConversation, createConversation, listConversations, resumeConversation, createHistoryLoader } from "../lib/server-conversation.mjs";
 import { showThumbnail } from "../lib/result-view.mjs";
 import { submitAgentRequest } from "../lib/agent-submit.mjs";
 import { answerForJob, upsertTurn, stopTurnPolling } from "../lib/conversation.mjs";
 const sid = "00000000-0000-0000-0000-000000000001";
+const sid2 = "00000000-0000-0000-0000-000000000002";
 const job = (id, status = "completed") => ({ job_id: id, session_id: sid, job_status: status,
   request_text: `요청 ${id}`, result: status === "completed" ? { agent_status: "partial_result", answer_text: "통합 설명", reason_codes: ["PIN_SEARCH_UNAVAILABLE"] } : null });
 const response = (body, status = 200) => ({ ok: status < 400, status, json: async () => body });
@@ -65,15 +66,56 @@ test("미인증·빈 목록은 빈 대화이며 새 ID를 후속 제출에 명�
   for (const r of [response({}, 401), response({ items: [] })]) {
     assert.deepEqual(await restoreConversation({ fetchImpl: async () => r }), { sessionId: null, turns: [] });
   }
-  const id = await createConversation({ fetchImpl: async (url, options) => {
+  const created = await createConversation({ fetchImpl: async (url, options) => {
     assert.equal(url, "/api/sessions"); assert.equal(options.method, "POST");
-    return response({ session_id: sid }, 201);
+    return response({ session_id: sid, created_at: "2026-10-07T01:00:00Z" }, 201);
   } });
-  const sent = await submitAgentRequest("포즈만 수정", { sessionId: id, createId: () => "key", fetchImpl: async (_, options) => {
+  const sent = await submitAgentRequest("포즈만 수정", { sessionId: created.session_id, createId: () => "key", fetchImpl: async (_, options) => {
     assert.deepEqual(JSON.parse(options.body), { request_text: "포즈만 수정", session_id: sid });
     return response({ job_id: "next", poll_after_ms: 1000 }, 202);
   } });
   assert.equal(sent.ok, true);
+});
+
+test("세션 목록 복원과 선택한 세션의 대화만 복원", async () => {
+  const calls = [];
+  const sessions = [
+    { session_id: sid2, created_at: "2026-10-07T01:00:00Z" },
+    { session_id: sid, created_at: "2026-10-06T01:00:00Z" },
+  ];
+  const items = [job("selected", "completed")].map((entry) => ({ ...entry, session_id: sid }));
+  const fetchImpl = async (url) => {
+    calls.push(url);
+    if (url === "/api/sessions?limit=100&offset=0") return response({ items: sessions });
+    if (url === `/api/sessions/${sid}`) return response(sessions[1]);
+    if (url === `/api/sessions/${sid}/jobs?limit=100&offset=0`) return response({ items });
+    if (url === "/api/jobs/selected") return response(items[0]);
+    throw new Error(`unexpected request ${url}`);
+  };
+  const listed = await listConversations({ fetchImpl });
+  assert.deepEqual(listed.map((entry) => entry.session_id), [sid2, sid]);
+  const restored = await restoreConversation({ fetchImpl, sessionId: sid });
+  assert.equal(restored.sessionId, sid);
+  assert.deepEqual(restored.turns.map((turn) => turn.id), ["selected"]);
+  assert.equal(calls.some((url) => url.includes(sid2)), false);
+});
+
+test("세션 소유 쿠키가 없으면 세션 목록은 빈 목록으로 시작", async () => {
+  const listed = await listConversations({ fetchImpl: async (url) => {
+    assert.equal(url, "/api/sessions?limit=100&offset=0");
+    return response({}, 401);
+  } });
+  assert.deepEqual(listed, []);
+});
+
+test("새 세션 생성 뒤 목록에서 해당 세션을 추가할 수 있는 메타데이터 반환", async () => {
+  const created = { session_id: sid2, created_at: "2026-10-07T01:00:00Z" };
+  const result = await createConversation({ fetchImpl: async (url, options) => {
+    assert.equal(url, "/api/sessions");
+    assert.equal(options.method, "POST");
+    return response(created, 201);
+  } });
+  assert.deepEqual(result, created);
 });
 
 test("목록 장애·이력 권한 오류·손상 데이터는 복원 실패하고 fallback하지 않는다", async () => {

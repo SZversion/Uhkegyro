@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { countCharacters, createSubmissionController, validateRequestText } from "../lib/agent-submit.mjs";
-import { createConversation, restoreConversation, resumeConversation, createHistoryLoader, RESTORE_ERROR } from "../lib/server-conversation.mjs";
+import { createConversation, listConversations, restoreConversation, resumeConversation, RESTORE_ERROR } from "../lib/server-conversation.mjs";
 import { DEMO_JOB, DEMO_REQUEST_TEXT, uiDemoEnabled } from "../lib/demo-job.mjs";
 import { HOME_TERMS } from "../lib/home-catalog.mjs";
 import { createMindMapSlots, firstSelectableTermId } from "../lib/term-mind-map.mjs";
@@ -28,10 +28,9 @@ export default function HomePage() {
     ? [{ id: "demo-initial", request: DEMO_REQUEST_TEXT, job: DEMO_JOB, demo: true }] : []);
   const [conversationReady, setConversationReady] = useState(false);
   const [sessionId, setSessionId] = useState(null);
-  const [historyLoad, setHistoryLoad] = useState({ loading: false, error: "" });
-  const historyLoaderRef = useRef(null);
-  const historyEntryRef = useRef(null);
-  if (!historyLoaderRef.current) historyLoaderRef.current = createHistoryLoader({ onState: setHistoryLoad, onJob: setJob });
+  const sessionIdRef = useRef(null);
+  const sessionLoadRef = useRef(0);
+  const [sessions, setSessions] = useState([]);
   const [restoreError, setRestoreError] = useState("");
   const [restoreAttempt, setRestoreAttempt] = useState(0);
   const [storageFailed, setStorageFailed] = useState(false);
@@ -50,10 +49,6 @@ export default function HomePage() {
   const previewDialogRef = useRef(null);
   const previewTriggerRef = useRef(null);
   const [boardView, setBoardView] = useState("results");
-  const [searchHistory, setSearchHistory] = useState(() => uiDemoEnabled
-    ? [{ id: "demo-initial", request: DEMO_REQUEST_TEXT, job: DEMO_JOB, demo: true }]
-    : []);
-  const pendingRequestRef = useRef("");
   const menuButtonRef = useRef(null);
   const inputRef = useRef(null);
   const galleryRef = useRef(null);
@@ -97,12 +92,13 @@ export default function HomePage() {
     const controller = new AbortController();
     setRestoreError("");
     setConversationReady(false);
-    restoreConversation({ signal: controller.signal }).then((restored) => {
+    Promise.all([listConversations({ signal: controller.signal }), restoreConversation({ signal: controller.signal, sessionId: sessionIdRef.current || undefined })]).then(([items, restored]) => {
       if (controller.signal.aborted) return;
+      setSessions(items);
       setSessionId(restored.sessionId);
+      sessionIdRef.current = restored.sessionId;
       setTurns(restored.turns);
       setJob(restored.turns.at(-1)?.job || null);
-      setSearchHistory(restored.turns.filter((turn) => !isTurnPending(turn)).reverse());
       setConversationReady(true);
     }).catch(() => { if (!controller.signal.aborted) setRestoreError(RESTORE_ERROR); });
     return () => controller.abort();
@@ -128,11 +124,13 @@ export default function HomePage() {
   useEffect(() => {
     if (uiDemoEnabled || !conversationReady || !pendingTurnIds) return;
     const latestId = turns.at(-1)?.id;
+    const activeSessionId = sessionIdRef.current;
     const poller = resumeConversation(turns, { onUpdate: (turn) => {
+      if (sessionIdRef.current !== activeSessionId || activeSessionId !== turn.job?.session_id) return;
       setTurns((entries) => upsertTurn(entries, turn));
       if (turn.id === latestId) setJob(turn.job);
-      if (!isTurnPending(turn)) setSearchHistory((entries) => [turn, ...entries.filter((entry) => entry.id !== turn.id)]);
     }, onError: (id, message) => {
+      if (sessionIdRef.current !== activeSessionId) return;
       setPollError(message);
       setTurns((entries) => stopTurnPolling(entries, id));
     } });
@@ -143,7 +141,6 @@ export default function HomePage() {
     };
   }, [pendingTurnIds, conversationReady]);
 
-  useEffect(() => () => historyLoaderRef.current.cancel(), []);
   useEffect(() => () => termSearchControllerRef.current?.abort(), []);
   useEffect(() => {
     function closeHelpOutside(event) {
@@ -205,13 +202,6 @@ export default function HomePage() {
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [menuOpen]);
 
-  useEffect(() => {
-    if (!submission || !["completed", "failed"].includes(job?.job_status)) return;
-    setSearchHistory((entries) => entries.some((entry) => entry.id === submission.jobId)
-      ? entries
-      : [{ id: submission.jobId, request: pendingRequestRef.current, job, demo: false }, ...entries]);
-  }, [job, submission]);
-
   async function handleSubmit(event) {
     event.preventDefault();
     await submit(requestText);
@@ -238,7 +228,6 @@ export default function HomePage() {
 
   async function openTermSearch(term) {
     setTermGuide(term);
-    historyLoaderRef.current.cancel();
     resetSketchSearches();
     termSearchControllerRef.current?.abort();
     const controller = new AbortController();
@@ -291,7 +280,6 @@ export default function HomePage() {
 
   async function submit(text) {
     if (conversationBusy || submissionRef.current.isPending()) return;
-    historyLoaderRef.current.cancel();
 
     const validationError = validateRequestText(text);
     if (validationError) {
@@ -308,7 +296,6 @@ export default function HomePage() {
       const id = crypto.randomUUID();
       setTurns((entries) => upsertTurn(entries, { id, request: text, job: demoJob, demo: true }));
       setJob(demoJob);
-      setSearchHistory((entries) => [{ id, request: text, job: demoJob, demo: true }, ...entries]);
       setBoardView("results");
       setRequestText("");
       setError("");
@@ -317,7 +304,6 @@ export default function HomePage() {
     }
 
     pollerRef.current?.stop();
-    pendingRequestRef.current = text;
     setBoardView("results");
     setIsSubmitting(true);
     setError("");
@@ -327,10 +313,20 @@ export default function HomePage() {
     setSelectedTermId(null);
     selectedJobRef.current = null;
     try {
-      const activeSession = sessionId || await createConversation();
+      let activeSession = sessionIdRef.current;
+      if (!activeSession) {
+        const created = await createConversation();
+        activeSession = created.session_id;
+        setSessions((items) => [created, ...items.filter((item) => item.session_id !== created.session_id)]);
+      }
       setSessionId(activeSession);
+      sessionIdRef.current = activeSession;
       const result = await submissionRef.current.submit(text, { sessionId: activeSession });
       if (result.ok) {
+        setSessions((items) => {
+          const selected = items.find((item) => item.session_id === activeSession);
+          return selected ? [selected, ...items.filter((item) => item.session_id !== activeSession)] : items;
+        });
         setTurns((entries) => upsertTurn(entries, { id: result.jobId, request: text,
           job: { job_status: "queued", poll_after_ms: result.pollAfterMs }, demo: false }));
         setSubmission({ ...result, requestText: text });
@@ -372,7 +368,6 @@ export default function HomePage() {
 
   function navigateBoard(view) {
     setTermGuide(null);
-    historyLoaderRef.current.cancel();
     resetSketchSearches();
     termSearchControllerRef.current?.abort();
     setBoardView(view);
@@ -381,20 +376,68 @@ export default function HomePage() {
     menuButtonRef.current?.focus();
   }
 
-  function openHistory(entry) {
-    if (conversationBusy) return;
+  async function openSession(session) {
+    if (isSubmitting || session.session_id === sessionIdRef.current) return;
+    const loadId = ++sessionLoadRef.current;
     setTermGuide(null);
     setMenuOpen(false);
     resetSketchSearches();
     termSearchControllerRef.current?.abort();
     pollerRef.current?.stop();
+    setConversationReady(false);
+    setRestoreError("");
     setSubmission(null);
     setPollError("");
-    historyEntryRef.current = entry;
-    historyLoaderRef.current.open(entry);
-    setActiveGalleryRole(null);
-    setBoardView("results");
-    setMobilePanel("reference");
+    setSessionId(session.session_id);
+    sessionIdRef.current = session.session_id;
+    setSessions((items) => [session, ...items.filter((item) => item.session_id !== session.session_id)]);
+    setTurns([]);
+    setJob(null);
+    try {
+      const restored = await restoreConversation({ sessionId: session.session_id });
+      if (loadId !== sessionLoadRef.current) return;
+      setTurns(restored.turns);
+      setJob(restored.turns.at(-1)?.job || null);
+      setConversationReady(true);
+      setActiveGalleryRole(null);
+      setBoardView("results");
+      setMobilePanel("reference");
+    } catch {
+      if (loadId === sessionLoadRef.current) {
+        setRestoreError(RESTORE_ERROR);
+        setConversationReady(true);
+      }
+    }
+  }
+
+  async function startNewSession() {
+    if (isSubmitting) return;
+    const loadId = ++sessionLoadRef.current;
+    pollerRef.current?.stop();
+    setConversationReady(false);
+    setRestoreError("");
+    try {
+      const created = await createConversation();
+      if (loadId !== sessionLoadRef.current) return;
+      setSessions((items) => [created, ...items.filter((item) => item.session_id !== created.session_id)]);
+      setSessionId(created.session_id);
+      sessionIdRef.current = created.session_id;
+      setTurns([]);
+      setJob(null);
+      setSubmission(null);
+      setPollError("");
+      setConversationReady(true);
+      setRestoreError("");
+      setTermGuide(null);
+      setBoardView("results");
+      setMobilePanel("reference");
+      setMenuOpen(false);
+    } catch {
+      if (loadId === sessionLoadRef.current) {
+        setConversationReady(true);
+        setRestoreError("새 세션을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      }
+    }
   }
 
   return (
@@ -405,31 +448,29 @@ export default function HomePage() {
           onClick={() => setMobilePanel("reference")}>레퍼런스</button>
         <button type="button" aria-pressed={mobilePanel === "conversation"} aria-controls="conversation-panel"
           onClick={() => setMobilePanel("conversation")}>대화</button>
-        <button type="button" aria-expanded={menuOpen} aria-controls="history-sidebar" onClick={toggleMenu}>기록</button>
+        <button type="button" aria-expanded={menuOpen} aria-controls="history-sidebar" onClick={toggleMenu}>세션</button>
       </nav>
-      <aside id="history-sidebar" className="history-sidebar" data-open={menuOpen} aria-label="검색 기록 사이드바">
+      <aside id="history-sidebar" className="history-sidebar" data-open={menuOpen} aria-label="세션 목록">
         <button className="brand-identity brand-home-button" type="button" aria-label="UH케그려 홈"
           onClick={() => navigateBoard("home")}>
           <span className="brand-mark" aria-hidden="true">UH</span>
           <span className="brand-name">UH케그려</span>
         </button>
-        <nav className="history-sidebar-list" aria-label="검색 기록 목록">
-          {searchHistory.length ? searchHistory.map((entry, index) => (
-            <button className="history-sidebar-entry" type="button" key={entry.id}
-              disabled={conversationBusy} title={entry.request}
-              aria-current={boardView === "results" && (historyLoad.loading
-                ? historyEntryRef.current?.id : job?.job_id) === entry.id ? "page" : undefined}
-              onClick={() => openHistory(entry)}>
-              <span className="history-sidebar-title">{entry.request.split(/[.!?。！？\n]/, 1)[0] || entry.request}</span>
-              <span className="history-sidebar-status">요청 {searchHistory.length - index}</span>
-              {(entry.demo || entry.job.job_status === "failed") && (
-                <span className="history-sidebar-status">{entry.demo ? "미리보기" : "실패"}</span>
-              )}
-            </button>
-          )) : <p className="history-sidebar-empty">아직 검색 기록이 없습니다.</p>}
+        <nav className="history-sidebar-list" aria-label="세션 목록">
+          <button className="history-sidebar-entry" type="button" disabled={!conversationReady || isSubmitting} onClick={startNewSession}>새 세션</button>
+          {uiDemoEnabled ? <button className="history-sidebar-entry" type="button" aria-current="page">미리보기 대화</button>
+            : sessions.map((session) => (
+              <button className="history-sidebar-entry" type="button" key={session.session_id}
+                disabled={isSubmitting} title={new Date(session.created_at).toLocaleString("ko-KR")}
+                aria-current={sessionId === session.session_id ? "page" : undefined}
+                onClick={() => openSession(session)}>
+                <span className="history-sidebar-title">{new Date(session.created_at).toLocaleString("ko-KR", { dateStyle: "short", timeStyle: "short" })}</span>
+              </button>
+            ))}
+          {!uiDemoEnabled && !sessions.length && <p className="history-sidebar-empty">아직 대화 세션이 없습니다.</p>}
         </nav>
       </aside>
-      {menuOpen && <button className="history-sidebar-dismiss" type="button" aria-label="기록 닫기"
+      {menuOpen && <button className="history-sidebar-dismiss" type="button" aria-label="세션 목록 닫기"
         onClick={() => { setMenuOpen(false); menuButtonRef.current?.focus(); }} />}
       <section id="reference-panel" className="reference-board" aria-label="레퍼런스">
         <header className="board-header">
@@ -438,7 +479,7 @@ export default function HomePage() {
             <span className="brand-mark" aria-hidden="true">UH</span><span className="brand-name">UH케그려</span>
           </button>
           <button className="history-sidebar-toggle" type="button" aria-expanded={menuOpen}
-            aria-controls="history-sidebar" onClick={toggleMenu}>기록</button>
+            aria-controls="history-sidebar" onClick={toggleMenu}>세션</button>
           {recommendedSearchQuery && (
             <div className="recommended-query" aria-label="즉시 검색">
               <div className="query-value">
@@ -456,12 +497,7 @@ export default function HomePage() {
             </div>
           )}
         </header>
-        {boardView === "results" && historyLoad.loading ? (
-          <div className="board-search-loading"><LoadingIndicator label="검색 기록을 불러오는 중…" /></div>
-        ) : boardView === "results" && historyLoad.error ? (
-          <div className="board-search-loading" role="alert"><p>{historyLoad.error}</p>
-            <button type="button" onClick={() => openHistory(historyEntryRef.current)}>다시 불러오기</button></div>
-        ) : boardView === "results" && conversationBusy && conversationReady ? (
+        {boardView === "results" && conversationBusy && conversationReady ? (
           <div className="board-search-loading"><ImageSearchLoading label="요청을 처리하는 중입니다…" /></div>
         ) : ["results", "term-results"].includes(boardView) && hasGalleryRows ? (
           <div className="pin-gallery" ref={galleryRef} data-single={galleryRows.length === 1}
