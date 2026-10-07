@@ -49,7 +49,7 @@ def test_completion_waits_for_entire_response_without_another_llm_call(
         original = adapter.request_mcp_tool_calls
 
         async def select(*args, **kwargs):
-            assert not adapter.tool_requests, "completed searches must not request another LLM call"
+            assert not adapter.tool_requests, "completed searches must not request another tool selection"
             assert kwargs["required"] is True
             return await original(*args, **kwargs)
 
@@ -76,6 +76,7 @@ def test_completion_waits_for_entire_response_without_another_llm_call(
         if not has_pins:
             assert all(outcome.code.value == "PIN_RESULTS_EMPTY" for outcome in outcomes.values())
         assert len(adapter.tool_requests) == 1
+        assert not adapter.decision_requests
         replies = [m for m in adapter.tool_requests[0][0] if m["role"] == "tool"]
         assert [m["tool_call_id"] for m in replies] == [c["id"] for c in calls]
         assert [json.loads(m["content"])["role"] for m in replies[:-1]] == roles

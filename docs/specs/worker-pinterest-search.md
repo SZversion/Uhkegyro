@@ -19,10 +19,10 @@
 
 1. Worker가 `searching` 상태로 전환한 뒤 MCP `tools/list`의 도구 명세와 resolver 승인 term을 LLM에 제공한다. LLM이 선택한 검색 호출은 해당 역할과 카드의 `query_fragments`가 정확히 일치할 때 MCP로 전달한다.
 2. 성공한 검색의 Pin과 정상 빈 검색 결과를 각각 MCP 결과에서 보존한다. `PIN_RESULTS_EMPTY`는 재조회하지 않는다.
-3. `PIN_SEARCH_UNAVAILABLE`이면 LLM이 같은 승인 역할·조각으로 검색 도구를 다시 선택하게 해 총 3회까지 시도하고 첫 번째·두 번째 장애 뒤 각각 1초·2초 기다린다. 이후에도 실패하면 해당 역할의 마지막 unavailable 결과를 유지하고 다른 역할 검색을 계속한다.
+3. `PIN_SEARCH_UNAVAILABLE`이면 역할을 미완료로 남긴다. 현재 선택 응답의 검색·Widget·기타 도구 처리를 모두 마친 뒤 `mcp-post-search-decision`으로 계속 여부를 판정하고, continue일 때 별도 `mcp-tool-selection`으로 해당 역할만 다시 선택해 총 3회까지 시도한다. 첫 번째·두 번째 장애 뒤 각각 1초·2초 기다린다. 세 번째 장애 뒤에는 `PIN_SEARCH_UNAVAILABLE` 결과를 완료 처리하고 다른 역할 결과와 조립한다.
 4. 역할별 결과를 response assembler에 전달한다. 다른 역할에 결과가 있으면 결과는 `partial_result`가 되며 unavailable 역할의 Pin 목록은 비어 있다. 모든 역할의 정상 빈 검색은 `PIN_RESULTS_EMPTY`를 집계한다.
 5. clarification 또는 유효한 검색 카드가 없는 결과는 Pinterest provider를 호출하지 않는다. 직접 검색 금지 카드도 resolver가 유효 검색 대상으로 전달하지 않는다.
-6. MCP 도구 결과는 원래 `tool_call_id`로 메시지에 보존하고, 미완료 역할이 있을 때 다음 LLM 호출에 전달한다. 현재 응답의 모든 도구·검색·Widget 처리를 마치고 모든 승인 역할이 완료되면 [검색 완료 종료 Spec](./search-completion-stop.md)에 따라 추가 LLM 판단 없이 종료한다. 검색 도구 호출 실패는 역할별 재시도에 포함하고, 설정 오류는 `CONFIGURATION_ERROR`로 보존한다. LLM이 다른 도구만 호출하거나 호출을 멈춰 승인 검색 역할이 남으면 `LLM_INVALID_STRUCTURED_OUTPUT`으로 Job을 실패 처리한다.
+6. MCP 도구 결과는 원래 `tool_call_id`로 메시지에 보존한다. 최초 선택은 한 번 실행하며, 선택 응답의 모든 도구·검색·Widget 처리가 끝난 뒤 승인 역할이 남아 있으면 [도구 선택 라운드 Spec](./search-tool-selection-rounds.md)에 따라 post-search 판단을 호출한다. continue일 때만 별도 도구 선택을 수행한다. 모든 역할이 완료되면 [검색 완료 종료 Spec](./search-completion-stop.md)에 따라 추가 판단 없이 종료한다. 검색 도구 호출 실패는 역할별 재시도에 포함하고, 설정 오류는 `CONFIGURATION_ERROR`로 보존한다. 선택 또는 판단이 필수 검색을 누락시키면 `LLM_INVALID_STRUCTURED_OUTPUT`으로 Job을 실패 처리한다.
 7. 승인되지 않은 검색 조각은 MCP에 전달하지 않고 도구 오류로 LLM에 돌려준다. 올바른 검색 호출로 회복할 수 있으며, 잘못된 인자는 검색 장애 횟수에 포함하지 않는다.
 
 ## How

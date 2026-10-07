@@ -61,13 +61,14 @@ def test_parallel_overlap_order_and_timing(monkeypatch, snapshot_factory):
         sequential = perf_counter() - started
         finished.clear()
         worker, adapter = setup(monkeypatch, snapshot_factory,
-                                [[search(r) for r in roles], []], handler)
+                                [[search(r) for r in roles]], handler)
         started = perf_counter()
         outcomes = await worker._search_outcomes(resolution(roles), request_text="test")
         parallel = perf_counter() - started
         assert peak == 3 and finished != roles
         assert set(outcomes) == {Role(r) for r in roles}
         assert len(adapter.tool_requests) == 1
+        assert not adapter.decision_requests
         replies = [m for m in adapter.tool_requests[-1][0] if m["role"] == "tool"]
         assert [m["tool_call_id"] for m in replies] == roles
         assert [json.loads(m["content"])["role"] for m in replies] == roles
@@ -156,7 +157,7 @@ def test_retry_backoff_releases_search_slots(monkeypatch, snapshot_factory):
 
         worker, adapter = setup(monkeypatch, snapshot_factory,
                           [[search("body"), search("pose"), search("pose", "duplicate"), search("view")],
-                           [search("pose")], [search("pose")], []], handler)
+                           [search("pose")], [search("pose")]], handler)
 
         async def backoff(delay):
             delays.append(delay)
@@ -174,7 +175,45 @@ def test_retry_backoff_releases_search_slots(monkeypatch, snapshot_factory):
         assert outcomes[Role.BODY].code.value == "PIN_RESULTS_EMPTY"
         assert outcomes[Role.POSE].code.value == "PIN_SEARCH_UNAVAILABLE"
         assert len(adapter.tool_requests) == 3
+        assert len(adapter.decision_requests) == 2
+        assert [trace["call_round"] for _, trace in adapter.decision_requests] == [1, 2]
         assert all(required for _, _, required in adapter.tool_requests)
+
+    asyncio.run(scenario())
+
+
+def test_partial_first_selection_requires_decision_before_reselection(monkeypatch, snapshot_factory):
+    async def scenario():
+        events = []
+
+        async def handler(name, args):
+            events.append("search:" + args["role"])
+            return empty(args["role"])
+
+        worker, adapter = setup(
+            monkeypatch, snapshot_factory,
+            [[search("body")], [search("pose")]], handler,
+        )
+        original_decision = adapter.request_mcp_search_decision
+
+        async def decide(messages, **trace):
+            events.append("decision")
+            return await original_decision(messages, **trace)
+
+        original_selection = adapter.request_mcp_tool_calls
+
+        async def select(messages, tools, *, required):
+            if adapter.tool_requests:
+                events.append("selection")
+            return await original_selection(messages, tools, required=required)
+
+        adapter.request_mcp_search_decision = decide
+        adapter.request_mcp_tool_calls = select
+        outcomes = await worker._search_outcomes(resolution(["body", "pose"]), request_text="test")
+        assert set(outcomes) == {Role.BODY, Role.POSE}
+        assert events == ["search:body", "decision", "selection", "search:pose"]
+        assert len(adapter.tool_requests) == 2
+        assert len(adapter.decision_requests) == 1
 
     asyncio.run(scenario())
 
