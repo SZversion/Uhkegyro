@@ -146,10 +146,8 @@ class EmptyMemory:
         self.jobs = jobs
 
     async def load(self, job):
-        return {"state": {}, "recent": [], "sources": [], "oldest_recent": None}
+        return {"state": {}, "recent": [], "sources": []}
 
-    async def older(self, job, context):
-        return []
 
     async def complete(self, job, result, state):
         await self.jobs.update_status(job_id=job["job_id"], attempt=job["attempt"],
@@ -189,8 +187,7 @@ def test_worker_runs_claimed_job_through_assembler(monkeypatch, snapshot_factory
     actual = dict(adapter.calls[0][1])
     actual["active_cards_json"] = json.loads(actual["active_cards_json"])
     assert actual == {
-        "session_context": {"constraints": {}, "pending_question": None, "summary": "",
-                            "summary_sources": [], "recent": [], "sources": [], "summary_incomplete": False},
+        "session_context": {"constraints": {}, "pending_question": None, "recent": [], "sources": []},
         "job_id": "job-1",
         "session_id": "session-1",
         "attempt": 2,

@@ -1,58 +1,22 @@
 """Bounded context, original-source validation, and recall orchestration."""
-import asyncio
 import re
 from copy import deepcopy
-from time import monotonic
 
 from backend.schemas.enums import AgentStatus
 from backend.schemas.models import AgentResult, InterpretationOutput, InterpretationSelection
-from backend.schemas.memory import RecallQuery, SummaryOutput, RecallAnswer, MemorySource, NO_RECORDS, TOO_MANY
-from backend.services.conversation_memory import record, evidence_text
-from backend.services.llm import LLMInvalidStructuredOutput, LLMTimeout
+from backend.schemas.memory import RecallQuery, RecallAnswer, MemorySource, NO_RECORDS, TOO_MANY
+from backend.services.conversation_memory import evidence_text
+from backend.services.llm import LLMInvalidStructuredOutput
 from backend.services.resolver import resolve, STATUS_ALL_INVALID
 
-MAX_SUMMARY_BATCHES = 2
-SUMMARY_BUDGET_SECONDS = 30
-
 async def prepare(memory, job, adapter, trace):
-    context = await memory.load(job)
-    context["summary_incomplete"] = bool(await memory.older(job, context))
-    return context
-
-
-async def summarize(memory, job, adapter, trace):
-    context = await memory.load(job)
-    state = context["state"]
-    deadline = monotonic() + SUMMARY_BUDGET_SECONDS
-    for _ in range(MAX_SUMMARY_BATCHES):
-        rows = await memory.older(job, context)
-        if not rows or (remaining := deadline - monotonic()) <= 0:
-            break
-        with trace.stage("memory-summary"):
-            try:
-                summary = await asyncio.wait_for(adapter.memory("summarize", {
-                    "summary": state.get("summary", ""),
-                    "summary_sources": state.get("summary_sources", []),
-                    "records": [record(row) for row in rows],
-                }, SummaryOutput, **trace_args(job)), timeout=remaining)
-            except TimeoutError as error:
-                raise LLMTimeout("대화 요약 시간 초과") from error
-            allowed = set(state.get("summary_sources", [])) | {str(row["job_id"]) for row in rows}
-            if not set(map(str, summary.source_job_ids)) <= allowed:
-                raise LLMInvalidStructuredOutput("요약 출처가 입력 기록에 없습니다", stage="conversation_validation",
-                                                 feedback=[{"path": [], "code": "summary_source_invalid"}])
-            state.update(summary=summary.text, summary_sources=list(map(str, summary.source_job_ids)),
-                         summarized_through=[rows[-1]["created_at"].isoformat(), str(rows[-1]["job_id"])])
-    context["summary_incomplete"] = bool(await memory.older(job, context))
-    return context
+    return await memory.load(job)
 
 
 def prompt_context(context):
     state = context["state"]
     return {"constraints": state.get("constraints", {}), "pending_question": state.get("pending_question"),
-            "summary": state.get("summary", ""), "summary_sources": state.get("summary_sources", []),
-            "recent": context["recent"], "sources": context["sources"],
-            "summary_incomplete": context.get("summary_incomplete", False)}
+            "recent": context["recent"], "sources": context["sources"]}
 
 
 def trace_args(job):

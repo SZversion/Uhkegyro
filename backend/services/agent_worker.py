@@ -416,8 +416,6 @@ class AgentJobWorker:
             trace.stale()
 
     async def run_forever(self, *, concurrency: int = WORKER_CONCURRENCY) -> None:
-        from backend.services.conversation_summary_worker import run_summary_loop
-
         if self._mcp_gateway is not None:
             try:
                 await asyncio.wait_for(
@@ -468,7 +466,7 @@ class AgentJobWorker:
                 await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
         coroutines = [
-            recover_leases(), run_summary_loop(self._pool, self._tracer),
+            recover_leases(),
             *(run_slot() for _ in range(concurrency)),
         ]
         if self._mcp_gateway is not None:

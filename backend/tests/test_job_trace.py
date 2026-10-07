@@ -141,10 +141,6 @@ def test_standard_session_attribute_is_scoped_to_attempt(monkeypatch):
 def test_retry_attempts_share_trace_and_keep_private_fields_out(
     monkeypatch, snapshot_factory, card_factory
 ):
-    from backend.services import conversation_summary_worker
-    async def idle_summary(*args):
-        await asyncio.Future()
-    monkeypatch.setattr(conversation_summary_worker, "run_summary_loop", idle_summary)
     client = FakeLangfuse()
     shutdown_calls = []
     def shutdown():
