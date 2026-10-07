@@ -120,12 +120,21 @@ class ConversationMemory:
         async with self.pool.acquire() as connection:
             async with connection.transaction():
                 live = await connection.fetchval(
-                    """SELECT session_id FROM sessions WHERE session_id=$1
+                    """SELECT memory_json FROM sessions WHERE session_id=$1
                        AND last_activity_at + interval '3 months' > now() FOR UPDATE""",
                     job["session_id"],
                 )
                 if live is None:
                     raise StaleJobAttempt
+                state = dict(state)
+                current = decode(live)
+                mark, proposed = current.get("summarized_through"), state.get("summarized_through")
+                if mark and (not proposed or
+                             (datetime.fromisoformat(mark[0]), UUID(mark[1])) >=
+                             (datetime.fromisoformat(proposed[0]), UUID(proposed[1]))):
+                    for key in ("summary", "summary_sources", "summarized_through"):
+                        if key in current:
+                            state[key] = current[key]
                 await JobRepository(connection).update_status(
                     job_id=str(job["job_id"]), attempt=job["attempt"],
                     status=JobStatus.COMPLETED, result=result,

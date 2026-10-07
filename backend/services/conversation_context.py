@@ -1,5 +1,6 @@
 """Bounded context, original-source validation, and recall orchestration."""
 import asyncio
+import re
 from copy import deepcopy
 from time import monotonic
 
@@ -14,6 +15,12 @@ MAX_SUMMARY_BATCHES = 2
 SUMMARY_BUDGET_SECONDS = 30
 
 async def prepare(memory, job, adapter, trace):
+    context = await memory.load(job)
+    context["summary_incomplete"] = bool(await memory.older(job, context))
+    return context
+
+
+async def summarize(memory, job, adapter, trace):
     context = await memory.load(job)
     state = context["state"]
     deadline = monotonic() + SUMMARY_BUDGET_SECONDS
@@ -54,6 +61,8 @@ def trace_args(job):
 
 
 async def recall(memory, job, context, adapter, trace):
+    if is_clear_new_request(job["request_text"], context):
+        return None, False
     with trace.stage("memory-recall"):
         query = await adapter.memory("classify", {
             "request_text": job["request_text"], "session_context": prompt_context(context),
@@ -78,6 +87,19 @@ async def recall(memory, job, context, adapter, trace):
         context["sources"] += records
         return AgentResult(agent_status=AgentStatus.MEMORY_ANSWER, memory_answer=answer.answer,
                            sources=list(sources.values())), query.mode == "recall"
+
+
+def is_clear_new_request(text, context):
+    text = text.casefold().strip()
+    if context["state"].get("pending_question") or len(text) < 12:
+        return False
+    historical = ("아까|이전|전에|지난|그때|방금|추천|기억|했|였|뭐|무엇|어떤|그거|그것|똑같|"
+                  "같은|다시|그대로|유지|바꿔|변경|말해|알려|앞서|저번|마지막|첫|결과|사용한|보낸|선택한|[?？]|"
+                  r"(^|\s)(이|그|저|해당)\s|\b(first|previous|earlier|remember|recommend\w*|suggest\w*|again|that|what|change|same|history)\b")
+    if re.search(historical, text):
+        return False
+    return bool(re.search(r"체형|자세|포즈|시점|원근|배치|캐릭터|레퍼런스|\b(reference|pose|character|perspective)\b", text)
+                and re.search(r"찾아|그려|보여|검색|\b(find|draw|show|search)\b", text))
 
 
 async def validate(memory, job, interpretation, snapshot):

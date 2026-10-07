@@ -17,3 +17,5 @@ AgentResult에 memory_answer(nullable string), sources를 추가한다. 회상 �
 - Given 없는 기록/조작 인용/다른 대화 출처, When 응답, Then 허위 출처를 표시하지 않는다.
 - Given 회상만, When 처리, Then search 미호출, constraints 불변이다.
 - Given 회상+변경, When 처리, Then 조회 근거를 사용해 새 결과를 생성한다.
+
+명백한 새 시각 요청의 classify 생략 조건은 [conversation-recall-fast-path.md](conversation-recall-fast-path.md)를 따른다.

@@ -99,7 +99,7 @@ def test_long_history_summary_budget_and_continuation(monkeypatch):
         trace = SimpleNamespace(stage=lambda *_: nullcontext())
         await jobs.submit(session_id=session, request_text="새 요청", idempotency_key=str(uuid.uuid4()))
         job = await jobs.claim_next()
-        context = await conversation_context.prepare(memory, job, adapter, trace)
+        context = await conversation_context.summarize(memory, job, adapter, trace)
         assert adapter.calls == 2 and context["summary_incomplete"]
         mark = context["state"]["summarized_through"]
         await jobs.update_status(job_id=str(job["job_id"]), attempt=1, status=agent_worker.JobStatus.VALIDATING)
@@ -111,12 +111,12 @@ def test_long_history_summary_budget_and_continuation(monkeypatch):
         adapter.delay = True
         start = time.monotonic()
         with pytest.raises(LLMTimeout):
-            await conversation_context.prepare(memory, next_job, adapter, trace)
+            await conversation_context.summarize(memory, next_job, adapter, trace)
         assert time.monotonic() - start < 0.5
         assert json.loads(await pool.fetchval("SELECT memory_json FROM sessions WHERE session_id=$1", uuid.UUID(session)))["summarized_through"] == mark
         adapter.delay = False
         before = adapter.calls
-        continued = await conversation_context.prepare(memory, next_job, adapter, trace)
+        continued = await conversation_context.summarize(memory, next_job, adapter, trace)
         assert adapter.calls - before == 2 and continued["summary_incomplete"]
         assert continued["state"]["summarized_through"] != mark
 
@@ -158,7 +158,7 @@ def test_worker_remembers_summarizes_and_recalls(snapshot_factory, card_factory)
             assert await worker.run_once()
         assert adapter.contexts[1]["constraints"]["pose"]["term_id"] == "pose_standing"
         assert len(adapter.contexts[-1]["recent"]) == 6
-        assert adapter.summary_calls == 2
+        assert adapter.summary_calls == 0
         adapter.recall = True
         submitted, _ = await jobs.submit(session_id=session_id, request_text="아까 추천한 포즈는?", idempotency_key=str(uuid.uuid4()))
         await worker.run_once()
@@ -183,7 +183,7 @@ def test_worker_bounds_summary_with_long_history(snapshot_factory, card_factory)
             card_factory("pose_standing", label_ko="서 있는 자세")]), adapter=adapter)
         new, _ = await jobs.submit(session_id=session, request_text="서 있는 자세", idempotency_key=str(uuid.uuid4()))
         assert await worker.run_once()
-        assert adapter.summary_calls == 2
+        assert adapter.summary_calls == 0
         assert adapter.contexts[0]["summary_incomplete"]
         assert (await jobs.get(session_id=session, job_id=new.job_id)).job_status == "completed"
 
@@ -236,12 +236,16 @@ def test_summary_failure_retries_without_advancing_memory(snapshot_factory, card
         adapter.memory = fail
         new, _ = await jobs.submit(session_id=session, request_text="서 있는 자세", idempotency_key=str(uuid.uuid4()))
         await worker.run_once()
-        assert (await jobs.get(session_id=session, job_id=new.job_id)).job_status == "queued"
-        assert await pool.fetchval("SELECT memory_json FROM sessions WHERE session_id=$1", uuid.UUID(session)) == before
-        adapter.memory = original
-        await pool.execute("UPDATE jobs SET next_retry_at=now() WHERE job_id=$1", uuid.UUID(new.job_id))
-        await worker.run_once()
         assert (await jobs.get(session_id=session, job_id=new.job_id)).job_status == "completed"
+        assert adapter.summary_calls == 0
+        from backend.services.conversation_summary_worker import refresh_once
+        from backend.services.job_trace import JobTracer
+        with pytest.raises(LLMTimeout):
+            await refresh_once(pool, JobTracer(), adapter)
+        after = await pool.fetchval("SELECT memory_json FROM sessions WHERE session_id=$1", uuid.UUID(session))
+        assert json.loads(after).get("summarized_through") == json.loads(before).get("summarized_through")
+        adapter.memory = original
+        assert await refresh_once(pool, JobTracer(), adapter)
     asyncio.run(database_case(case))
 
 

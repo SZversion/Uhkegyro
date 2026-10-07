@@ -38,4 +38,4 @@ worker는 1초마다 `attempt < max_attempts`이고 `next_retry_at IS NULL OR ne
 
 ## 대화 기억 변경
 
-대화 기억 확장: 만료된 대화는 claim하지 않는다. 기억 구성·요약·회상 후 일반 해석을 수행하고, 회상 전용이면 searching을 생략한다. 완료 상태와 memory_json은 같은 transaction에서 attempt 및 세션 만료를 검사해 저장한다. 요약 실패는 기존 LLM 오류 재시도 규칙을 따른다.
+대화 기억 확장: 만료된 대화는 claim하지 않는다. 저장된 기억 구성·필요한 회상 후 일반 해석을 수행하고, 회상 전용이면 searching을 생략한다. 완료 상태와 memory_json은 같은 transaction에서 attempt 및 세션 만료를 검사해 저장한다. 요약은 conversation-summary-background.md의 별도 루프에서 갱신하며 실패가 답변 재시도를 만들지 않는다.
