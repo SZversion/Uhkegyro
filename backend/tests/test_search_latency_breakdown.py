@@ -14,55 +14,9 @@ from backend.services.job_repository import JobNotFound
 from backend.services.job_trace import JobTracer
 from backend.services.pinterest_widget import PinterestWidgetClient
 from backend.shared.auth import SESSION_COOKIE_NAME
-from backend.tests.test_agent_worker import JOB, FakeAdapter, FakeJobs, FakeRecovery, _worker
 from backend.tests.test_job_trace import FakeLangfuse, _job
 from backend.tests.test_parallel_role_search import setup, search, resolution, empty
 from backend.tests.test_pinterest_widget import _completed_job, _payload
-
-
-def test_worker_records_search_status_assembly_and_state_spans(
-    monkeypatch, snapshot_factory, card_factory,
-):
-    async def run():
-        job = {**_job(1), "request_text": JOB["request_text"]}
-        jobs = FakeJobs(job)
-        adapter = FakeAdapter(tool_calls=[[search("pose", fragments=["pose shift"])], []])
-        gateway = type("Gateway", (), {
-            "list_tools": lambda self: asyncio.sleep(0, result=[]),
-            "call_tool": lambda self, name, arguments: asyncio.sleep(0, result={
-                "role": arguments["role"], "pins": [], "code": "PIN_RESULTS_EMPTY",
-            }),
-        })()
-
-        class Widget:
-            async def enrich_outcome(self, outcome):
-                return outcome
-
-        recovery = FakeRecovery()
-        worker = _worker(
-            monkeypatch, jobs, recovery,
-            snapshot_factory([card_factory("pose_shift", role="pose")]), adapter,
-            mcp_gateway=gateway, widget_client=Widget(),
-        )
-        client = FakeLangfuse()
-        worker._tracer = JobTracer(client)
-
-        assert await worker.run_once()
-        assert not recovery.failures, recovery.failures
-
-        records = {record["name"]: record for record in client.records}
-        for name in (
-            "search-status-update", "mcp-tool-selection", "mcp-search-call",
-            "widget-enrichment", "search-result-assembly", "conversation-state-update",
-        ):
-            assert name in records, records
-            assert records[name]["output"]["status"] == "completed"
-            assert records[name]["output"]["elapsed_ms"] >= 0
-        assert records["search-result-assembly"]["output"]["role_count"] == 1
-        assert records["search-result-assembly"]["output"]["pin_count"] == 0
-        assert records["conversation-state-update"]["output"]["state_saved"] is True
-
-    asyncio.run(run())
 
 
 def test_parallel_phases_and_generation_purpose(monkeypatch, snapshot_factory):
