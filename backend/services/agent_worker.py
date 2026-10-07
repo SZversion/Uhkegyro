@@ -132,7 +132,7 @@ class AgentJobWorker:
                 result = recalled
             else:
                 previous = reference_update.previous_terms(context, self._snapshot)
-                refresh = context.get("reference_action") == "refresh_all"
+                refresh = context.get("reference_action") in ("refresh_all", "refresh_roles")
                 interpretation = None
                 with trace.stage("validating"):
                     feedback = job.get("validation_feedback_json")
@@ -162,11 +162,13 @@ class AgentJobWorker:
                                 for role in previous}} if refresh else {}),
                         )
                 result = assemble(resolution, self._snapshot, search_outcomes,
-                    answer_text="기존 조건은 유지하고 전체 레퍼런스를 다시 찾았어요." if refresh else interpretation.answer_text)
-                if refresh and result.reason_codes:
+                    answer_text=("기존 조건은 유지하고 요청한 역할의 레퍼런스를 다시 찾았어요."
+                        if context.get("reference_action") == "refresh_roles"
+                        else "기존 조건은 유지하고 전체 레퍼런스를 다시 찾았어요.") if refresh else interpretation.answer_text)
+                if refresh and result.reference_plan is not None and result.reason_codes:
                     result.answer_text = "기존 조건은 유지했지만 일부 새 레퍼런스를 찾지 못했어요. 검색 결과 안내를 확인해 주세요."
-                if not refresh:
-                    result = reference_update.merge_preserved(result, previous, interpretation)
+                result = reference_update.merge_preserved(result, previous, interpretation)
+                result = reference_update.annotate(result, context, [term.selection.role for term in resolution.terms])
                 if recalled is not None:
                     result.memory_answer, result.sources = recalled.memory_answer, recalled.sources
                 if not refresh:

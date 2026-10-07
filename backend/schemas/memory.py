@@ -21,7 +21,8 @@ class ContextUpdate(MemoryModel):
 
 class RecallQuery(MemoryModel):
     mode: Literal["none", "recall", "mixed"]
-    reference_action: Literal["update", "refresh_all"] = "update"
+    reference_action: Literal["update", "refresh_all", "refresh_roles"] = "update"
+    refresh_roles: list[Role] = Field(default_factory=list, max_length=5)
     role: Role | None = None
     term_id: str | None = Field(default=None, max_length=200)
     keywords: list[str] = Field(default_factory=list, max_length=5)
@@ -32,6 +33,10 @@ class RecallQuery(MemoryModel):
 
     @model_validator(mode="after")
     def bounds(self):
+        if len(set(self.refresh_roles)) != len(self.refresh_roles):
+            raise ValueError("duplicate refresh role")
+        if self.reference_action != "refresh_roles" and self.refresh_roles:
+            raise ValueError("refresh roles require refresh_roles action")
         if any(not word.strip() or len(word) > 100 for word in self.keywords):
             raise ValueError("invalid recall keyword")
         if any(value and value.utcoffset() is None for value in (self.start, self.end)):

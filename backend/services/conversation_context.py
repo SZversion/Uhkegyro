@@ -66,8 +66,11 @@ async def recall(memory, job, context, adapter, trace):
     with trace.stage("memory-recall"):
         query = await adapter.memory("classify", {
             "request_text": job["request_text"], "session_context": prompt_context(context),
+            "current_reference_roles": [term["role"] for term in
+                ((context.get("previous_result") or {}).get("reference_plan") or {}).get("terms", [])],
         }, RecallQuery, **trace_args(job))
         context["reference_action"] = query.reference_action if query.mode != "recall" else "update"
+        context["refresh_roles"] = query.refresh_roles if query.mode != "recall" else []
         if query.mode == "none":
             return None, False
         records = await memory.search(job, query)
@@ -92,7 +95,8 @@ async def recall(memory, job, context, adapter, trace):
 
 def is_clear_new_request(text, context):
     text = text.casefold().strip()
-    if context.get("previous_result") and re.search(r"새|다른|\b(new|different)\b", text):
+    if re.search(r"새|다른|\b(new|different|refresh)\b", text) and (
+            context.get("previous_result") or re.search(r"이미지|레퍼런스|참고|\b(image|reference)\b", text)):
         return False
     if context["state"].get("pending_question") or len(text) < 12:
         return False

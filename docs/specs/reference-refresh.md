@@ -7,13 +7,13 @@
 전체 새 레퍼런스 요청에서 현재 카드 조건은 유지하고 기존 Pin을 제외해 재검색한다. 검색 결과를 조작하거나 반드시 8개 새 이미지를 보장하는 기능은 제외한다.
 
 ## What
-- '체형과 포즈는 그대로, 전부 다른 레퍼런스로 찾아줘'는 현재 보드 전체 교체다.
+- '체형·포즈 조건은 유지하고 모든 참고 이미지를 새로 찾아줘'는 현재 보드 전체 교체다. 이미지 자체를 유지하고 나머지만 교체하는 요청은 reference-role-refresh.md를 따른다.
 - '포즈만 앉은 모습으로 바꿔줘'는 전체 교체가 아니라 selective-reference-update.md를 따른다.
 - 이전 레퍼런스가 없거나 현재 카드가 비활성/검색 금지이면 조건을 먼저 확인하는 질문을 반환한다.
 - 새 Pin이 없으면 기존 Pin을 새 결과인 것처럼 재사용하지 않고 빈 결과와 안내를 반환한다. 검색 장애는 기존 장애 코드를 사용한다.
 
 ## How
-- RecallQuery에 reference_action=update|refresh_all(기본 update)를 추가한다. classify는 명시적인 전체 교체·조건 유지 요청만 refresh_all로 분류하며, 회상만 요청은 update다.
+- RecallQuery의 reference_action은 update|refresh_all|refresh_roles(기본 update)다. 명시적인 전체 이미지 교체·조건 유지 요청만 refresh_all로 분류하며, 회상만 요청은 update다.
 - refresh_all에서는 현재 session의 검증된 이전 reference_plan에서 카드를 재구성한다. 별도 카드 재해석과 context_updates 없이 같은 조건을 사용한다.
 - MCP search_pinterest_pins에 선택적 exclude_pin_ids(nullable list, 최대 40개 숫자 문자열)를 추가한다. worker가 직전 보드의 모든 역할에서 Pin ID를 모아 중복 제거 후 각 검색에 주입한다. 역할이 달라져도 기존 이미지는 제외하며 LLM이 만든 제외 목록은 사용하지 않는다.
 - provider는 Pinterest 단일 엔진의 검증된 검색 결과에서 제외 ID를 먼저 제거한 뒤 최대 8개를 선택한다. 남은 Pin이 없으면 PIN_RESULTS_EMPTY를 반환한다. 검색어와 카드 조각은 변경하지 않는다.
@@ -30,4 +30,4 @@
 - Given 연속 전체 교체, When 다음 job 실행, Then 직전 보드의 Pin을 제외하고 같은 카드 조건을 사용한다.
 - Given 악의적인 LLM 제외 목록, When 도구 실행, Then 서버의 이전 Pin ID만 실제 제외 목록으로 전달한다.
 
-검증: 2026-10-07 최신 main(d9f5d39) 기준 신규 수용 기준 16개 및 frontend 55개 통과. 현재 계약에 맞춘 기존 테스트 수정 후 PR 작업 폴더의 전체 backend 636개 통과(임시 PostgreSQL 16). 기존 Langfuse 작업이 포함된 원래 로컬은 634개 통과/별도 test_live_eval EVAL-01 테스트 2개 실패. 실제 LLM·외부 검색은 fixture로 대체했고 실제 서비스 연동은 미검증이다.
+검증: 2026-10-07 리뷰 대응 후 원래 로컬 수용 기준 27개 및 PR 작업 폴더 전체 backend 647개 통과(임시 PostgreSQL 16), frontend 55개 통과. 기존 로컬 Langfuse 작업은 PR 전체 검증에서 제외했다. 실제 LLM·외부 검색은 fixture로 대체했고 실제 서비스 연동은 미검증이다.

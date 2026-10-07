@@ -18,6 +18,7 @@
 - 서버 전용 이전 결과에는 Pin ID·URL·상태만 있다. LLM에는 기존 정제 기억만 전달하고 Pin·URL을 보내지 않는다.
 - 해석과 resolver 검증 후 변경 역할만 MCP에 전달한다. 기존 결과 중 현재 카탈로그에서 활성·역할 일치·직접 검색 가능인 카드만 유지한다.
 - 최종 reference_plan은 유지한 역할과 새 역할을 body→pose→view→perspective→layout 순서로 병합한다. 사유 코드와 success/partial_result를 다시 집계한다.
+- 유지·교체·삭제 결정은 reference-update-metadata.md의 reference_update에 기록한다. 확인 질문도 기존 보드 유지 역할을 전달한다. 일부 역할의 이미지 교체는 reference-role-refresh.md를 따른다.
 - 기존 thumbnail_url 비저장과 완료 응답 widget 재조회, attempt 기반 원자적 저장을 유지한다.
 - 이 문서가 conversation-context.md의 '포즈 결과만 반환'을 대체한다: 검색은 포즈만, 전체 보드 응답에는 유지된 체형도 포함한다.
 
@@ -31,4 +32,4 @@
 - Given pose 검색 장애, When 완료, Then partial_result이며 체형 결과는 유지한다.
 - Given 타 대화 또는 미래 job, When 이전 결과 조회, Then 재사용 대상에 포함하지 않는다.
 
-검증: 2026-10-07 최신 main(d9f5d39) 기준 신규 수용 기준 16개 및 frontend 55개 통과. 현재 계약에 맞춘 기존 테스트 수정 후 PR 작업 폴더의 전체 backend 636개 통과(임시 PostgreSQL 16). 기존 Langfuse 작업이 포함된 원래 로컬은 634개 통과/별도 test_live_eval EVAL-01 테스트 2개 실패. 실제 LLM·외부 검색은 fixture로 대체했고 실제 서비스 연동은 미검증이다.
+검증: 2026-10-07 리뷰 대응 후 원래 로컬 수용 기준 27개 및 PR 작업 폴더 전체 backend 647개 통과(임시 PostgreSQL 16), frontend 55개 통과. 기존 로컬 Langfuse 작업은 PR 전체 검증에서 제외했다. 실제 LLM·외부 검색은 fixture로 대체했고 실제 서비스 연동은 미검증이다.
