@@ -41,7 +41,7 @@ class RecallQuery(MemoryModel):
 
 
 class SummaryOutput(MemoryModel):
-    text: str = Field(min_length=1, max_length=2000)
+    text: str = Field(min_length=1, max_length=600)
     source_job_ids: list[UUID] = Field(default_factory=list, max_length=20)
 
 

@@ -9,6 +9,7 @@
 - sessions.memory_json의 summary와 summary_sources는 유지한다. summarized_through를 읽거나 생성하지 않는다. 정상 저장 시 오래된 메타데이터를 제거하되 기존 요약 및 jobs 원문은 일괄 삭제하지 않는다.
 - 오래된 종결 기록 중 가장 최근 20개를 시간순으로 정제한다. 입력은 최대 48,000자이며 초과 시 가장 오래된 기록부터 제외한다. 누락 여부를 summary_truncated에 저장하고 summary_incomplete로 본문 해석에 알린다. 오래된 원문 회상 검색은 유지한다.
 - 정제된 records와 truncated의 SHA-256(summary_input_hash)을 비교하여 동일 입력의 불필요한 재작성을 생략한다. 이 값은 구간 경계가 아니며 새 요약에는 이전 summary를 넣지 않는다. LLM 호출은 한 번, 30초 제한, 출처는 이번 records에 포함된 Job ID만 허용한다.
+- SummaryOutput.text는 1~600자를 허용한다. 프롬프트는 필요한 내용이 많을 때 400~600자를 목표로 하되 짧은 대화의 요약을 억지로 늘리지 않는다. 결과는 sessions.memory_json.summary에 저장하며 600자를 넘는 출력은 잘라 저장하지 않고 계약 위반으로 처리해 기존 요약을 보존한다.
 - worker별 asyncio.Queue와 대기 session 집합을 사용한다. 완료 저장 후 필요한 경우만 등록하고 idle에서는 queue.get만 기다린다. startup 스캔·sleep·전체 대화 스캔·시간 기반 재시도 없음. 한 worker의 요약 동시성은 1개다.
 - replica 중복 실행은 session별 summary_claim(token, expires_at)의 원자적 조건 UPDATE로 제어한다. 유효기간 60초, LLM 제한 30초다. 작업 소유권과 만료 시각을 확인한 결과만 저장한다. 만료·실패·종료 시 다음 요청이 재확보 가능하다. 서로 다른 replica의 다른 대화는 별도 작업이며 전역 advisory lock은 제거한다.
 - 조회·claim·저장·해제는 짧은 DB 작업이다. LLM 동안 연결/트랜잭션/DB 잠금을 유지하지 않는다. 닫힌 연결 정리는 기존 summary_connection context를 짧은 DB 작업에 사용한다.
@@ -23,3 +24,4 @@
 - Given pool max_size=1과 LLM 대기, When 다른 DB 작업, Then timeout 없이 연결을 사용하고 foreground 완료도 가능하다.
 - Given 요약 실패/취소/재시작, When 새 완료 요청이 없음, Then 자동 재시도가 없으며 기존 요약은 유지한다.
 - Given 신규 요청과 요약 완료 저장이 겹침, When 저장 완료, Then 조건·질문·최신 요약과 claim이 서로 덮어써지지 않는다.
+- Given 요약 출력, When 검증, Then 1~600자는 허용하고 빈 문자열/601자 이상은 거부한다. 짧은 결과를 400자로 늘리지 않으며 거부 시 기존 summary와 입력 hash는 유지한다.
