@@ -13,19 +13,42 @@ function sessionId(value) {
   if (typeof value !== "string" || !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value)) throw new Error(RESTORE_ERROR);
   return value;
 }
-export async function createConversation(options = {}) {
-  return sessionId((await read("/api/sessions", options, "POST")).session_id);
+function validateSessions(items) {
+  if (!Array.isArray(items)) throw new Error(RESTORE_ERROR);
+  return items.map((item) => {
+    sessionId(item?.session_id);
+    if (typeof item.created_at !== "string" || Number.isNaN(Date.parse(item.created_at))) throw new Error(RESTORE_ERROR);
+    return item;
+  });
 }
-export async function restoreConversation(options = {}) {
-  const response = await (options.fetchImpl || globalThis.fetch)("/api/sessions?limit=1", {
+export async function listConversations(options = {}) {
+  const response = await (options.fetchImpl || globalThis.fetch)("/api/sessions?limit=100&offset=0", {
     credentials: "include", cache: "no-store", signal: options.signal,
   });
-  if (response.status === 401) return { sessionId: null, turns: [] };
+  if (response.status === 401) return [];
   if (!response.ok) throw new Error(RESTORE_ERROR);
   const list = await response.json();
-  if (!Array.isArray(list?.items)) throw new Error(RESTORE_ERROR);
-  if (!list.items.length) return { sessionId: null, turns: [] };
-  const id = sessionId(list.items[0].session_id);
+  return validateSessions(list?.items);
+}
+export async function createConversation(options = {}) {
+  const created = await read("/api/sessions", options, "POST");
+  validateSessions([created]);
+  return created;
+}
+export async function restoreConversation(options = {}) {
+  let id = options.sessionId;
+  if (id) sessionId(id);
+  else {
+    const response = await (options.fetchImpl || globalThis.fetch)("/api/sessions?limit=1", {
+      credentials: "include", cache: "no-store", signal: options.signal,
+    });
+    if (response.status === 401) return { sessionId: null, turns: [] };
+    if (!response.ok) throw new Error(RESTORE_ERROR);
+    const list = await response.json();
+    if (!Array.isArray(list?.items)) throw new Error(RESTORE_ERROR);
+    if (!list.items.length) return { sessionId: null, turns: [] };
+    id = sessionId(list.items[0]?.session_id);
+  }
   await read(`/api/sessions/${id}`, options);
   let turns = [];
   for (let offset = 0; ; offset += 100) {
