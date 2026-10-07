@@ -2,7 +2,10 @@
 import asyncio
 import json
 import logging
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
+
+from asyncpg import InterfaceError
 
 from backend.services import conversation_context
 from backend.services.conversation_memory import ConversationMemory
@@ -12,8 +15,22 @@ logger = logging.getLogger(__name__)
 LOCK_KEY = 734209116
 
 
-async def refresh_once(pool, tracer, adapter=None):
+@asynccontextmanager
+async def summary_connection(pool):
     async with pool.acquire() as connection:
+        try:
+            yield connection
+        finally:
+            try:
+                if connection.is_closed():
+                    connection.terminate()
+            except InterfaceError:
+                # asyncpg already detached this proxy and returned its slot.
+                pass
+
+
+async def refresh_once(pool, tracer, adapter=None):
+    async with summary_connection(pool) as connection:
         if not await connection.fetchval("SELECT pg_try_advisory_lock($1)", LOCK_KEY):
             return False
         try:

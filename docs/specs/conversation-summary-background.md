@@ -8,6 +8,7 @@
 ## How
 - API·DB 스키마 변경 없음. prepare는 load와 미요약 여부 조회만 수행한다. summary_incomplete를 유지한다.
 - 기존 상시 worker에 전역 동시성 1인 별도 요약 루프를 추가한다. PostgreSQL advisory lock으로 replica 간 중복 실행을 막고 finally에서 해제한다. LLM 중 session row lock은 잡지 않는다.
+- 닫힌 요약 연결의 슬롯 반환은 conversation-summary-connection-recovery.md를 따른다. 연결 풀 크기와 요약 동시성은 변경하지 않는다.
 - 살아 있는 session의 종결 기록에서 최근 6개 밖이면서 watermark 이후인 기록을 찾는다. 실행 시점 cutoff의 원본만 대상으로 기존 출처 검증·최대 2배치·30초 제한을 사용한다.
 - 성공 시 summary/summary_sources/summarized_through만 JSONB 병합한다. 최초 watermark가 그대로일 때만 저장하며 실패·취소는 저장하지 않는다. foreground 완료는 DB의 최신 요약 필드를 보존한다.
 - 루프 간격: 성공/빈 조회 1초, 오류 30초. 오류에는 유형만 로그 기록한다. shutdown 시 모든 worker 루프를 취소하고 기다린 뒤 tracer를 닫는다.
