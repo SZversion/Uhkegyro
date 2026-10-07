@@ -19,8 +19,9 @@
 1. PR 또는 main push 이벤트가 발생한다.
 2. GitHub Actions가 저장소를 checkout하고 Python 런타임을 준비한다.
 3. `backend/requirements.txt`를 설치한다.
-4. 저장소 루트에서 `backend/tests`를 대상으로 `pytest`를 실행한다.
-5. 테스트 실패는 workflow 실패로 표시한다.
+4. 저장소 루트에서 `searxng/`의 patched SearXNG Docker image를 빌드한다.
+5. `backend/tests`를 대상으로 `pytest`를 실행한다.
+6. 이미지 빌드 또는 테스트 실패는 workflow 실패로 표시한다.
 
 **Edge Cases**
 
@@ -39,6 +40,7 @@
 - Runner: `ubuntu-latest`
 - Python: 3.12
 - 설치 명령: `python -m pip install -r backend/requirements.txt`
+- SearXNG image 빌드: `docker build --tag proj2-4/searxng:ci ./searxng`
 - 실행 명령: 저장소 루트에서 `python -m pytest backend/tests`
 - 기존 secret scan workflow는 변경하지 않는다.
 
@@ -58,3 +60,8 @@
 - GIVEN: backend pytest 테스트가 실패한다.
 - WHEN: pytest workflow가 실행된다.
 - THEN: pytest step 및 job이 실패한다.
+
+**AC-04 · 패치된 SearXNG 이미지 빌드**
+- GIVEN: pull request 또는 main push workflow가 실행된다.
+- WHEN: pytest job이 SearXNG image를 빌드한다.
+- THEN: `searxng/Dockerfile`의 고정 베이스 이미지에서 Pinterest 엔진 패치를 적용하고, 빌드 실패는 job 실패로 표시한다.

@@ -22,7 +22,7 @@
 ## How
 
 - 설정 파일: `searxng/settings.yml`; 기본 설정과 JSON format을 유지하고 세 엔진을 활성화한다. Pin 검색 provider는 Pinterest 엔진만 호출한다.
-- 컨테이너 image: `docker.io/searxng/searxng:latest`.
+- 컨테이너 image: Compose가 `searxng/Dockerfile`을 빌드해 `proj2-4/searxng:local`로 사용한다. Dockerfile은 검증된 SearXNG `2026.9.30-a9d990033` 베이스 digest를 고정하며, Pinterest 엔진의 외부 링크 대신 Pin ID에서 canonical Pin URL을 만들도록 패치한다.
 - 포트 공개: `127.0.0.1:8080:8080`.
 - 비밀값은 저장소에 기록하지 않고 `.env`에서만 읽는다.
 
