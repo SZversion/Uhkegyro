@@ -151,9 +151,10 @@ class AgentJobWorker:
                             self._memory, job, interpretation, self._snapshot)
                         resolution = reference_update.select_searches(resolution, previous)
                 with trace.stage("searching"):
-                    if not await self._update(job_id, attempt, JobStatus.SEARCHING):
-                        trace.stale()
-                        return
+                    with self._tracer.phase("search-status-update"):
+                        if not await self._update(job_id, attempt, JobStatus.SEARCHING):
+                            trace.stale()
+                            return
                     if search_outcomes is None:
                         search_outcomes = await self._search_outcomes(
                             resolution, request_text=str(job["request_text"]),
@@ -161,23 +162,30 @@ class AgentJobWorker:
                                 for term in previous.values() for pin in term.pins))
                                 for role in previous}} if refresh else {}),
                         )
-                result = assemble(resolution, self._snapshot, search_outcomes,
-                    answer_text=("기존 조건은 유지하고 요청한 역할의 레퍼런스를 다시 찾았어요."
-                        if context.get("reference_action") == "refresh_roles"
-                        else "기존 조건은 유지하고 전체 레퍼런스를 다시 찾았어요.") if refresh else interpretation.answer_text)
-                if refresh and result.reference_plan is not None and result.reason_codes:
-                    result.answer_text = "기존 조건은 유지했지만 일부 새 레퍼런스를 찾지 못했어요. 검색 결과 안내를 확인해 주세요."
-                result = reference_update.merge_preserved(result, previous, interpretation)
-                result = reference_update.annotate(result, context, [term.selection.role for term in resolution.terms])
+                with self._tracer.phase("search-result-assembly") as metrics:
+                    result = assemble(resolution, self._snapshot, search_outcomes,
+                        answer_text=("기존 조건은 유지하고 요청한 역할의 레퍼런스를 다시 찾았어요."
+                            if context.get("reference_action") == "refresh_roles"
+                            else "기존 조건은 유지하고 전체 레퍼런스를 다시 찾았어요.") if refresh else interpretation.answer_text)
+                    if refresh and result.reference_plan is not None and result.reason_codes:
+                        result.answer_text = "기존 조건은 유지했지만 일부 새 레퍼런스를 찾지 못했어요. 검색 결과 안내를 확인해 주세요."
+                    result = reference_update.merge_preserved(result, previous, interpretation)
+                    result = reference_update.annotate(result, context, [term.selection.role for term in resolution.terms])
+                    metrics.update(
+                        role_count=len(search_outcomes),
+                        pin_count=sum(len(outcome.pins) for outcome in search_outcomes.values()),
+                    )
                 if recalled is not None:
                     result.memory_answer, result.sources = recalled.memory_answer, recalled.sources
-                if not refresh:
-                    state = conversation_context.next_state(context, job, interpretation, result)
             with trace.stage("rendering"):
                 if not await self._update(job_id, attempt, JobStatus.RENDERING):
                     trace.stale()
                     return
-                await self._memory.complete(job, result, state)
+                with self._tracer.phase("conversation-state-update") as metrics:
+                    if not recall_only and not refresh:
+                        state = conversation_context.next_state(context, job, interpretation, result)
+                    await self._memory.complete(job, result, state)
+                    metrics.update(state_saved=True)
             trace.completed(result)
         except StaleJobAttempt:
             trace.stale()
