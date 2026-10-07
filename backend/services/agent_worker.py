@@ -35,6 +35,8 @@ SEARCH_RETRY_DELAYS_SECONDS = (1, 2)
 SEARCH_CONCURRENCY = 3
 MAX_MCP_TOOL_CALLS = 16
 PINTEREST_SEARCH_TOOL = "search_pinterest_pins"
+MCP_TOOL_REFRESH_INTERVAL_SECONDS = 240
+MCP_TOOL_REFRESH_TIMEOUT_SECONDS = 30
 
 
 class AgentJobWorker:
@@ -387,6 +389,30 @@ class AgentJobWorker:
 
     async def run_forever(self, *, concurrency: int = WORKER_CONCURRENCY) -> None:
         from backend.services.conversation_summary_worker import run_summary_loop
+
+        if self._mcp_gateway is not None:
+            try:
+                await asyncio.wait_for(
+                    self._mcp_gateway.list_tools(), timeout=MCP_TOOL_REFRESH_TIMEOUT_SECONDS
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as error:
+                logger.warning("MCP tool prewarm failed", extra={"error_type": type(error).__name__})
+
+        async def refresh_mcp_tools() -> None:
+            while True:
+                await asyncio.sleep(MCP_TOOL_REFRESH_INTERVAL_SECONDS)
+                try:
+                    await asyncio.wait_for(
+                        self._mcp_gateway.list_tools(refresh=True),
+                        timeout=MCP_TOOL_REFRESH_TIMEOUT_SECONDS,
+                    )
+                except asyncio.CancelledError:
+                    raise
+                except Exception as error:
+                    logger.warning("MCP tool refresh failed", extra={"error_type": type(error).__name__})
+
         async def recover_leases() -> None:
             while True:
                 try:
@@ -413,10 +439,13 @@ class AgentJobWorker:
                     )
                 await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
-        tasks = [asyncio.create_task(coro) for coro in (
+        coroutines = [
             recover_leases(), run_summary_loop(self._pool, self._tracer),
             *(run_slot() for _ in range(concurrency)),
-        )]
+        ]
+        if self._mcp_gateway is not None:
+            coroutines.append(refresh_mcp_tools())
+        tasks = [asyncio.create_task(coro) for coro in coroutines]
         try:
             await asyncio.gather(*tasks)
         finally:
