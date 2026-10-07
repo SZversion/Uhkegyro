@@ -17,7 +17,7 @@
 
 1. MCP client가 `search_pinterest_pins(role, query_fragments)`를 호출한다.
 2. MCP 서버가 입력의 역할과 조각 배열이 활성 TERM_CARD와 정확히 일치하는지 확인한다. 불일치는 `INVALID_SEARCH_TERMS`로 거부하고 SearXNG를 호출하지 않는다.
-3. 일치하면 `!pin {fragments} drawing site:pinterest.com/pin`을 `categories=images`, `format=json`, `language=en`으로 검색한다.
+3. 일치하면 `!pin {fragments} drawing`을 `categories=images`, `format=json`, `language=en`으로 검색한다.
 4. HTTPS Pinterest host의 숫자 `/pin/{id}` 결과를 순서대로 중복 없이 최대 8개 반환한다.
 5. 정상 빈 결과, 검색 장애 및 필수 설정 누락을 각각 `PIN_RESULTS_EMPTY`, `PIN_SEARCH_UNAVAILABLE`, `CONFIGURATION_ERROR`로 구분한다.
 

@@ -67,7 +67,7 @@ class SearXNGPinterestSearchProvider:
 
     async def _search_engine_request(self, role, query_fragments, bang, engine, record):
         params = {
-            "q": f"!{bang} {' '.join(query_fragments)} {self._suffix} site:pinterest.com/pin",
+            "q": f"!{bang} {' '.join(query_fragments)} {self._suffix}",
             "categories": "images",
             "format": "json",
             "language": "en",

@@ -64,7 +64,7 @@ def test_ac01_real_provider_and_url_use_same_suffix(search_setup, suffix):
     assert response.status_code == 200
     result = response.json()
     query = f"standing pose gesture drawing {suffix or 'drawing'}"
-    assert search_setup.queries[0]["q"] == f"!pin {query} site:pinterest.com/pin"
+    assert search_setup.queries[0]["q"] == f"!pin {query}"
     assert parse_qs(urlparse(result["search_url"]).query)["q"] == [query]
     assert (result["term_id"], result["role"], result["plain_meaning_ko"]) == (
         "pose_standing", "pose", "서 있는 자세")

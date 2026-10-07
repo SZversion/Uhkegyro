@@ -47,7 +47,7 @@ def test_provider_sends_only_pinterest_engine_and_card_query():
     ).search(Role.POSE, ("standing pose", "weight shift reference")))
 
     assert received == [("http://searxng:8080/search", {
-        "q": "!pin standing pose weight shift reference drawing site:pinterest.com/pin",
+        "q": "!pin standing pose weight shift reference drawing",
         "categories": "images",
         "format": "json",
         "language": "en",

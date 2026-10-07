@@ -36,7 +36,7 @@
 1. 사용자가 만들고 싶은 캐릭터를 일상어로 입력합니다.
 2. Agent가 체형/소체, 포즈, 시점, 원근, 배치를 구분해 해석합니다.
 3. 각 조건을 쉬운 말과 드로잉 용어로 설명하고, 확신하지 못한 조건은 질문 또는 한계로 표시합니다.
-4. 서버가 선택된 역할별 `query_fragments`에 `drawing site:pinterest.com/pin`을 붙여 SearXNG Pinterest 엔진 검색을 수행하고, 유효한 Pin 링크 최대 8개를 찾습니다. 각 Pin ID는 widget endpoint로 조회해 원격 썸네일 URL을 현재 응답에만 넣습니다.
+4. 서버가 선택된 역할별 `query_fragments`에 `drawing`을 붙여 SearXNG Pinterest 엔진 검색을 수행하고, 유효한 Pin 링크 최대 8개를 찾습니다. SearXNG 엔진은 외부 원본 링크 대신 Pin ID로 canonical Pin URL을 반환합니다. 각 Pin ID는 widget endpoint로 조회해 원격 썸네일 URL을 현재 응답에만 넣습니다.
 5. UI는 서버가 반환한 원격 썸네일을 원본 Pin 링크로 표시합니다. 서비스는 이미지 파일·썸네일 URL·Pin 본문 등 부가 메타데이터를 저장하지 않습니다.
 6. 사용자는 하나의 ‘정답 이미지’가 아니라 역할별 레퍼런스를 조합해 러프를 시작합니다.
 
@@ -79,7 +79,7 @@ Job worker / retry·lease recovery (LLM → resolver → MCP search → response
   -> LLM: 일상어를 허용된 term_id와 역할로 구조화
   -> 결정론 코드: Pydantic 검증, 역할 순서, 허용 ID, URL 인코딩
   -> FastMCP: TERM_CARD JSON 카탈로그의 활성 카드 정보를 구조화 조회
-  -> MCP search_pinterest_pins -> SearXNG Pinterest 엔진 검색 -> Pin URL 검증 -> widget 조회 -> 역할별 최대 8개 {pin_id, pin_url, thumbnail_url, status} 반환
+  -> MCP search_pinterest_pins -> SearXNG Pinterest 엔진 검색 (Pin ID → canonical Pin URL) -> Pin URL 검증 -> widget 조회 -> 역할별 최대 8개 {pin_id, pin_url, thumbnail_url, status} 반환
   -> UI: 원격 썸네일을 원본 Pin 링크로 표시
 ```
 

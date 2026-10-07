@@ -21,7 +21,8 @@ x-langfuse-env: &langfuse-env
 
 services:
   searxng:
-    image: docker.io/searxng/searxng:latest
+    image: proj2-4/searxng:local
+    build: ./searxng
     restart: unless-stopped
     ports:
       - 127.0.0.1:8080:8080

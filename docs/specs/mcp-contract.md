@@ -41,7 +41,7 @@
 - `get_active_term_card`의 description에는 “Pydantic 검증 뒤의 활성 term ID에 대한 팀 검수 설명·검색 조각이 필요할 때 사용한다”를 명시한다.
 - `/mcp`는 서비스 토큰 또는 허용된 서비스 클라이언트만 연결할 수 있게 설정한다. Next.js UI와 일반 브라우저의 직접 호출은 허용하지 않는다.
 - `search_pinterest_pins`는 전달된 role·`query_fragments`가 활성 카탈로그의 한 카드와 정확히 일치하지 않으면 `INVALID_SEARCH_TERMS`로 반환하고 SearXNG를 호출하지 않는다.
-- 검색 도구는 유효 조각에 `drawing site:pinterest.com/pin`을 덧붙여 SearXNG Pinterest 엔진만 검색하고, Pin URL을 검증한다.
+- 검색 도구는 유효 조각에 `drawing`을 덧붙여 SearXNG Pinterest 엔진만 검색하고, Pin ID 기반 canonical Pin URL을 검증한다.
 - 구현 완료 시 README에 `/mcp` 연결 방법, tool 목록, 인증 방식, `found`·`not_found` 실제 호출 결과를 추가한다.
 
 ## AC

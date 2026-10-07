@@ -9,7 +9,7 @@
 ## Goal
 
 - SearXNG Search API의 Pinterest 엔진만 사용한다. 이미지 카테고리만 사용한다.
-- 활성 카드의 `query_fragments`에 `drawing site:pinterest.com/pin`을 붙인다.
+- 활성 카드의 `query_fragments`에 `drawing`을 붙인다.
 - URL이 HTTPS Pinterest 호스트의 숫자 Pin 경로인 결과만 반환한다.
 - Worker가 이 provider를 사용해 widget 조회와 결과 조립으로 연결한다.
 - 사용되지 않는 Pinterest HTML·Playwright 크롤러 코드, 테스트와 의존성을 제거한다.
@@ -26,15 +26,16 @@
 ## How
 
 - `SearXNGPinterestSearchProvider(base_url=...)`는 `GET {base_url}/search`를 `httpx`로 호출하며 제한시간은 15초다.
-- 검색어는 `!pin {" ".join(query_fragments)} {suffix} site:pinterest.com/pin`이다.
+- 검색어는 `!pin {" ".join(query_fragments)} {suffix}`이다.
   suffix는 기본 `drawing`이며 `sketch`, `mannequinization`도 허용한다.
   worker의 기본 검색은 그대로 drawing이다. 카드 재검색 endpoint는
   [term-search-api.md](term-search-api.md)를 따른다.
+- SearXNG Docker image는 공식 Pinterest engine이 반환하는 외부 원본 `link` 대신 `result.id`로 canonical Pin URL을 만든다. 따라서 backend에는 Pin ID가 보존된 `/pin/{ASCII digits}` URL만 전달된다.
 - `https`와 `pinterest.com` 또는 하위 도메인, `/pin/{ASCII digits}` 경로만 허용한다.
 - 반환 URL은 `https://www.pinterest.com/pin/{id}/`로 정규화한다.
 - base URL 누락은 `CONFIGURATION_ERROR`이고, 이미지 URL·본문·제목은 읽거나 저장하지 않는다.
 - Worker의 `SEARXNG_BASE_URL`은 Compose에서 `http://searxng:8080`, Cloud Run에서는 API와 같은 서비스의 비공개 SearXNG sidecar 주소 `http://localhost:8080`으로 설정한다.
-- Cloud Run은 `searxng/Dockerfile`로 JSON과 Pinterest 엔진 설정을 포함한 SearXNG 이미지를 빌드한다. SearXNG 컨테이너는 외부 ingress를 받지 않으며 API와 같은 Cloud Run 인스턴스 안에서만 접근한다.
+- Cloud Run은 `searxng/Dockerfile`로 JSON 설정과 canonical Pin URL 패치가 적용된 SearXNG 이미지를 빌드한다. SearXNG 컨테이너는 외부 ingress를 받지 않으며 API와 같은 Cloud Run 인스턴스 안에서만 접근한다.
 - `SEARXNG_SECRET`은 Cloud Run sidecar에 Secret Manager 환경변수로 전달한다.
 - SearXNG는 `SEARXNG_SECRET` 환경변수로 설정 파일의 기본 secret key를 덮어쓴다. settings YAML은 환경변수 템플릿 치환을 하지 않는다.
 - Cloud Run은 SearXNG sidecar의 TCP startup probe가 8080 포트에서 성공한 뒤 API ingress 컨테이너를 시작한다. API ingress는 `--depends-on=searxng`로 이를 보장한다.
@@ -52,4 +53,4 @@
 - **Given** Cloud Build가 API를 Cloud Run에 배포할 때, **When** API와 SearXNG sidecar를 시작하면, **Then** API는 `http://localhost:8080`으로 검색하고 SearXNG 컨테이너는 외부 ingress 없이 실행된다.
 - **Given** Cloud Run이 API와 SearXNG sidecar를 시작할 때, **When** SearXNG TCP startup probe가 성공하기 전이면, **Then** API ingress는 시작되지 않는다.
 
-검색 단일 엔진·빈 결과/장애 판정·loopback 헤더와 추가 AC는 [pin-search-engine-recovery.md](pin-search-engine-recovery.md)를 따른다. 검색 호출당 엔진 요청은 15초 timeout으로 한 번이며 기존 worker 재시도 횟수는 유지한다.
+검색 단일 엔진·canonical Pin URL·빈 결과/장애 판정·loopback 헤더와 추가 AC는 [pin-search-engine-recovery.md](pin-search-engine-recovery.md)를 따른다. 검색 호출당 엔진 요청은 15초 timeout으로 한 번이며 기존 worker 재시도 횟수는 유지한다.

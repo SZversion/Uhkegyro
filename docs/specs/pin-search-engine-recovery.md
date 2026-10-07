@@ -11,7 +11,7 @@
 - Pinterest 엔진 정상 응답에서 유효 Pin이 없으면 PIN_RESULTS_EMPTY, 요청 또는 엔진 장애이면 PIN_SEARCH_UNAVAILABLE을 반환한다.
 - 엔진 장애 응답에 유효 Pin이 포함되면 Pin을 보존하되 unavailable 표시를 유지한다.
 ## How
-- `!pin`, images/json/en, 기존 suffix·site 제한·HTTPS Pinterest 숫자 Pin 정규화를 유지한다. 공식 SearXNG 엔진만 사용한다.
+- `!pin`, images/json/en, 기존 suffix 및 HTTPS Pinterest 숫자 Pin 정규화를 유지한다. SearXNG Pinterest 엔진은 외부 `link`보다 원본 Pin ID로 canonical Pin URL을 만든다. `site:pinterest.com/pin`은 Pinterest 엔진 검색어에 전달하지 않는다.
 - Pinterest 엔진 timeout 15초, provider 호출당 1회. worker의 기존 재시도 상한은 유지한다.
 - SearXNG settings에서 Pinterest 엔진을 활성화하고 sidecar 내부 요청임을 나타내는 loopback X-Forwarded-For/X-Real-IP를 보낸다. limiter 보호는 해제하지 않는다.
 ## AC
