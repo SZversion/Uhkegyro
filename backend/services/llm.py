@@ -66,6 +66,8 @@ def _generation_name(method_name, arguments):
         return f"memory-{arguments['operation']}"
     if method_name == "request_mcp_tool_calls":
         return "mcp-tool-selection"
+    if method_name == "request_mcp_search_decision":
+        return "mcp-post-search-decision"
     return method_name
 
 PROMPT_FILE_NAME = "uhkegryo-interpreter-v0.md"
@@ -160,6 +162,9 @@ class AgentInterpretationAdapter(Protocol):
     async def request_mcp_tool_calls(
         self, messages: list[dict], tools: list[dict], *, required: bool
     ) -> list[dict]:
+        ...
+
+    async def request_mcp_search_decision(self, messages: list[dict], **trace) -> str:
         ...
 
 
@@ -470,6 +475,35 @@ class LLMInterpretationAdapter:
         if required and not calls:
             raise LLMInvalidStructuredOutput("LLM이 필수 MCP 도구를 호출하지 않았다")
         return calls
+
+    @observed_generation
+    async def request_mcp_search_decision(self, messages: list[dict], **trace) -> str:
+        """Choose whether another tool-selection round is required."""
+        decision_messages = [{
+            "role": "system",
+            "content": (
+                "Decide whether more MCP tool calls are needed to finish the approved searches. "
+                'Return only a JSON object with exactly one field: {"decision":"continue"} '
+                'or {"decision":"stop"}. Use continue when any approved role remains unfinished '
+                "or a transient search failure should be retried. Otherwise use stop."
+            ),
+        }, *messages]
+        response = await self._request(decision_messages, json_mode=True)
+        try:
+            payload = json.loads(_extract_content(response))
+        except (json.JSONDecodeError, LLMIncompleteResponse) as error:
+            raise LLMInvalidStructuredOutput(
+                "MCP 후속 판단이 올바른 JSON이 아니다", stage="mcp_search_decision"
+            ) from error
+        if (not isinstance(payload, dict) or set(payload) != {"decision"}
+                or payload["decision"] not in {"continue", "stop"}):
+            raise LLMInvalidStructuredOutput(
+                "MCP 후속 판단 계약 위반", stage="mcp_search_decision"
+            )
+        self._update_generation(
+            usage_details=_extract_usage(response), output={"decision": payload["decision"]}
+        )
+        return payload["decision"]
 
     @observed_generation
     async def memory(self, operation: str, data: dict, output_type, **trace):

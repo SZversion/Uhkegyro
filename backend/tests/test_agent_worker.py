@@ -80,12 +80,14 @@ class FakeRecovery:
 
 
 class FakeAdapter:
-    def __init__(self, output=None, error=None, tool_calls=None):
+    def __init__(self, output=None, error=None, tool_calls=None, decisions=None):
         self.output = output or _selected()
         self.error = error
         self.calls = []
         self.tool_calls = list(tool_calls or [])
         self.tool_requests = []
+        self.decisions = list(decisions or [])
+        self.decision_requests = []
 
     async def interpret(self, request_text, **kwargs):
         self.calls.append((request_text, kwargs))
@@ -102,6 +104,10 @@ class FakeAdapter:
     async def request_mcp_tool_calls(self, messages, tools, *, required):
         self.tool_requests.append((messages, tools, required))
         return self.tool_calls.pop(0) if self.tool_calls else []
+
+    async def request_mcp_search_decision(self, messages, **trace):
+        self.decision_requests.append((messages, trace))
+        return self.decisions.pop(0) if self.decisions else "continue"
 
 
 class FakeMcpGateway:

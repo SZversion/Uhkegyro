@@ -94,8 +94,8 @@ def test_retry_failure_and_invalid_role_do_not_break_observation(monkeypatch, sn
         monkeypatch.setattr(agent_worker.asyncio, "sleep", sleep)
         bad = search("pose", "bad")
         bad["arguments"]["role"] = []
-        worker, _ = setup(monkeypatch, snapshot_factory,
-                          [[bad, search("pose")], [search("pose")], [search("pose")], []], handler)
+        worker, adapter = setup(monkeypatch, snapshot_factory,
+                          [[bad, search("pose")], [search("pose")], [search("pose")]], handler)
         client = FakeLangfuse()
         worker._tracer = JobTracer(client)
         await worker._search_outcomes(resolution(["pose"]), request_text="test")
@@ -106,7 +106,11 @@ def test_retry_failure_and_invalid_role_do_not_break_observation(monkeypatch, sn
         failed = next(r for r in client.records if r["name"] == "mcp-search-call")
         assert failed["output"]["status"] == "interrupted" and failed["output"]["error_type"] == "RuntimeError"
         assert "private upstream detail" not in json.dumps(client.records) and count == 3
-        assert not any(r["name"] == "mcp-post-search-decision" for r in client.records)
+        names = [r["name"] for r in client.records]
+        assert names.count("mcp-post-search-decision") == 2
+        assert names.count("mcp-tool-selection") == 3
+        assert names.index("mcp-post-search-decision") < names.index("mcp-tool-selection", names.index("mcp-post-search-decision"))
+        assert len(adapter.decision_requests) == 2
 
     asyncio.run(run())
 
