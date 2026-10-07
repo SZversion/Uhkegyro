@@ -122,11 +122,11 @@ def test_expired_or_unknown_tool_refreshes_schema(monkeypatch):
     async def case():
         gateway = McpToolGateway(mcp_url="http://mcp:8001/mcp", operation_caller=operation)
         assert (await gateway.list_tools())[0]["name"] == "lookup"
-        clock[0] = 399.0
+        clock[0] = 10900.0
         assert (await gateway.list_tools())[0]["name"] == "lookup"
         assert (await gateway.call_tool("new_lookup", {"term_id": "pose_x"}))["status"] == "found"
         assert calls == ["list_tools", "list_tools", "call_tool"]
-        clock[0] = 700.0
+        clock[0] = 25300.0
         assert (await gateway.list_tools())[0]["name"] == "new_lookup"
         assert calls.count("list_tools") == 3
 
@@ -177,9 +177,12 @@ def test_failed_refresh_does_not_poison_tool_cache(monkeypatch):
     async def case():
         gateway = McpToolGateway(mcp_url="http://mcp:8001/mcp", operation_caller=operation)
         await gateway.list_tools()
-        clock[0] = 401.0
+        clock[0] = 10900.0
         with pytest.raises(ValueError, match="tool schema"):
-            await gateway.list_tools()
+            await gateway.list_tools(refresh=True)
+        assert (await gateway.list_tools())[0]["name"] == "lookup"
+        assert calls == 2
+        clock[0] = 14500.0
         assert (await gateway.list_tools())[0]["name"] == "lookup"
         assert calls == 3
 

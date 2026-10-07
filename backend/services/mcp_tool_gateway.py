@@ -17,7 +17,7 @@ from jsonschema.validators import validator_for
 from backend.schemas.enums import FailureCode
 from backend.services.failure_mapping import OperationalFailure
 
-TOOL_CACHE_TTL_SECONDS = 300
+TOOL_CACHE_TTL_SECONDS = 4 * 60 * 60
 
 
 class McpToolGateway:

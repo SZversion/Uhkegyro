@@ -54,6 +54,10 @@ def test_worker_refreshes_periodically_and_cancels_refresh(monkeypatch, snapshot
     async def case():
         refresh_started, refresh_stopped = asyncio.Event(), asyncio.Event()
         calls = 0
+        sleep_delays = []
+
+        async def record_sleep(seconds):
+            sleep_delays.append(seconds)
 
         async def operation(url, action, **kwargs):
             nonlocal calls
@@ -68,7 +72,7 @@ def test_worker_refreshes_periodically_and_cancels_refresh(monkeypatch, snapshot
                 "name": f"lookup_{calls}", "inputSchema": {"type": "object"}
             }])
 
-        monkeypatch.setattr(agent_worker, "MCP_TOOL_REFRESH_INTERVAL_SECONDS", .01, raising=False)
+        monkeypatch.setattr(agent_worker.asyncio, "sleep", record_sleep)
         monkeypatch.setattr(conversation_summary_worker, "run_summary_loop", _idle_summary)
         worker = AgentJobWorker(None, snapshot_factory([]),
                                 mcp_gateway=McpToolGateway(mcp_url="http://mcp/mcp", operation_caller=operation),
@@ -83,6 +87,7 @@ def test_worker_refreshes_periodically_and_cancels_refresh(monkeypatch, snapshot
             with pytest.raises(asyncio.CancelledError):
                 await task
         assert calls == 3
+        assert sleep_delays == [10800, 10800]
         assert refresh_stopped.is_set()
     asyncio.run(case())
 
