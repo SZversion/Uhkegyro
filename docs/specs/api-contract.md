@@ -40,6 +40,8 @@ HTTP 오류 본문은 종결 실패의 `Failure`와 같은 형태인 `{failure_c
 
 ## How
 
+역할별 보드 갱신 worker 응답의 `AgentResult.reference_update`는 `replaced_roles`, `preserved_roles`, `removed_roles` 배열을 가진 nullable 객체다. 정상·부분 결과와 확인 질문에서 서버가 조립하며, 질문의 `reference_plan=null` 규칙은 유지한다. 기존 저장 응답에는 null 기본값을 사용한다. 상세 불변 조건과 수용 기준은 `reference-update-metadata.md`, 일부 역할 이미지 교체 계약은 `reference-role-refresh.md`를 따른다.
+
 - 실패 코드의 타입·호출 경계별 매핑과 고정 안내 문구는 [failure-code-mapping.md](./failure-code-mapping.md)를 따른다. API 저장소의 연결·인증·스키마 오류는 HTTP 503과 분류된 `Failure`를 반환하며, 예상하지 않은 코드 오류는 HTTP 500과 `INTERNAL_CODE_ERROR`를 반환한다.
 
 - 세션 쿠키의 발급·달력 기준 3개월 갱신, session/job 저장 구조, idempotency 저장 규칙은 [session-job-persistence.md](./session-job-persistence.md)가 단일 기준이다. `GET /api/jobs/{job_id}`는 이 쿠키를 검증하며, job 조회에서 세션이 job 소유자가 아니어도 `JOB_NOT_FOUND`를 반환한다.

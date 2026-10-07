@@ -302,11 +302,15 @@ def test_eval27_followup_preserves_body_and_pending_question(snapshot_factory, c
         class FollowupAdapter(MemoryAdapter):
             async def interpret(self, text, **kwargs):
                 self.contexts.append(kwargs["session_context"])
+                if text == "마른 체형 레퍼런스를 찾아줘":
+                    return InterpretationOutput(interpretation_state="select_terms", selections=[
+                        InterpretationSelection(role="body", term_id="body_slim", evidence=["마른 체형"], confidence=.9)],
+                        context_updates=[ContextUpdate(role="body", term_id="body_slim", evidence="마른 체형")])
                 if text == "마른 체형":
                     return InterpretationOutput(interpretation_state="needs_clarification",
                         clarification_type="insufficient_visual_evidence",
                         unresolved_constraints=["포즈"], clarifying_question="어떤 포즈인가요?",
-                        context_updates=[ContextUpdate(role="body", term_id="body_slim", evidence=text)])
+                        context_updates=[ContextUpdate(role="body", term_id=None, evidence=text)])
                 term = "pose_standing" if text == "서 있는" else "pose_weight_shift"
                 evidence = text if term == "pose_standing" else "한쪽 다리에 힘"
                 return InterpretationOutput(interpretation_state="select_terms", selections=[
@@ -317,15 +321,18 @@ def test_eval27_followup_preserves_body_and_pending_question(snapshot_factory, c
                                      card_factory("pose_standing"), card_factory("pose_weight_shift")])
         worker = agent_worker.AgentJobWorker(pool, snapshot, adapter=adapter)
         session = await SessionRepository(pool).create_session("user")
+        await jobs.submit(session_id=session, request_text="마른 체형 레퍼런스를 찾아줘", idempotency_key=str(uuid.uuid4()))
+        await worker.run_once()
         fixture = json.loads((Path(__file__).parents[2] / "evals/memory.jsonl").read_text(encoding="utf-8").splitlines()[0])
         assert fixture["id"] == "MEM-01"
         for text in fixture["turns"]:
             new, _ = await jobs.submit(session_id=session, request_text=text, idempotency_key=str(uuid.uuid4()))
             await worker.run_once()
-        assert adapter.contexts[1]["pending_question"] == "어떤 포즈인가요?"
+        assert adapter.contexts[2]["pending_question"] == "캐릭터의 체형·포즈·시점 중 어떤 정보를 더 알려주실 수 있나요?"
         assert adapter.contexts[2]["constraints"]["body"]["term_id"] == "body_slim"
+        assert adapter.contexts[3]["constraints"]["body"]["term_id"] == "body_slim"
         result = (await jobs.get(session_id=session, job_id=new.job_id)).result
-        assert [term.term_id for term in result.reference_plan.terms] == ["pose_weight_shift"]
+        assert [term.term_id for term in result.reference_plan.terms] == ["body_slim", "pose_weight_shift"]
         state = json.loads(await pool.fetchval("SELECT memory_json FROM sessions WHERE session_id=$1", uuid.UUID(session)))
         assert state["constraints"]["body"]["term_id"] == "body_slim"
         assert state["constraints"]["pose"]["term_id"] == "pose_weight_shift"

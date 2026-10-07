@@ -165,7 +165,14 @@ def test_retry_and_lease_recovery_follow_postgres_contract():
                 job_id=feedback_job.job_id, attempt=3, max_attempts=3, error=invalid
             )
             async with pool.acquire() as connection:
-                assert await connection.fetchval("SELECT validation_feedback_json FROM jobs WHERE job_id=$1::uuid", feedback_job.job_id) is None
+                row = await connection.fetchrow(
+                    "SELECT status, validation_feedback_json, validation_failure_history_json FROM jobs WHERE job_id=$1::uuid",
+                    feedback_job.job_id,
+                )
+            diagnostics = [{"stage": "interpretation_schema", "path": [], "code": "role_duplicate"}]
+            assert row["status"] == "failed"
+            assert json.loads(row["validation_feedback_json"]) == diagnostics
+            assert json.loads(row["validation_failure_history_json"])["3"] == diagnostics
 
             config_job, _ = await repository.submit(
                 session_id=session_id, request_text="configuration", idempotency_key=str(uuid.uuid4())
