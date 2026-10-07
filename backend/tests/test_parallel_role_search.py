@@ -67,6 +67,7 @@ def test_parallel_overlap_order_and_timing(monkeypatch, snapshot_factory):
         parallel = perf_counter() - started
         assert peak == 3 and finished != roles
         assert set(outcomes) == {Role(r) for r in roles}
+        assert len(adapter.tool_requests) == 1
         replies = [m for m in adapter.tool_requests[-1][0] if m["role"] == "tool"]
         assert [m["tool_call_id"] for m in replies] == roles
         assert [json.loads(m["content"])["role"] for m in replies] == roles
@@ -130,6 +131,7 @@ def test_validation_duplicates_and_nonsearch_boundaries(monkeypatch, snapshot_fa
         worker, adapter = setup(monkeypatch, snapshot_factory, [calls, []], handler)
         await worker._search_outcomes(resolution(["body", "pose"]), request_text="test")
         assert events == ["body start", "body end", "card start", "card end", "pose start", "pose end"]
+        assert len(adapter.tool_requests) == 1
         replies = [m for m in adapter.tool_requests[-1][0] if m["role"] == "tool"]
         assert [m["tool_call_id"] for m in replies] == [c["id"] for c in calls]
         assert "error" in json.loads(replies[0]["content"])
@@ -152,7 +154,7 @@ def test_retry_backoff_releases_search_slots(monkeypatch, snapshot_factory):
                         "pin_url": "https://www.pinterest.com/pin/123/", "status": "available"}], "code": None}
             return {"role": role, "pins": [], "code": "PIN_SEARCH_UNAVAILABLE"} if role == "pose" else empty(role)
 
-        worker, _ = setup(monkeypatch, snapshot_factory,
+        worker, adapter = setup(monkeypatch, snapshot_factory,
                           [[search("body"), search("pose"), search("pose", "duplicate"), search("view")],
                            [search("pose")], [search("pose")], []], handler)
 
@@ -171,6 +173,8 @@ def test_retry_backoff_releases_search_slots(monkeypatch, snapshot_factory):
         assert delays == [1, 2]
         assert outcomes[Role.BODY].code.value == "PIN_RESULTS_EMPTY"
         assert outcomes[Role.POSE].code.value == "PIN_SEARCH_UNAVAILABLE"
+        assert len(adapter.tool_requests) == 3
+        assert all(required for _, _, required in adapter.tool_requests)
 
     asyncio.run(scenario())
 

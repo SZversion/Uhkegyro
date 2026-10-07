@@ -217,7 +217,7 @@ class AgentJobWorker:
                 "when needed. Select independent searches for all unfinished approved roles "
                 "together in one response, at most once per role. After tool results, retry "
                 "only unfinished roles; do not search completed roles again. "
-                "After a tool result, decide whether another tool call is needed."
+                "After a tool result, select further tools only while approved roles remain unfinished."
             )},
             {"role": "user", "content": json.dumps({
                 "request": request_text,
@@ -233,12 +233,13 @@ class AgentJobWorker:
         ]
         for call_round in range(1, MAX_MCP_TOOL_CALLS + 1):
             pending = [role for role in approved if role not in outcomes]
-            purpose = "tool_selection" if pending else "post_search_decision"
+            if not pending:
+                break
             with self._tracer.phase(
-                "mcp-tool-selection" if pending else "mcp-post-search-decision",
-                call_round=call_round, purpose=purpose, pending_roles=[role.value for role in pending],
+                "mcp-tool-selection",
+                call_round=call_round, purpose="tool_selection", pending_roles=[role.value for role in pending],
             ) as metrics:
-                calls = await adapter.request_mcp_tool_calls(messages, tools, required=bool(pending))
+                calls = await adapter.request_mcp_tool_calls(messages, tools, required=True)
                 metrics.update(call_count=len(calls), selected_roles=sorted({
                     call["arguments"].get("role") for call in calls
                     if call["name"] == PINTEREST_SEARCH_TOOL

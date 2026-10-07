@@ -35,13 +35,14 @@ def test_parallel_phases_and_generation_purpose(monkeypatch, snapshot_factory):
                                              "width": 10, "height": 10}})
 
         worker, adapter = setup(monkeypatch, snapshot_factory,
-                                [[search("pose"), search("view")]] * 2 + [[], []], handler,
+                                [[search("pose"), search("view")]] * 2, handler,
                                 PinterestWidgetClient(json_loader=widget))
         client = FakeLangfuse()
         worker._tracer = JobTracer(client)
         original = adapter.request_mcp_tool_calls
 
         async def generate(*args, **kwargs):
+            assert len(adapter.tool_requests) < 2, "completed searches must not request another generation"
             with client.start_as_current_observation(as_type="generation", name="existing-generation"):
                 return await original(*args, **kwargs)
 
@@ -58,8 +59,10 @@ def test_parallel_phases_and_generation_purpose(monkeypatch, snapshot_factory):
         selection = next(r for r in records if r["name"] == "mcp-tool-selection")
         assert selection["metadata"] == {"call_round": 1, "purpose": "tool_selection", "pending_roles": ["pose", "view"]}
         assert selection["output"]["selected_roles"] == ["pose", "view"]
-        final = next(r for r in records if r["name"] == "mcp-post-search-decision")
-        assert final["metadata"]["call_round"] == 2 and final["output"]["call_count"] == 0
+        assert not any(r["name"] == "mcp-post-search-decision" for r in records)
+        assert len(adapter.tool_requests) == 2
+        assert all(required for _, _, required in adapter.tool_requests)
+        assert len([r for r in records if r["name"] == "existing-generation"]) == 2
         for name in ("search-slot-wait", "mcp-search-call", "widget-enrichment"):
             spans = [r for r in records if r["name"] == name]
             assert {r["metadata"]["role"] for r in spans} == {"pose", "view"}
@@ -103,6 +106,7 @@ def test_retry_failure_and_invalid_role_do_not_break_observation(monkeypatch, sn
         failed = next(r for r in client.records if r["name"] == "mcp-search-call")
         assert failed["output"]["status"] == "interrupted" and failed["output"]["error_type"] == "RuntimeError"
         assert "private upstream detail" not in json.dumps(client.records) and count == 3
+        assert not any(r["name"] == "mcp-post-search-decision" for r in client.records)
 
     asyncio.run(run())
 

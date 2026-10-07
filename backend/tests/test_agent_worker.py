@@ -348,7 +348,8 @@ def test_worker_searches_with_validated_role_fragments_and_keeps_pin(
     assert {tool["name"] for tool in adapter.tool_requests[0][1]} == {
         "search_pinterest_pins", "get_active_term_card"
     }
-    assert adapter.tool_requests[1][0][-1] == {
+    assert len(adapter.tool_requests) == 1
+    assert adapter.tool_requests[0][0][-1] == {
         "role": "tool", "tool_call_id": "call-1",
         "content": json.dumps({"role": "pose", "pins": [pin.model_dump()], "code": None}),
     }
