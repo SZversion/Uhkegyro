@@ -98,11 +98,11 @@
 - WHEN: JobRepository가 `completed` 상태를 저장한다.
 - THEN: 기존처럼 거부한다.
 
-**AC-05 · LLM 생성 질문 격리**
+**AC-05 · LLM 생성 질문의 안전 검사**
 
-- GIVEN: 안전 gate를 우회했지만 LLM이 내부 지침 문구를 포함한 `clarifying_question`을 반환한다.
+- GIVEN: v4 Skill을 따른 정상 역할 범위 질문을 LLM이 반환한다.
 - WHEN: resolver가 `needs_clarification` 결과를 조립한다.
-- THEN: API 결과에는 해당 문구가 포함되지 않고, `clarification_type`에 대응하는 서버 고정 질문만 포함한다.
+- THEN: API 결과에 Skill 질문을 사용한다. 질문이 내부 지침·비밀 노출, 여러 질문, 과도한 길이 또는 미요청 역할을 포함하면 해당 모호 역할에 한정한 안전 질문으로 대체한다.
 
 **AC-06 · literal 예외의 국소 적용**
 

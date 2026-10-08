@@ -420,6 +420,7 @@ def test_interpretation_output_needs_clarification_valid():
     out = _interpretation_output(
         interpretation_state="needs_clarification",
         selections=[],
+        ambiguous_fields=["body"],
         unresolved_constraints=["체형 비율을 확정할 실제 신체 단서가 없음"],
         clarifying_question="의상을 제외한 실제 체형 비율을 찾으시나요?",
         clarification_type="insufficient_visual_evidence",
@@ -512,11 +513,48 @@ def test_interpretation_output_select_terms_invalid(overrides):
             "clarifying_question": "질문?",
             "clarification_type": None,
         },
+        {
+            "interpretation_state": "needs_clarification",
+            "selections": [],
+            "unresolved_constraints": ["단서 부족"],
+            "clarifying_question": "질문?",
+            "clarification_type": "insufficient_visual_evidence",
+            "ambiguous_fields": [],
+        },
     ],
 )
 def test_interpretation_output_needs_clarification_invalid(overrides):
     with pytest.raises(ValidationError):
         _interpretation_output(**overrides)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"ambiguous_fields": ["pose"]},
+        {"ambiguous_fields": ["pose", "pose"]},
+        {"ambiguous_fields": ["intent"]},
+    ],
+)
+def test_interpretation_output_select_terms_rejects_ambiguous_fields(overrides):
+    with pytest.raises(ValidationError):
+        _interpretation_output(**overrides)
+
+
+@pytest.mark.parametrize(
+    "ambiguous_fields",
+    [[], ["pose", "pose"], ["intent"]],
+)
+def test_interpretation_output_needs_clarification_rejects_invalid_ambiguous_fields(ambiguous_fields):
+    with pytest.raises(ValidationError):
+        _interpretation_output(
+            interpretation_state="needs_clarification",
+            selections=[],
+            unresolved_constraints=["단서 부족"],
+            clarifying_question="질문?",
+            clarification_type="insufficient_visual_evidence",
+            ambiguous_fields=ambiguous_fields,
+        )
 
 
 @pytest.mark.parametrize(

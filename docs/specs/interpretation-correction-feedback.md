@@ -5,7 +5,7 @@
 - **페르소나**: 자연어로 레퍼런스를 요청하는 사용자와 이를 운영하는 개발자.
 - **상황**: 모델의 구조화 응답은 worker가 검증하며 실패는 job attempt 정책으로 처리한다.
 - **문제**: 검증 실패 후 내부 재호출과 사용자 원문·모델 후보를 system 메시지에 넣으면 호출 상한과 신뢰 경계가 깨진다.
-- **측정 지표**: job당 provider 호출은 최초 호출 포함 최대 3회이며, 한 attempt의 호출은 1회다.
+- **측정 지표**: 성공한 v4 attempt는 해석 JSON과 최종 답변으로 provider 두 번 호출한다. 첫 JSON 검증 실패 시 해당 attempt의 최종 답변 호출은 생략하며, 최대 3 attempt에서 정상 완료 시 job당 최대 6회다.
 
 ## Goal
 
@@ -17,9 +17,9 @@
 ## What
 
 **Happy Path**
-1. Worker가 한 attempt에서 해석 provider를 한 번 호출한다.
-2. 유효한 구조화 출력은 resolver 검증으로 진행한다.
-3. 구조화 검증 오류는 attempt 실패가 되어 기존 recovery가 재시도 여부를 결정한다.
+1. Worker가 해석 adapter를 호출한다. v4 adapter는 첫 provider 호출로 JSON 해석을 생성한다.
+2. adapter 코드가 첫 JSON을 검증한다. 유효한 v4 JSON이면 두 번째 provider 호출로 최종 응답을 생성하고 resolver 검증으로 진행한다.
+3. 첫 JSON 구조 검증 오류는 최종 응답 호출 없이 attempt 실패가 되어 기존 recovery가 재시도 여부를 결정한다.
 
 **Edge Cases**
 
@@ -33,22 +33,22 @@
 
 ## How
 
-- `AgentJobWorker`의 correction loop를 제거한다. provider는 attempt당 1회, 기본 최대 3 attempt다.
+- `AgentJobWorker`의 correction loop를 제거한다. provider는 attempt당 1회, 기본 최대 3 attempt다. v4 해석 질문 지침은 [모호·상충 답변 Spec](./ambiguity-answer-quality.md)을 따른다.
 - 교정 helper는 요청 텍스트와 오류 raw input을 인자로 받지 않는다. 출력 문구는 고정 규칙뿐이다.
-- adapter 해석 요청은 system/user 두 메시지만 사용하며 별도 correction system 메시지를 추가하지 않는다.
+- adapter 해석 요청은 system/user 두 메시지만 사용하며 별도 correction system 메시지를 추가하지 않는다. v4의 최종 응답 호출도 system/user 두 메시지를 사용하고, clarification Skill은 질문 상태에서만 해당 두 번째 호출에 포함한다.
 - `interpretation_state`는 `select_terms | needs_clarification`만 모델 출력으로 허용한다. 범위 밖 요청은 서버 판정으로 유지한다.
 
 ## AC (Given-When-Then)
 
 **AC-01 · attempt별 provider 호출 상한**
-- GIVEN: 구조화 출력이 검증에 실패한다.
+- GIVEN: 첫 v4 해석 JSON이 검증에 실패한다.
 - WHEN: worker가 한 attempt를 처리한다.
-- THEN: provider를 정확히 한 번 호출하고 실패를 recovery 정책에 전달한다.
+- THEN: 첫 provider 호출만 실행하고 최종 응답 호출 없이 실패를 recovery 정책에 전달한다.
 
 **AC-02 · job 호출 상한**
-- GIVEN: 세 번의 worker attempt가 모두 실행된다.
-- WHEN: 각 attempt에서 해석 provider 호출 수를 합산한다.
-- THEN: 총 호출 수는 최대 3회다.
+- GIVEN: v4 세 번의 worker attempt가 모두 성공적으로 JSON 검증까지 통과한다.
+- WHEN: 각 attempt의 해석·최종 응답 provider 호출 수를 합산한다.
+- THEN: 총 호출 수는 6회다. JSON 검증 실패 attempt에는 최종 응답 호출이 없다.
 
 **AC-03 · 사용자 원문 신뢰 경계**
 - GIVEN: 원문 근거 검증 오류가 발생한다.

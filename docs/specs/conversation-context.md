@@ -13,7 +13,7 @@ InterpretationSelection.source_job_id는 nullable UUID다. null이면 현재 요
 구조화 context_updates는 현재 요청의 명시적 근거를 가진 역할별 set/clear만 허용한다. set 카드에 resolver와 같은 활성/역할/의존 검증을 적용한다. 모호하면 기존 조건을 유지하고 질문한다.
 needs_clarification 완료에서는 context_updates를 적용하지 않고 pending_question만 갱신한다. 알려진 기존 조건을 그대로 보존하며, mode=none의 사용하지 않는 회상 필터는 adapter에서 빈 값으로 정규화한다. 상세 계약은 ambiguity-answer-quality.md를 따른다.
 worker는 선행 종결 job만 사용한다. job 완료와 memory_json 갱신은 attempt/상태/만료를 확인한 한 transaction이다. failed·stale attempt는 기억을 쓰지 않는다.
-자동 요약을 생성하지 않으며 본문 해석에는 현재 조건·확인 질문·최근 6개 원문·검증된 출처만 전달한다. 상세 제거 및 호환 계약은 conversation-summary-background.md를 따른다.
+자동 요약을 생성하지 않으며 본문 해석에는 현재 조건·확인 질문·최근 6개 원문·검증된 출처만 전달한다. v4 최종 답변 호출에도 첫 JSON 해석 호출과 같은 서버 제공 session_context를 전달해 맥락 의존 답변의 동작을 보존한다. 상세 제거 및 호환 계약은 conversation-summary-background.md를 따른다.
 ## AC
 - Given A의 체형, When B 요청, Then A 기록은 prompt에 없다.
 - Given 앞선 체형과 포즈, When 포즈만 변경 요청, Then 체형 검색·Pin은 유지하고 포즈만 검색해 전체 보드를 반환한다. 상세 계약은 selective-reference-update.md를 따른다.

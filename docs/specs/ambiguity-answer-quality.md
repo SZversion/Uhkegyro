@@ -10,7 +10,7 @@
 - GPT-4.1-mini와 v4에서 추측 대신 필요한 단서를 질문하고, 재시도에서 검증 피드백을 활용한다.
 - 선택이 명확한 입력은 불필요하게 질문하지 않는다. 설명에는 쉬운 뜻·현재 입력 근거·카드 관찰 지점을 포함한다.
 - 목표: 회귀 묶음 전부 통과, 전체 고정 30건 회귀 없음. 실측 결과와 미달 항목도 그대로 기록한다.
-- 제외: 모델/production 기본값 변경, 임의 후보 자동 선택, 추가 역할·부분 확인 질문 스키마, UI·DB migration, 실제 Pinterest 품질 평가.
+- 제외: 모델/production 기본값 변경, 임의 후보 자동 선택, UI·DB migration, 실제 Pinterest 품질 평가.
 
 ## What
 - 인상·곡선만으로 콘트라포스토를 선택하지 않는다. 지지 다리와 어깨·골반의 반대 기울기가 명시되어야 한다.
@@ -20,6 +20,7 @@
 - server next_state는 확인 질문 결과에서 context_updates를 적용하지 않는다. 모델이 변경 후보를 반환해도 기존 constraints는 유지한다.
 - 앉아서 가까운 손을 내미는 경우 포즈는 앉기 하나, 가까운 손의 확대는 원근 역할로 선택한다.
 - 확인 질문은 현재 계약대로 selections=[]·answer_text=""·검색 없음이다. 명확한 기존 대화 조건은 삭제하지 않는다.
+- v4는 attempt마다 provider를 두 번 호출한다. 첫 호출은 구조화 해석 JSON만 생성하고, 코드가 이를 검증한 다음 두 번째 호출에서 최종 답변을 생성한다. 두 번째 호출에는 항상 원문과 검증된 전체 JSON을 전달한다. `clarification_type`이 있으면 이때만 전용 Skill을 읽어 함께 전달해 질문을 만들고, 없으면 Skill 없이 일반 답변을 만든다.
 - 정상 답변은 내부 ID·선택 알고리즘 설명 없이 짧은 한국어로 뜻·근거·참고 이미지 관찰 지점을 안내한다.
 
 ## How
@@ -28,8 +29,9 @@
 - adapter는 classify mode=none의 사용하지 않는 알려진 필터만 빈 값으로 정규화한다. recall/mixed 필터는 기존 한도를 검증하고, 알려지지 않은 추가 필드는 어느 mode에서도 거부한다.
 - v4는 기존 JSON mode를 유지하며 validation_feedback를 다음 attempt의 user 메시지로 전달한다. 고정 system 규칙은 role_duplicate/state_rules 처리 방법을 설명한다. v0-v3의 해석 호출 형식·피드백 전달 정책은 유지한다.
 - v4 다음 attempt의 user 메시지에는 서버 고정 repair_rules도 포함해 앉기+가까운 손의 역할 분리, 복합 동작 흐름의 단일 포즈와 상충 조건 질문을 교정한다. 모델 원문을 재주입하지 않는다.
-- 최초 포함 최대 3 attempt, attempt당 provider 호출 1회. 후보 중복을 confidence로 임의 제거하거나 성공으로 간주하지 않는다.
-- resolver는 모델 질문을 직접 표시하지 않는다. 기존 clarification_type과 현재 요청의 제한된 시각 단서로 고정 질문 템플릿을 선택하며 해당되지 않으면 기존 공통 질문을 사용한다.
+- v4 첫 호출은 `skills/SKILL.md` 전체와 해석 프롬프트를 system message에 결합해 `answer_text=""`인 해석 JSON만 생성한다. provider JSON Schema, 프롬프트 예시, Pydantic 검증은 기존 `selections`·`context_updates` 배열 형식을 유지하고 `ambiguous_fields`를 추가한 동일 계약을 사용한다. 코드가 JSON/schema를 검증한 뒤 두 번째 호출은 항상 최종 답변을 생성한다. 일반 답변이면 clarification Skill은 읽지 않고 답변 지침과 검증된 JSON, 제공된 대화 맥락을 전달한다. 질문이면 `clarification_type`으로 코드가 `skills/clarification-response/SKILL.md`를 읽어 두 번째 호출에만 포함한다. 활성 term ID는 resolver가 검증한다.
+- Skill은 `abstract_intent`, `insufficient_visual_evidence`, `conflicting_constraints`별 질문 원칙을 정의한다. 질문은 `ambiguous_fields`에 든 역할만 다루며, 짧은 한국어 질문 하나로 작성한다. 너무 길거나 여러 질문이거나 내부 정보 노출 또는 미요청 역할 언급이 감지되면 해당 모호 역할만 묻는 서버 질문으로 대체한다. 이전 prompt version은 기존 동작을 유지한다.
+- `CLARIFICATION_SKILL_PATH`는 기본 `skills/clarification-response/SKILL.md`를 지정하며 Docker image에 포함한다. Skill은 v4 JSON 검증 후 `clarification_type`이 있을 때만 읽는다. 이 경로의 파일 오류는 질문 응답 생성 시 설정 오류이며 일반 답변 경로는 Skill 파일을 읽지 않는다. 다른 Prompt 버전은 이 Skill 파일에 접근하지 않는다.
 - 체형 충돌 질문은 어깨·골반 폭의 동등 단서와 어깨가 골반보다 넓다는 명시적 비교 단서가 모두 있을 때만 선택한다. 시점 충돌 질문은 옆모습을 원하는 동시에 정면처럼 보이길 원하는 대조 표현이 있을 때 선택한다. 단어의 존재만으로 충돌 축을 단정하지 않는다. 두 축 모두 충돌하거나 어느 축도 확정할 수 없으면 공통 충돌 질문을 사용한다.
 - 선택·질문 기대값은 기존 dataset을 변경하지 않는다. 별도 ambiguity.jsonl에 명시/생략/부정/상충 대조 사례를 추가하고 LIVE_EVAL_INCLUDE_AMBIGUITY=1로 기존 runner에 포함한다.
 - runner는 최종 사용자 질문의 must_address(_any_of)를 검사하고 실제 answer_text를 review.md로 내보낸다. 자동으로 정성 점수를 확정하지 않는다.
@@ -44,7 +46,13 @@
 - Given 명확한 동등 체형과 시점 충돌, When 고정 질문 선택, Then 시점만 질문하고 더 넓은 어깨 조건을 추가하지 않는다.
 - Given 명확한 시점과 폭 비율 충돌, When 고정 질문 선택, Then 체형만 질문하고 옆모습/정면 선택지를 추가하지 않는다.
 - Given 어깨·골반 단어만 있거나 비교 축이 불명확함, When 충돌 질문 선택, Then 공통 질문을 반환한다.
-- Given 모델 질문에 내부 정보 요청, When resolver, Then 원문을 노출하지 않고 요청 단서에 맞는 고정 질문만 표시한다.
+- Given v4 결과가 `select_terms`, When 파이프라인이 응답을 생성, Then 첫 번째 호출에는 도메인 Skill을 주입하고 두 번째 호출에는 clarification Skill 없이 대화 맥락을 포함해 일반 답변을 생성하며 총 두 번 호출한다.
+- Given v4 결과가 `needs_clarification`이고 각 허용된 `clarification_type` 중 하나, When 파이프라인이 응답을 생성, Then 첫 번째 호출에 도메인 Skill을, 두 번째 호출에 질문 Skill과 대화 맥락을 포함해 최종 질문을 만들고 총 두 번 호출한다.
+- Given 첫 호출의 v4 JSON이 유효하지 않음, When 해석 검증, Then 해당 attempt는 실패하고 최종 답변 호출은 실행하지 않는다.
+- Given 일반 답변 결과와 존재하지 않는 Skill 경로, When v4 파이프라인 실행, Then Skill을 읽지 않고 두 번 호출을 완료한다.
+- Given Skill에 어긋나는 내부 정보 요청 질문, When resolver, Then 모델 원문을 사용자에게 전달하지 않고 안전한 질문으로 대체한다.
+- Given 포즈만 요청했고 `ambiguous_fields=["pose"]`, When resolver, Then 포즈를 구체화하는 질문만 반환하고 체형·시점 등 다른 역할은 묻지 않는다.
+- Given `ambiguous_fields`에 여러 역할이 명시됨, When resolver, Then 명시된 역할만 질문한다.
 - Given 명확한 앉기와 가까운 손, When 해석, Then pose_sitting과 perspective_foreshortening을 역할별 하나씩 선택한다.
 - Given 일반 결과, When 답변 검토, Then 쉬운 뜻·입력 근거·카드 관찰 지점이 있고 내부 ID·URL/Pin 추측이 없다.
 - Given 고정 회귀/전체 평가, When runner, Then 실제 최종 질문을 검사하고 실제 답변과 지문·실패 내역을 검토 산출물에 기록한다.

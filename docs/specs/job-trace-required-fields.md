@@ -17,12 +17,12 @@
 ## What
 
 1. Worker가 Job을 claim하면 Job ID에서 결정론 trace ID를 만들고 attempt span을 연다.
-2. `validating`, `searching`, `rendering` 단계별 span을 기록하고 LLM generation을 현재 trace의 자식으로 둔다. JSON·Pydantic 검증 실패 generation도 원문 없이 안전한 오류 metadata만 기록한다. 다른 실패한 LLM 호출은 attempt의 오류 필드로 기록한다.
+2. `validating`, `searching`, `rendering` 단계별 span을 기록하고 LLM generation을 현재 trace의 자식으로 둔다. LLM 응답을 받으면 generation metadata에 `finish_reason`을, usage details에 입력·출력 token 수를 기록한다. JSON·Pydantic 검증 실패 generation도 원문 없이 안전한 오류 metadata만 기록한다. 다른 실패한 LLM 호출은 attempt의 오류 필드로 기록한다.
 3. 재시도 가능 오류는 `error_type`과 실제 `backoff_ms`를 남긴다. 최종 실패는 공개 `failure_code`를 남긴다.
 4. 완료는 `agent_status`와 검색 사유 코드만 남긴다. 민감한 검색 결과 본문은 보내지 않는다.
 5. Langfuse 키가 없으면 Job 처리를 그대로 수행하고 trace를 만들지 않는다.
 
-**Edge Cases**: stale attempt 또는 lease 상실은 성공·실패로 기록하지 않는다. 관측 서버 장애는 Job 결과를 바꾸지 않는다. 재시도된 attempt는 새 trace가 아닌 같은 trace ID를 사용한다. worker 종료 시 마지막 attempt의 대기 중인 관측 이벤트를 전송한다.
+**Edge Cases**: stale attempt 또는 lease 상실은 성공·실패로 기록하지 않는다. 관측 서버 장애는 Job 결과를 바꾸지 않는다. 재시도된 attempt는 새 trace가 아닌 같은 trace ID를 사용한다. 각 attempt observation을 닫은 직후 대기 중인 이벤트를 전송하고, worker 종료 시에도 마지막 이벤트를 전송한다.
 
 ## How
 
@@ -31,6 +31,8 @@
 - root가 열린 context 안에서 상태 전이 성공 시 해당 이름의 child span을 기록한다. LLM adapter의 generation은 동일 context의 자식이다.
 - 재시도·종결 판정은 `JobRetryRecovery`의 동일한 정책 함수를 사용한다. retry attempt는 `failure_code=null`과 `backoff_ms=retry_delay_ms(...)`; 종결 실패는 `backoff_ms=null`과 API의 `FailureCode`를 기록한다.
 - 완료 시 `agent_status`와 `reason_codes`만 기록한다. 일반 로그·trace에는 session cookie/token, API key, `anonymous_user_id`, Pin URL·thumbnail·본문, LLM 원본 응답을 추가하지 않는다. 사용자 요청 원문은 Langfuse root와 기존 LLM generation 입력에만 허용한다.
+- LLM generation trace는 응답 종료 사유(`finish_reason`)와 usage token 수만 추가로 기록하며, 응답 본문은 기록하지 않는다. 응답이 `length` 등으로 잘린 경우에도 adapter가 실패 처리하기 전에 해당 종료 사유를 flush 대상 event로 추가한다.
+- 각 `AgentJobWorker.run_once`가 attempt observation을 닫으면 Langfuse `flush()`를 별도 thread에서 실행해 성공·실패 trace가 대기열에 머물지 않도록 한다. flush 실패는 Job 처리를 막지 않는다.
 - Langfuse 키가 둘 다 설정된 경우에만 SDK client를 만든다. SDK 오류는 안전한 debug 로그로만 남기고 Job 상태 전이를 막지 않는다.
 - `AgentJobWorker.run_forever`가 종료·취소되면 실행 중인 attempt observation을 닫은 뒤 소유한 Langfuse client의 `shutdown()`을 호출한다. 동기 `shutdown()`은 event loop를 막지 않도록 별도 thread에서 실행하고, 실패해도 worker 종료를 막지 않는다.
 

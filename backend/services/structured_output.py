@@ -5,8 +5,13 @@ import json
 from backend.schemas.models import InterpretationOutput
 
 
-def response_format(active_cards_json: str = "") -> dict:
+def response_format(active_cards_json: str = "", *, include_ambiguous_fields: bool = False) -> dict:
+    """Build strict provider schema; v4 keeps the prompt's array wire contract."""
     schema = InterpretationOutput.model_json_schema()
+    if not include_ambiguous_fields:
+        schema["properties"].pop("ambiguous_fields", None)
+    else:
+        schema["properties"]["answer_text"] = {"type": "string", "enum": [""]}
 
     def strict(node):
         if isinstance(node, dict):
@@ -21,7 +26,7 @@ def response_format(active_cards_json: str = "") -> dict:
                 strict(value)
 
     strict(schema)
-    if active_cards_json:
+    if active_cards_json and not include_ambiguous_fields:
         cards = json.loads(active_cards_json).get("active_cards", [])
         for name in ("InterpretationSelection", "ContextUpdate"):
             original = schema["$defs"][name]

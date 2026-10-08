@@ -333,6 +333,7 @@ class InterpretationOutput(BaseModel):
 
     interpretation_state: InterpretationState
     selections: list[InterpretationSelection] = Field(default_factory=list)
+    ambiguous_fields: list[Role] = Field(default_factory=list)
     unresolved_constraints: list[str] = Field(default_factory=list)
     clarifying_question: str | None = None
     clarification_type: ClarificationType | None = None
@@ -369,6 +370,8 @@ class InterpretationOutput(BaseModel):
                 raise ValueError("select_terms는 clarifying_question=null이어야 한다")
             if self.clarification_type is not None:
                 raise ValueError("select_terms는 clarification_type=null이어야 한다")
+            if "ambiguous_fields" in self.model_fields_set and self.ambiguous_fields:
+                raise ValueError("select_terms는 ambiguous_fields=[]이어야 한다")
         elif self.interpretation_state is InterpretationState.NEEDS_CLARIFICATION:
             if self.selections:
                 raise ValueError("needs_clarification는 selections=[]이어야 한다")
@@ -378,4 +381,8 @@ class InterpretationOutput(BaseModel):
                 raise ValueError("needs_clarification는 비어 있지 않은 clarifying_question이 필수다")
             if self.clarification_type is None:
                 raise ValueError("needs_clarification는 clarification_type이 필수다")
+            if "ambiguous_fields" in self.model_fields_set and not self.ambiguous_fields:
+                raise ValueError("needs_clarification는 ambiguous_fields가 최소 하나 있어야 한다")
+        if "ambiguous_fields" in self.model_fields_set and len(self.ambiguous_fields) != len(set(self.ambiguous_fields)):
+            raise ValueError("ambiguous_fields는 중복 역할을 허용하지 않는다")
         return self
