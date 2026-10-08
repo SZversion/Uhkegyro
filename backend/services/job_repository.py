@@ -285,6 +285,38 @@ class JobRepository:
         return [dict(_to_envelope(row).model_dump(mode="json"),
                      request_text=row["request_text"], created_at=row["created_at"]) for row in rows]
 
+    async def history_for_owner(self, token: str, session_id: str, limit=20, offset=0) -> list[dict]:
+        """Authorize a session and fetch one history page with one SQL round trip."""
+        from backend.shared.auth import hash_session_token
+
+        row = await self._pool.fetchrow(
+            """WITH owned_session AS MATERIALIZED (
+                   SELECT s.session_id FROM sessions s
+                   JOIN anonymous_owners o USING(owner_id)
+                   WHERE o.session_token_hash=$1 AND s.session_id=$2::uuid
+                     AND s.last_activity_at + interval '3 months' > now()
+               ), touched_session AS (
+                   UPDATE sessions s SET last_activity_at=now()
+                   FROM owned_session o WHERE s.session_id=o.session_id
+                   RETURNING s.session_id
+               ), page AS MATERIALIZED (
+                   SELECT j.* FROM jobs j JOIN touched_session USING(session_id)
+                   ORDER BY j.created_at, j.job_id LIMIT $3 OFFSET $4
+               )
+               SELECT EXISTS(SELECT 1 FROM owned_session) AS authorized,
+                      COALESCE((SELECT jsonb_agg(to_jsonb(p) ORDER BY p.created_at, p.job_id)
+                                FROM page p), '[]'::jsonb) AS jobs""",
+            hash_session_token(token), session_id, limit, offset,
+        )
+        if not row["authorized"]:
+            raise JobNotFound
+        values = row["jobs"]
+        if isinstance(values, str):
+            values = json.loads(values)
+        return [dict(_to_envelope(value).model_dump(mode="json"),
+                     request_text=value["request_text"], created_at=value["created_at"])
+                for value in values]
+
 
 def _dump(value: AgentResult | Failure) -> str:
     data = value.model_dump(mode="json")

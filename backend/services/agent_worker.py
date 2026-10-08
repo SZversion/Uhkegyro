@@ -24,7 +24,7 @@ from backend.services.llm import (
 from backend.services.llm import format_active_cards_json
 from backend.services.mcp_pinterest_search import parse_search_result, pop_search_diagnostics
 from backend.services.mcp_tool_gateway import McpToolGateway
-from backend.services.pinterest_widget import PinterestWidgetClient
+from backend.services.pinterest_widget import PinterestWidgetClient, get_shared_widget_client
 from backend.services.resolver import ResolutionResult
 from backend.services.response_assembler import RoleSearchOutcome, assemble
 from backend.services.failure_mapping import DATABASE_ERRORS, OperationalFailure, classify_failure
@@ -540,7 +540,7 @@ async def run_worker(snapshot: CatalogSnapshot) -> None:
                 return
             pool = await create_pool(settings)
             mcp_gateway = McpToolGateway(mcp_url=settings.mcp_base_url)
-            widget_client = PinterestWidgetClient()
+            widget_client = get_shared_widget_client()
             await AgentJobWorker(
                 pool, snapshot, mcp_gateway=mcp_gateway, widget_client=widget_client
             ).run_forever(
