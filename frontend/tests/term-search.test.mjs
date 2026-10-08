@@ -21,15 +21,19 @@ test("모든 재검색 모드는 실제 API 응답의 새 핀으로 교체한다
   }
 });
 
-test("재검색 실패는 이전 결과를 성공으로 바꾸지 않으며 같은 모드도 다시 호출한다", async () => {
-  let count = 0;
+test("검색 성공은 같은 모드에서 캐시하고 실패는 캐시하지 않는다", async () => {
+  const cache = new Map(); let count = 0;
   const fetchImpl = async () => { count++; return { ok: true, json: async () => ({ ...term,
     pins: [{ pin_id: String(count), status: "available", thumbnail_url: "https://i.pinimg.com/new.jpg" }] }) }; };
-  const first = await searches.searchTermMode(term, "drawing", { fetchImpl });
-  const second = await searches.searchTermMode(first, "drawing", { fetchImpl });
-  assert.equal(second.pins[0].pin_id, "2");
-  await assert.rejects(searches.searchTermMode(first, "sketch", { fetchImpl: async () => ({ ok: true,
-    json: async () => ({ ...term, pins: [], reason_codes: ["PIN_SEARCH_UNAVAILABLE"] }) }) }), /기존 이미지/);
+  const first = await searches.searchTermMode(term, "drawing", { fetchImpl, cache });
+  const second = await searches.searchTermMode(first, "drawing", { fetchImpl, cache });
+  assert.equal(second.pins[0].pin_id, "1"); assert.equal(count, 1);
+  let failedCount = 0;
+  const failedFetch = async () => { failedCount++; return { ok: true,
+    json: async () => ({ ...term, pins: [], reason_codes: ["PIN_SEARCH_UNAVAILABLE"] }) }; };
+  await assert.rejects(searches.searchTermMode(first, "sketch", { fetchImpl: failedFetch, cache }), /기존 이미지/);
+  await assert.rejects(searches.searchTermMode(first, "sketch", { fetchImpl: failedFetch, cache }), /기존 이미지/);
+  assert.equal(failedCount, 2);
   assert.equal(first.pins[0].pin_id, "1");
 });
 
