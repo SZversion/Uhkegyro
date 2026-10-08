@@ -7,10 +7,11 @@ import pytest
 from backend.schemas.models import AgentResult, InterpretationOutput
 from backend.services.conversation_context import next_state
 from backend.services.resolver import resolve
-from scripts.run_live_eval import ROOT, assess
+from scripts.run_live_eval import ROOT, assess, question_addresses
 
 
 CASES = [json.loads(line) for line in (ROOT / "evals/dataset.jsonl").read_text(encoding="utf-8").splitlines()]
+AMBIGUITY_CASES = [json.loads(line) for line in (ROOT / "evals/ambiguity.jsonl").read_text(encoding="utf-8").splitlines()]
 
 
 def test_clarification_cannot_overwrite_existing_constraints():
@@ -44,6 +45,16 @@ def test_evaluator_rejects_generic_question_and_checks_final_question(snapshot_f
     assert all(assess(case, submitted, terminal, []).values())
     terminal["result"]["clarifying_question"] = "어떤 정보를 더 알려주시겠어요?"
     assert not assess(case, submitted, terminal, [])["question_domain_cues"]
+
+
+@pytest.mark.parametrize("question", [
+    "어깨가 실제로 넓은 체형인가요?",
+    "어떤 정보를 더 알려주시겠어요?",
+])
+def test_pose_only_quality_contract_rejects_body_or_generic_question(question):
+    case = next(row for row in AMBIGUITY_CASES if row["id"] == "AMB-01")
+
+    assert not question_addresses(case["expected"]["clarifying_question"], question)
 
 
 def test_regression_dataset_has_unique_ids_and_active_expected_terms():

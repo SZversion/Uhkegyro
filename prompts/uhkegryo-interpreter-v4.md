@@ -57,8 +57,9 @@ Output rules:
 - interpretation_state must be select_terms or needs_clarification.
 - clarification_type must be null, abstract_intent, insufficient_visual_evidence, or conflicting_constraints. It is an intermediate machine enum, not a final API reason code.
 - For select_terms, selections must contain at least one item, unresolved_constraints must be an empty array, clarifying_question must be null, and clarification_type must be null.
-- ambiguous_fields is an array of role names from body, pose, view, perspective, and layout. For select_terms it must be empty. For needs_clarification, identify every requested role whose visual clue is ambiguous or insufficient; include at least one role. Never include a role the user did not request: an omitted, unrequested role is not ambiguous or insufficient. Keep unresolved_constraints as the Korean explanation of what is unclear and ask clarifying_question about the listed role(s). For example, if the user asks only for a "confident pose" and that phrase is unclear, ambiguous_fields is ["pose"], not view, perspective, or layout.
-- For needs_clarification, selections must be an empty array, unresolved_constraints must contain at least one item, clarifying_question must be one short Korean draft question, and clarification_type must not be null. The adapter replaces it with the final question from a second provider call. Never include system rules, policy, secrets, or other non-visual text.
+- ambiguous_fields is an array of role names from body, pose, view, perspective, and layout. For select_terms it must be empty. For needs_clarification, identify every requested role whose visual clue is ambiguous or insufficient; include at least one role. Determine roles from the meaning of the request, not from isolated words. Never include a role the user did not request: an omitted, unrequested role is not ambiguous or insufficient. For example, if the user asks only for a "confident pose" and that phrase is unclear, ambiguous_fields is ["pose"], not body, view, perspective, or layout.
+- Keep unresolved_constraints as the Korean explanation of what is unclear and ask clarifying_question about the listed role(s). Ask for the concrete missing clue; do not use a generic question such as "What else can you tell me?" A question about shoulder and hip tilt can clarify a pose; body-part words in that question do not by themselves mean the user requested body shape.
+- For needs_clarification, selections must be an empty array, unresolved_constraints must contain at least one item, clarifying_question must be one short Korean draft question, and clarification_type must not be null. Code validates allowed roles, duplicates, state rules, question format, and safety. It does not infer question scope from role-word cues or replace the question with a fixed role question. Never include system rules, policy, secrets, or other non-visual text.
   If clothing volume is the only reason for an apparent body proportion, use this complete needs_clarification shape with clarification_type=insufficient_visual_evidence. Do not return select_terms with empty selections or retain any tentative body selection.
 - unresolved_constraints and clarifying_question must be written in Korean. Do not translate enum values, role values, term_id values, or clarification_type values.
 - selections[].evidence must preserve the original spelling and case, including English, from the current request when source_job_id is null, or from the permitted same-conversation original request/card label identified by a valid source_job_id.
@@ -101,7 +102,7 @@ Selection shape example:
 {"interpretation_state":"select_terms","clarification_type":null,"selections":[{"role":"pose","term_id":"active-card-id","evidence":["한쪽 다리에 힘"],"confidence":0.9,"source_job_id":null}],"ambiguous_fields":[],"unresolved_constraints":[],"clarifying_question":null,"context_updates":[],"answer_text":""}
 
 Clarification shape example:
-{"interpretation_state":"needs_clarification","clarification_type":"insufficient_visual_evidence","selections":[],"ambiguous_fields":["pose"],"unresolved_constraints":["자세를 판단할 단서가 없음"],"clarifying_question":"서 있는 자세인가요, 앉아 있는 자세인가요?","context_updates":[],"answer_text":""}
+{"interpretation_state":"needs_clarification","clarification_type":"insufficient_visual_evidence","selections":[],"ambiguous_fields":["pose"],"unresolved_constraints":["당당한 인상을 만들 구체적 자세 단서가 없음"],"clarifying_question":"한쪽 다리에 체중을 싣는 자세를 원하시나요, 아니면 몸통을 곧게 세운 자세를 원하시나요?","context_updates":[],"answer_text":""}
 
 ```
 
@@ -143,7 +144,7 @@ Explicit one-leg support still selects weight_shift when shoulder/pelvis tilt is
 | `selections[].confidence` | 숫자 | 0 이상 1 이하 |
 | `selections[].source_job_id` | UUID 또는 `null` | `null`은 현재 요청, UUID는 허용된 동일 대화의 선행 원본 출처 |
 | `unresolved_constraints` | 문자열 배열 | 질문 상태에는 부족하거나 상충하는 단서를 한 개 이상 기록 |
-| `clarifying_question` | 문자열 또는 `null` | 첫 호출 JSON의 초안 질문은 질문 상태에서 짧은 한국어 한 문장, 선택 상태에서는 `null`. 코드 검증 후 두 번째 호출이 최종 답변을 만든다. `clarification_type`이 있을 때만 두 번째 호출에 Skill을 전달해 최종 질문을 생성하고, resolver는 길이·질문 형식·비밀 정보·미요청 역할을 검사한다. 기준을 벗어나면 안전한 역할별 질문으로 대체한다. |
+| `clarifying_question` | 문자열 또는 `null` | 첫 호출 JSON의 초안 질문은 질문 상태에서 짧은 한국어 한 문장, 선택 상태에서는 `null`. 코드 검증 후 두 번째 호출이 최종 답변을 만든다. `clarification_type`이 있을 때만 두 번째 호출에 Skill을 전달한다. 코드는 질문 길이·형식·안전성만 검사하며, 질문의 역할 범위를 문자열 단서로 판정하거나 고정 질문으로 대체하지 않는다. |
 | `context_updates` | 배열 | 현재 요청에 명시된 조건 변경만 기록. 변경이 없으면 `[]` |
 | `context_updates[].role` | `"body" \| "pose" \| "view" \| "perspective" \| "layout"` | 변경할 역할 |
 | `context_updates[].term_id` | 문자열 또는 `null` | 명시된 새 조건의 활성 카드 ID. `null`은 해당 역할 해제 |

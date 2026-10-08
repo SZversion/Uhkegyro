@@ -4,7 +4,7 @@
 상태 간 불변 조건(job 상태별 null 규칙, agent_status별 사유 코드 규칙)을 검증기로 강제한다.
 """
 
-from typing import Annotated, Literal
+from typing import Annotated, ClassVar, Literal
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from backend.schemas.memory import ContextUpdate, MemorySource, NO_RECORDS, TOO_MANY
@@ -340,6 +340,11 @@ class InterpretationOutput(BaseModel):
     context_updates: list[ContextUpdate] = Field(default_factory=list, max_length=5)
     answer_text: Annotated[str, Field(strict=True, max_length=4000)] = ""
 
+    _UNSAFE_CLARIFICATION_CUES: ClassVar[tuple[str, ...]] = (
+        "system prompt", "developer instruction", "api key", "secret", "비밀번호",
+        "시스템 프롬프트", "내부 정책", "개발자 지시", "인증 토큰", "api 키",
+    )
+
     @model_validator(mode="after")
     def _validate_unresolved_constraints(self) -> "InterpretationOutput":
         for constraint in self.unresolved_constraints:
@@ -383,6 +388,13 @@ class InterpretationOutput(BaseModel):
                 raise ValueError("needs_clarification는 clarification_type이 필수다")
             if "ambiguous_fields" in self.model_fields_set and not self.ambiguous_fields:
                 raise ValueError("needs_clarification는 ambiguous_fields가 최소 하나 있어야 한다")
+            if "ambiguous_fields" in self.model_fields_set:
+                question = self.clarifying_question.strip()
+                normalized_question = question.lower()
+                if (len(question) > 250 or "\n" in question
+                        or question.count("?") != 1 or not question.endswith("?")
+                        or any(cue in normalized_question for cue in self._UNSAFE_CLARIFICATION_CUES)):
+                    raise ValueError("clarifying_question은 안전한 한 문장 질문이어야 한다")
         if "ambiguous_fields" in self.model_fields_set and len(self.ambiguous_fields) != len(set(self.ambiguous_fields)):
             raise ValueError("ambiguous_fields는 중복 역할을 허용하지 않는다")
         return self

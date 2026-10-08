@@ -11,9 +11,9 @@ LLM `InterpretationOutput`은 후보일 뿐이며, resolver가 활성 JSON 카�
 - 역할당 최대 1개 후보로 충족(collapse: confidence 최대, 동률은 선발 우선)
 
 `interpretation_state`는 스키마가 `select_terms`/`needs_clarification`으로 강제하며,
-needs_clarification일 때는 `clarification_type`을 `ReasonCode`로 매핑하고, v4의 경우 조건부 Skill 호출로
-생성한 질문이 안전·역할 범위 검사를 통과하면 이를 최종 `agent_status`·사유 코드·질문에 사용한다.
-검사를 통과하지 못하거나 이전 출력에 역할 필드가 없으면 resolver의 기존 고정 질문 경로를 유지한다.
+needs_clarification일 때는 `clarification_type`을 `ReasonCode`로 매핑한다. v4의 경우
+첫 해석 JSON에 포함된 질문을 역할 단어 검색이나 고정 질문 대체 없이 사용한다.
+질문의 형식·안전성은 출력 스키마 경계에서 검증한다.
 SKILL.md 판단 기준의 `confidence_gate`·`requires_all_of`·`requires_any_of` 의미 충족은
 LLM 판단 몫이며 이 모듈은 재판정하지 않는다. 참조 ID의 구조 무결성은 시작 검증에서 방어한다.
 """
@@ -53,56 +53,6 @@ _CLARIFICATION_QUESTIONS: dict[ClarificationType, str] = {
         "서로 다른 조건 중 어떤 조건을 우선할지 알려주세요."
     ),
 }
-_AMBIGUOUS_ROLE_LABELS: dict[Role, str] = {
-    Role.BODY: "체형",
-    Role.POSE: "자세",
-    Role.VIEW: "바라보는 방향",
-    Role.PERSPECTIVE: "원근감",
-    Role.LAYOUT: "화면 안 배치",
-}
-_ROLE_QUESTION_CUES: dict[Role, tuple[str, ...]] = {
-    Role.BODY: ("체형", "비율", "어깨", "골반", "실루엣"),
-    Role.POSE: ("자세", "포즈", "동작", "체중", "지지", "앉", "서 있"),
-    Role.VIEW: ("시점", "방향", "정면", "측면", "옆모습", "각도"),
-    Role.PERSPECTIVE: ("원근", "투시", "가까운", "멀리", "커 보"),
-    Role.LAYOUT: ("배치", "화면", "위치", "구도"),
-}
-_UNSAFE_QUESTION_CUES = (
-    "system prompt", "developer instruction", "api key", "secret", "비밀번호", "시스템 프롬프트",
-    "내부 정책", "개발자 지시", "인증 토큰", "api 키",
-)
-
-
-def _role_clarification_question(
-    kind: ClarificationType, ambiguous_fields: Sequence[Role]
-) -> str:
-    labels = [_AMBIGUOUS_ROLE_LABELS[role] for role in ambiguous_fields]
-    subject = "·".join(labels)
-    if kind is ClarificationType.CONFLICTING_CONSTRAINTS:
-        return f"{subject} 조건 중 어떤 쪽을 우선할까요?"
-    if len(labels) == 1:
-        return {
-            Role.BODY: "원하는 체형 비율을 어떻게 표현하면 될까요?",
-            Role.POSE: "어떤 동작이나 체중 지지 자세를 원하시나요?",
-            Role.VIEW: "캐릭터를 어느 방향에서 보고 싶으신가요?",
-            Role.PERSPECTIVE: "어떤 부분의 원근감을 원하시나요?",
-            Role.LAYOUT: "화면 안에서 캐릭터를 어디에 배치할까요?",
-        }[ambiguous_fields[0]]
-    return f"{subject}에 대해 원하는 모습을 각각 구체적으로 알려주시겠어요?"
-
-
-def _skill_question_is_usable(question: str, ambiguous_fields: Sequence[Role]) -> bool:
-    normalized = question.strip().lower()
-    if (not normalized or len(normalized) > 250 or "\n" in normalized
-            or normalized.count("?") != 1 or not normalized.endswith("?")
-            or any(cue in normalized for cue in _UNSAFE_QUESTION_CUES)):
-        return False
-    return not any(
-        role not in ambiguous_fields and any(cue in normalized for cue in cues)
-        for role, cues in _ROLE_QUESTION_CUES.items()
-    )
-
-
 def clarification_question(kind: ClarificationType, request_text: str) -> str:
     """Select a legacy fixed visual question without model text or interpolated user data."""
     text = normalize_input_text(request_text)
@@ -154,14 +104,7 @@ def resolve(
     if interpretation.interpretation_state is InterpretationState.NEEDS_CLARIFICATION:
         code = _CLARIFICATION_TO_REASON.get(interpretation.clarification_type)
         if "ambiguous_fields" in interpretation.model_fields_set:
-            model_question = interpretation.clarifying_question or ""
-            question = (
-                model_question.strip()
-                if _skill_question_is_usable(model_question, interpretation.ambiguous_fields)
-                else _role_clarification_question(
-                    interpretation.clarification_type, interpretation.ambiguous_fields
-                )
-            )
+            question = interpretation.clarifying_question.strip()
         else:
             question = clarification_question(interpretation.clarification_type, request_text)
         return ResolutionResult(
