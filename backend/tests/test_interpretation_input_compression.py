@@ -68,6 +68,10 @@ def test_every_role_definition_preserves_all_original_constraints(catalog):
     # Non-slot properties and their state/length constraints are unchanged.
     for key, value in original["properties"].items():
         if key not in TYPES:
+            if key == "ambiguous_fields":
+                # This fixture uses the legacy non-v4 provider contract.
+                assert key not in schema["properties"]
+                continue
             assert schema["properties"][key] == value
 
 
@@ -120,7 +124,14 @@ def test_context_and_repair_preserve_verbatim_values(version):
     context = {"constraints": {"pose": '  Low Angle 한글 "원문"\n다음 줄  '},
                "recent": [], "sources": []}
     feedback = [{"path": ["selections", 0, "evidence"], "code": "string_too_short"}]
-    completions = _FakeCompletions(responses=[_FakeResponse(SELECT_JSON)])
+    output = json.loads(SELECT_JSON)
+    if version == "uhkegryo-interpreter-v4":
+        output.update(ambiguous_fields=[], context_updates=[], answer_text="")
+        output["selections"][0]["source_job_id"] = None
+    responses = [_FakeResponse(json.dumps(output, ensure_ascii=False))]
+    if version == "uhkegryo-interpreter-v4":
+        responses.append(_FakeResponse("반동이 있는 포즈예요. 참고 이미지에서는 몸통의 움직임을 확인해 보세요."))
+    completions = _FakeCompletions(responses=responses)
     adapter = _adapter(completions, settings=_real_settings().model_copy(update={
         "interpreter_prompt_version": version}))
     asyncio.run(adapter.interpret("반동", job_id="j", session_id="s", attempt=2,
@@ -133,3 +144,7 @@ def test_context_and_repair_preserve_verbatim_values(version):
         repair = json.loads(messages[-1]["content"])
         assert repair["validation_feedback"] == feedback
         assert messages[-1]["content"] == json.dumps(repair, ensure_ascii=False, separators=(",", ":"))
+    if version == "uhkegryo-interpreter-v4":
+        assert len(completions.calls) == 2
+        second_input = json.loads(completions.calls[1]["messages"][1]["content"])
+        assert second_input["session_context"] == context

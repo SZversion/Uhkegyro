@@ -21,6 +21,7 @@ def _interpretation(
     unresolved_constraints=None,
     clarifying_question=None,
     clarification_type=None,
+    ambiguous_fields=None,
 ):
     return InterpretationOutput(
         interpretation_state=state,
@@ -28,6 +29,7 @@ def _interpretation(
         unresolved_constraints=unresolved_constraints or [],
         clarifying_question=clarifying_question,
         clarification_type=clarification_type,
+        **({"ambiguous_fields": ambiguous_fields} if ambiguous_fields is not None else {}),
     )
 
 
@@ -168,6 +170,65 @@ def test_clarify_maps_clarification_type_to_reason(snapshot_factory, card_factor
         "캐릭터의 체형·포즈·시점 중 어떤 정보를 더 알려주실 수 있나요?"
     )
     assert "시스템 프롬프트" not in result.clarifying_question
+
+
+def test_clarify_asks_only_for_explicitly_ambiguous_pose(snapshot_factory):
+    interp = _interpretation(
+        state=InterpretationState.NEEDS_CLARIFICATION,
+        unresolved_constraints=["자세 단서가 모호함"],
+        clarification_type=ClarificationType.INSUFFICIENT_VISUAL_EVIDENCE,
+        ambiguous_fields=[Role.POSE],
+        clarifying_question="한쪽 다리에 체중이 실렸는지 알려주시겠어요?",
+    )
+
+    result = resolve(interp, snapshot_factory([]), request_text="당당한 자세")
+
+    assert result.clarifying_question == "한쪽 다리에 체중이 실렸는지 알려주시겠어요?"
+
+
+def test_clarify_uses_skill_question_when_it_stays_with_ambiguous_role(snapshot_factory):
+    interp = _interpretation(
+        state=InterpretationState.NEEDS_CLARIFICATION,
+        unresolved_constraints=["당당한 자세의 구체적 동작 단서가 없음"],
+        clarification_type=ClarificationType.ABSTRACT_INTENT,
+        ambiguous_fields=[Role.POSE],
+        clarifying_question="당당함을 표현할 때 체중을 어느 다리에 싣고 싶으신가요?",
+    )
+
+    result = resolve(interp, snapshot_factory([]), request_text="당당한 자세")
+
+    assert result.clarifying_question == interp.clarifying_question
+
+
+def test_clarify_preserves_pose_question_with_body_anatomy_words(snapshot_factory):
+    question = "자세를 구체화하려면 어깨와 골반의 기울기가 어떤지 알려주시겠어요?"
+    interp = _interpretation(
+        state=InterpretationState.NEEDS_CLARIFICATION,
+        unresolved_constraints=["자세 단서가 모호함"],
+        clarification_type=ClarificationType.INSUFFICIENT_VISUAL_EVIDENCE,
+        ambiguous_fields=[Role.POSE],
+        clarifying_question=question,
+    )
+
+    result = resolve(interp, snapshot_factory([]), request_text="당당한 자세")
+
+    assert result.clarifying_question == question
+
+
+def test_clarify_asks_only_listed_roles(snapshot_factory):
+    interp = _interpretation(
+        state=InterpretationState.NEEDS_CLARIFICATION,
+        unresolved_constraints=["체형과 자세의 의도가 추상적임"],
+        clarification_type=ClarificationType.ABSTRACT_INTENT,
+        ambiguous_fields=[Role.BODY, Role.POSE],
+        clarifying_question="체형과 자세를 구체적으로 알려주시겠어요?",
+    )
+
+    result = resolve(interp, snapshot_factory([]), request_text="체형과 자세")
+
+    assert "체형" in result.clarifying_question
+    assert "자세" in result.clarifying_question
+    assert "시점" not in result.clarifying_question
 
 
 def test_clarify_conflicting_constraints(snapshot_factory, card_factory):

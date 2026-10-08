@@ -11,8 +11,9 @@ LLM `InterpretationOutput`은 후보일 뿐이며, resolver가 활성 JSON 카�
 - 역할당 최대 1개 후보로 충족(collapse: confidence 최대, 동률은 선발 우선)
 
 `interpretation_state`는 스키마가 `select_terms`/`needs_clarification`으로 강제하며,
-needs_clarification일 때는 `clarification_type`을 `ReasonCode`와 서버 고정 질문으로 직접 매핑해
-최종 `agent_status`·사유 코드·질문을 만든다 (LLM은 reason_codes나 사용자용 질문을 만들지 않는다).
+needs_clarification일 때는 `clarification_type`을 `ReasonCode`로 매핑한다. v4의 경우
+첫 해석 JSON에 포함된 질문을 역할 단어 검색이나 고정 질문 대체 없이 사용한다.
+질문의 형식·안전성은 출력 스키마 경계에서 검증한다.
 SKILL.md 판단 기준의 `confidence_gate`·`requires_all_of`·`requires_any_of` 의미 충족은
 LLM 판단 몫이며 이 모듈은 재판정하지 않는다. 참조 ID의 구조 무결성은 시작 검증에서 방어한다.
 """
@@ -52,10 +53,8 @@ _CLARIFICATION_QUESTIONS: dict[ClarificationType, str] = {
         "서로 다른 조건 중 어떤 조건을 우선할지 알려주세요."
     ),
 }
-
-
 def clarification_question(kind: ClarificationType, request_text: str) -> str:
-    """Select fixed visual questions without model text or interpolated user data."""
+    """Select a legacy fixed visual question without model text or interpolated user data."""
     text = normalize_input_text(request_text)
     if kind is ClarificationType.INSUFFICIENT_VISUAL_EVIDENCE:
         if "어깨" in text and any(word in text for word in ("소매", "망토", "패딩", "의상", "옷")):
@@ -104,10 +103,14 @@ def resolve(
     """LLM 해석 후보를 카탈로그와 대조해 결정론 검증하고 조정 계층에 넘길 결과를 만든다."""
     if interpretation.interpretation_state is InterpretationState.NEEDS_CLARIFICATION:
         code = _CLARIFICATION_TO_REASON.get(interpretation.clarification_type)
+        if "ambiguous_fields" in interpretation.model_fields_set:
+            question = interpretation.clarifying_question.strip()
+        else:
+            question = clarification_question(interpretation.clarification_type, request_text)
         return ResolutionResult(
             status=STATUS_CLARIFY,
             reason_codes=[code or ReasonCode.INSUFFICIENT_VISUAL_EVIDENCE],
-            clarifying_question=clarification_question(interpretation.clarification_type, request_text),
+            clarifying_question=question,
         )
 
     normalized_request = normalize_input_text(request_text)

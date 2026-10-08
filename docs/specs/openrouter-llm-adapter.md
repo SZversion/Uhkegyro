@@ -36,6 +36,7 @@ adapter 입력은 사용자 원문과 활성 TERM_CARD 후보 경계다. 현재 
 - resolver가 adapter 출력을 JSON 카탈로그와 대조해 활성 term·역할·조건을 검증한다.
 - [v1 출력 구조 전달](./interpreter-json-shape.md)은 해석 프롬프트와 출력 Skill을 결합한다. 활성화 시 Prompt 경로와 버전을 함께 v1으로 지정하며 v0의 프롬프트·JSON mode는 유지한다.
 - [출력 Skill](./structured-output-skill.md)은 v1 해석 프롬프트 뒤에 출력 규칙을 한 번 결합한다. v1 해석 호출에만 코드 유래 `json_schema`와 `provider.require_parameters=true`를 전달하며, [검증 피드백](./llm-validation-feedback.md)은 기존 Job attempt 사이의 안전한 오류 위치·코드와 원문 없는 실패 generation을 정의한다.
+- v4는 attempt마다 provider를 정확히 두 번 호출한다. 첫 호출은 `skills/SKILL.md` 전체를 system message에 주입해 `answer_text`가 빈 해석 JSON만 생성하고, adapter가 코드를 통해 구조를 검증한다. provider schema·프롬프트·Pydantic 계약은 `selections`와 `context_updates` 배열 shape를 유지하고 `ambiguous_fields`를 포함한다. 두 번째 호출은 원문·검증된 전체 JSON·있다면 서버 제공 대화 맥락으로 최종 응답만 생성한다. `clarification_type`이 있을 때만 코드가 `CLARIFICATION_SKILL_PATH`를 읽어 두 번째 호출에 포함하며, 일반 답변에는 질문 Skill을 읽거나 포함하지 않는다. 첫 JSON 검증 실패 시 두 번째 호출은 하지 않고 기존 worker retry 정책에 맡긴다.
 
 ## AC
 
@@ -47,6 +48,8 @@ adapter 입력은 사용자 원문과 활성 TERM_CARD 후보 경계다. 현재 
 - GIVEN: OpenRouter가 이미 지난 HTTP-date `Retry-After`를 반환, WHEN: adapter가 delay를 변환, THEN: `retry_after_ms=null`을 worker에 전달해 attempt 기본 backoff를 사용하게 한다.
 - GIVEN: LLM 호출이 timeout, 429, HTTP 5xx, 미완료 응답 또는 Pydantic 검증 실패로 끝남, WHEN: adapter가 예외를 worker에 전달, THEN: 각각 `timeout`, `rate_limited`, `upstream_5xx`, `incomplete_or_unclassified_upstream`, `pydantic_validation_error`를 제공한다.
 - GIVEN: 정상 구조화 출력, WHEN: resolver가 처리, THEN: adapter는 최종 상태나 검색 URL을 결정하지 않는다.
+- GIVEN: 유효한 v4 `select_terms` JSON, WHEN: adapter가 응답을 생성, THEN: 첫 호출에 `skills/SKILL.md`를 주입하고, 두 번째는 질문 Skill 없이 대화 맥락과 일반 답변 지침을 전달해 총 2회 호출한다.
+- GIVEN: 유효한 v4 `needs_clarification` JSON, WHEN: adapter가 응답을 생성, THEN: 첫 호출에 `skills/SKILL.md`를 주입하고, 두 번째는 대화 맥락과 `clarification-response` Skill을 전달해 총 2회 호출한다.
 
 ## 대화 기억 변경
 

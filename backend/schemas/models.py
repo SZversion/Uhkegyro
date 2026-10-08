@@ -4,7 +4,7 @@
 상태 간 불변 조건(job 상태별 null 규칙, agent_status별 사유 코드 규칙)을 검증기로 강제한다.
 """
 
-from typing import Annotated, Literal
+from typing import Annotated, ClassVar, Literal
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from backend.schemas.memory import ContextUpdate, MemorySource, NO_RECORDS, TOO_MANY
@@ -333,11 +333,17 @@ class InterpretationOutput(BaseModel):
 
     interpretation_state: InterpretationState
     selections: list[InterpretationSelection] = Field(default_factory=list)
+    ambiguous_fields: list[Role] = Field(default_factory=list)
     unresolved_constraints: list[str] = Field(default_factory=list)
     clarifying_question: str | None = None
     clarification_type: ClarificationType | None = None
     context_updates: list[ContextUpdate] = Field(default_factory=list, max_length=5)
     answer_text: Annotated[str, Field(strict=True, max_length=4000)] = ""
+
+    _UNSAFE_CLARIFICATION_CUES: ClassVar[tuple[str, ...]] = (
+        "system prompt", "developer instruction", "api key", "secret", "비밀번호",
+        "시스템 프롬프트", "내부 정책", "개발자 지시", "인증 토큰", "api 키",
+    )
 
     @model_validator(mode="after")
     def _validate_unresolved_constraints(self) -> "InterpretationOutput":
@@ -369,6 +375,8 @@ class InterpretationOutput(BaseModel):
                 raise ValueError("select_terms는 clarifying_question=null이어야 한다")
             if self.clarification_type is not None:
                 raise ValueError("select_terms는 clarification_type=null이어야 한다")
+            if "ambiguous_fields" in self.model_fields_set and self.ambiguous_fields:
+                raise ValueError("select_terms는 ambiguous_fields=[]이어야 한다")
         elif self.interpretation_state is InterpretationState.NEEDS_CLARIFICATION:
             if self.selections:
                 raise ValueError("needs_clarification는 selections=[]이어야 한다")
@@ -378,4 +386,15 @@ class InterpretationOutput(BaseModel):
                 raise ValueError("needs_clarification는 비어 있지 않은 clarifying_question이 필수다")
             if self.clarification_type is None:
                 raise ValueError("needs_clarification는 clarification_type이 필수다")
+            if "ambiguous_fields" in self.model_fields_set and not self.ambiguous_fields:
+                raise ValueError("needs_clarification는 ambiguous_fields가 최소 하나 있어야 한다")
+            if "ambiguous_fields" in self.model_fields_set:
+                question = self.clarifying_question.strip()
+                normalized_question = question.lower()
+                if (len(question) > 250 or "\n" in question
+                        or question.count("?") != 1 or not question.endswith("?")
+                        or any(cue in normalized_question for cue in self._UNSAFE_CLARIFICATION_CUES)):
+                    raise ValueError("clarifying_question은 안전한 한 문장 질문이어야 한다")
+        if "ambiguous_fields" in self.model_fields_set and len(self.ambiguous_fields) != len(set(self.ambiguous_fields)):
+            raise ValueError("ambiguous_fields는 중복 역할을 허용하지 않는다")
         return self

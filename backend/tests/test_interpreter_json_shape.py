@@ -28,7 +28,7 @@ def test_loaded_system_contains_complete_selection_shape_and_valid_examples():
     examples = [json.loads(line) for line in system.splitlines() if line.startswith('{"interpretation_state"')]
     assert len(examples) == 2
     selected, clarification = [InterpretationOutput.model_validate(item) for item in examples]
-    top_fields = set(InterpretationOutput.model_fields)
+    top_fields = set(InterpretationOutput.model_fields) - {"ambiguous_fields"}
     selection_fields = set(InterpretationSelection.model_fields)
     assert len(top_fields) == 7
     assert "Include every field" in system
