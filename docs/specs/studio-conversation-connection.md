@@ -7,7 +7,7 @@
 검증된 일반 해석의 통합 답변을 저장·반환하고 쿠키 소유자의 최근 활동 대화 전체 이력을 복원한다. 새 요청은 복원한 session_id를 명시한다. DB migration, 대화 선택/삭제 UI, 운영 배포, 검색 공급자 변경, 실시간 모델 품질 평가는 제외한다.
 
 ## What
-실제 모드 진입 시 대화 목록의 첫 항목(최근 활동 순)을 열고 이력을 시간순으로 페이지 조회한다. 유효 쿠키가 없거나 미만료 대화가 없으면 빈 화면에서 시작한다. 첫 전송 시 대화를 생성한다. 복원 실패는 안내와 재시도 버튼을 표시하며 복원 전 전송을 차단한다. 다른 대화로 자동 전환하지 않는다.
+실제 모드 진입 시 세션 bootstrap 한 번으로 생성 시각 최신 세션과 최신 Job을 복원한다. 과거 Job은 사용자가 요청할 때 페이지 조회하며 다른 세션은 선택했을 때 이력을 조회한다. 유효 쿠키가 없거나 미만료 대화가 없으면 빈 화면에서 시작한다. 첫 전송 시 대화를 생성한다. 복원 실패는 안내와 재시도 버튼을 표시하며 복원 전 전송을 차단한다. 다른 대화로 자동 전환하지 않는다.
 
 완료·실패·확인 질문·회상은 기존 상태별 표시를 유지한다. 복원된 모든 진행 중 job의 polling을 재개하고 job_id로 turn을 갱신한다. polling 실패는 해당 turn에 중단 안내를 남긴다. 홈 검색·카테고리 변경은 대화에 영향을 주지 않는다. 실제 기록은 localStorage에 저장하지 않으며 더미 모드는 기존 동작을 유지한다.
 
@@ -19,7 +19,7 @@
 - 활성 카드 입력에는 plain_meaning_ko와 reference_checkpoints_ko를 추가한다. 팀 피드백을 우선하고 없으면 source_answer_draft/look_for를 사용한다. 검색어·URL·Pin은 모델 입력에 추가하지 않는다.
 - resolver 검증 후 success/partial_result 조립에만 answer_text를 전달한다. 확인 질문·안전/범위 거절에는 모델 답변을 노출하지 않는다. 원래 job 완료 transaction이 결과를 저장한다. 회상 필드는 별도로 유지한다.
 - v4 통합 답변은 쉬운 뜻·입력 근거·카드 관찰 지점을 짧게 안내하며 내부 ID와 선택 알고리즘 설명을 생략한다. 확인 질문은 기존 대화 조건을 변경하지 않는다. 상세 검증은 ambiguity-answer-quality.md를 따른다.
-- GET /api/sessions?limit=1 → GET /api/sessions/{id} → GET /api/sessions/{id}/jobs?limit=100&offset=N. 100건 미만까지 이어 조회하고 job_id로 중복 제거한다. 마지막 job은 GET /api/jobs/{id}로 읽어 응답 전용 이미지도 복원한다.
+- 초기 복원은 GET /api/sessions/bootstrap?limit=100 한 번으로 세션 목록과 최신 세션의 최신 Job을 가져온다. 해당 세션에 과거 Job이 있으면 사용자가 요청할 때 GET /api/sessions/{id}/jobs?limit=100&offset=N으로 이력을 페이지 조회한다. 다른 세션은 선택 시 같은 이력 API를 사용한다. 각 이력 페이지는 소유권 확인과 Job 조회를 한 서버 쿼리로 처리하고 완료 Job의 widget 정보를 페이지 단위로 응답에 보강하므로 Job별 GET /api/jobs/{id} 재조회는 하지 않는다. 개별 기록 열기 동작은 선택 Job의 GET /api/jobs/{id} 재조회를 유지한다.
 - 401 목록 응답만 미인증 빈 대화로 취급한다. 이후 401/404, 네트워크·잘못된 payload는 복원 실패다. unmount/Strict Mode 재실행 시 AbortController로 이전 결과 적용·요청을 취소한다.
 - POST /api/sessions 201로 새 ID 확보 후 POST /api/agent에 request_text와 session_id만 전송한다. 같은 origin, credentials include, no-store 조회를 사용한다. 클라이언트 맥락/요약은 보내지 않는다.
 - 진행 turn 전체에 기존 createJobPoller를 사용한다. 실제 진행 turn이 있으면 추가 전송·기록 열기를 막는다. 종결된 turn은 검색 기록에도 반영한다. 답변은 React plain text로 렌더링한다.

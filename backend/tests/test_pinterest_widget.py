@@ -9,7 +9,9 @@ from backend.routes import agent as agent_route
 from backend.schemas.enums import AgentStatus, JobStatus, PinStatus, Role
 from backend.schemas.models import AgentResult, JobEnvelope, PinResult, ReferencePlan, TermResult
 from backend.services.job_repository import _dump
-from backend.services.pinterest_widget import PinterestWidgetClient, PinterestWidgetProvider, WIDGET_URL
+from backend.services.pinterest_widget import (PinterestWidgetClient, PinterestWidgetProvider,
+                                                WIDGET_URL, close_shared_widget_client,
+                                                get_shared_widget_client)
 from backend.services.pinterest_provider import FakePinterestProvider
 from backend.services.searxng_pinterest_search import SearXNGPinterestSearchProvider
 from backend.services.response_assembler import RoleSearchOutcome
@@ -24,6 +26,21 @@ def _pin(pin_id: str) -> PinResult:
 def _payload(pin_id: str, images: dict) -> dict:
     return {"data": [{"id": pin_id, "images": images, "description": "private body",
                       "pinner": {"name": "private author"}}]}
+
+
+def test_shared_widget_client_reuses_and_closes_its_http_pool():
+    async def case():
+        first = get_shared_widget_client()
+        transport = first._http_client
+        assert first is get_shared_widget_client()
+        assert transport is not None and not transport.is_closed
+        await close_shared_widget_client()
+        assert transport.is_closed
+        second = get_shared_widget_client()
+        assert second is not first
+        await close_shared_widget_client()
+
+    asyncio.run(case())
 
 
 def test_widget_selects_largest_image_and_preserves_order_and_limit():

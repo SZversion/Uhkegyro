@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from backend.schemas.enums import FailureCode, ReasonCode, Role
 from backend.schemas.models import TermResult
 from backend.services.failure_mapping import OperationalFailure
-from backend.services.pinterest_widget import PinterestWidgetClient, PinterestWidgetProvider
+from backend.services.pinterest_widget import PinterestWidgetProvider, get_shared_widget_client
 from backend.services.response_assembler import RoleSearchOutcome
 from backend.services.search_url_builder import build_search_url
 from backend.services.searxng_pinterest_search import SearXNGPinterestSearchProvider
@@ -28,7 +28,7 @@ class TermSearchRequest(BaseModel):
 def get_search_provider(suffix: str) -> PinterestWidgetProvider:
     return PinterestWidgetProvider(
         SearXNGPinterestSearchProvider(base_url=get_settings().searxng_base_url, suffix=suffix),
-        PinterestWidgetClient(),
+        get_shared_widget_client(),
     )
 
 

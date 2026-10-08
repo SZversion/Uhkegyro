@@ -32,7 +32,7 @@ from backend.services.job_repository import (
 from backend.services.job_repository import JobRepository
 from backend.services.session_repository import SessionRepository
 from backend.services.failure_mapping import DATABASE_ERRORS, FAILURE_MESSAGE, classify_failure
-from backend.services.pinterest_widget import PinterestWidgetClient
+from backend.services.pinterest_widget import PinterestWidgetClient, get_shared_widget_client
 from backend.services.job_trace import JobTracer
 
 router = APIRouter(tags=["agent"])
@@ -55,7 +55,7 @@ def close_result_tracer() -> None:
 
 
 def get_widget_client() -> PinterestWidgetClient:
-    return PinterestWidgetClient()
+    return get_shared_widget_client()
 
 
 async def get_repositories() -> tuple[SessionRepository, JobRepository]:
@@ -315,6 +315,37 @@ async def create_conversation(request: Request, response: Response):
     return await _database_call(sessions.get_session(token, session_id))
 
 
+@router.get("/api/sessions/bootstrap")
+async def bootstrap_conversations(request: Request, response: Response,
+                                  limit: int = Query(100, ge=1, le=100)):
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not token:
+        raise ApiContractError(ApiErrorCode.SESSION_REQUIRED)
+    sessions, _ = await _database_call(get_repositories())
+    state = await _database_call(sessions.bootstrap(token, limit))
+    if not state["owner_exists"]:
+        raise ApiContractError(ApiErrorCode.SESSION_REQUIRED)
+    set_session_cookie(response, token, get_settings())
+    latest = state["latest_job"]
+    if latest is not None:
+        envelope_fields = JobEnvelope.model_fields
+        envelope = JobEnvelope.model_validate({key: value for key, value in latest.items()
+                                               if key in envelope_fields})
+        if envelope.job_status.value == "completed":
+            envelope = await get_widget_client().enrich_job(envelope)
+        latest = {
+            **envelope.model_dump(mode="json"),
+            "request_text": latest["request_text"],
+            "created_at": latest["created_at"],
+        }
+    return {
+        "items": state["items"],
+        "session_id": state["session_id"],
+        "latest_job": latest,
+        "has_older_jobs": state["has_older_jobs"],
+    }
+
+
 @router.get("/api/sessions")
 async def list_conversations(request: Request, response: Response,
                              limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0)):
@@ -336,10 +367,23 @@ async def open_conversation(session_id: uuid.UUID, request: Request, response: R
 @router.get("/api/sessions/{session_id}/jobs")
 async def conversation_history(session_id: uuid.UUID, request: Request, response: Response,
                                limit: int = Query(20, ge=1, le=100), offset: int = Query(0, ge=0)):
-    sessions, jobs = await _database_call(get_repositories())
-    token = await _owner(request, response, sessions)
+    token = request.cookies.get(SESSION_COOKIE_NAME)
+    if not token:
+        raise ApiContractError(ApiErrorCode.SESSION_REQUIRED)
+    _, jobs = await _database_call(get_repositories())
     try:
-        await _database_call(sessions.get_session(token, str(session_id)))
-        return {"items": await _database_call(jobs.history(str(session_id), limit, offset))}
+        items = await _database_call(jobs.history_for_owner(token, str(session_id), limit, offset))
     except JobNotFound:
         raise ApiContractError(ApiErrorCode.SESSION_NOT_FOUND, token) from None
+    set_session_cookie(response, token, get_settings())
+    envelope_fields = JobEnvelope.model_fields
+    envelopes = [JobEnvelope.model_validate({key: value for key, value in item.items()
+                                             if key in envelope_fields}) for item in items]
+    enriched = envelopes
+    if any(job.job_status.value == "completed" for job in envelopes):
+        enriched = await get_widget_client().enrich_jobs(envelopes)
+    return {"items": [
+        {**job.model_dump(mode="json"), "request_text": item["request_text"],
+         "created_at": item["created_at"]}
+        for job, item in zip(enriched, items)
+    ]}

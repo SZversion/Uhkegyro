@@ -9,11 +9,12 @@
 anonymous_owners(owner_id UUID, session_token_hash UNIQUE, default_session_id nullable FK SET NULL)를 추가한다. 기존 sessions의 UUID/hash를 owner로 이관하고 sessions.owner_id FK를 추가한다. 기존 jobs/session UUID는 보존한다. 원문 token은 저장하지 않는다.
 expires_at은 last_activity_at + interval '3 months'이며 now() >= expires_at이면 만료다. 만료 확인 전에 touch하지 않는다. 쿠키 Max-Age도 UTC 달력의 3개월을 월말 보정해 계산한다.
 POST /api/sessions는 201과 session_id/created_at/last_activity_at/expires_at을 반환한다. 첫 대화가 기본 대화다.
-GET /api/sessions는 limit(1..100, 기본20), offset(기본0)으로 최근 활동 역순 목록 items를 반환한다.
-GET /api/sessions/{id}는 열람 갱신 후 대화 메타데이터를 반환한다.
-GET /api/sessions/{id}/jobs는 limit/offset으로 (created_at,job_id) 오름차순 items(request_text,created_at,job envelope)를 반환한다.
+GET /api/sessions는 limit(1..100, 기본20), offset(기본0)으로 최근 활동 역순 목록 items를 반환한다. UI 세션 목록은 생성 시각 내림차순으로 정렬해 세션을 열거나 메시지를 보내도 순서를 바꾸지 않는다.
+GET /api/sessions/bootstrap?limit=100은 유효한 쿠키 소유자의 생성 시각 내림차순 세션 목록, 최신 세션 ID, 해당 세션의 최신 Job 및 과거 Job 존재 여부를 한 DB 문장으로 반환한다. 소유자 없음/만료 세션만 있음은 기존 조회 오류 계약을 따르고, 세션이 없는 유효 소유자는 빈 목록과 null session_id를 받는다.
+GET /api/sessions/{id}는 열람 갱신 후 대화 메타데이터를 반환한다. UI 초기 복원 및 세션 이력 복원은 이 endpoint를 별도로 호출하지 않는다.
+GET /api/sessions/{id}/jobs는 limit/offset으로 (created_at,job_id) 오름차순 items(request_text,created_at,job envelope)를 반환하며 소유권 확인과 페이지 조회를 한 SQL 문장으로 수행한다. 완료 Job의 widget 정보는 페이지 단위로 응답에 보강한다.
 POST /api/agent는 request_text와 선택적 UUID session_id만 허용한다. 명시한 ID 실패 시 기본 대화로 fallback하지 않는다. 신규 소유자·기본 대화·job은 같은 transaction에서 생성한다. 기존 소유자의 동시 기본 대화 생성은 owner lock으로 직렬화한다. 동일 대화 idempotency 10분 규칙은 유지한다.
-GET /api/jobs/{id}는 owner→미만료 session→job으로 검사한다. 쿠키 갱신은 DB 대화 touch와 분리한다.
+GET /api/jobs/{id}는 owner→미만료 session→job으로 검사한다. 쿠키 갱신은 DB 대화 touch와 분리한다. 이 endpoint는 개별 기록을 열 때 사용하며 이력 페이지 복원 시 Job별로 호출하지 않는다.
 migration은 자동 운영 적용하지 않는다. 로컬 격리 테스트 DB에서만 적용한다.
 ## AC
 - Given 기존 cookie와 job, When migration, Then 동일 cookie/UUID로 조회 가능하다.

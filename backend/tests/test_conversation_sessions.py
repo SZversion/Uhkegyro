@@ -109,6 +109,10 @@ def test_conversation_api_and_legacy_default(monkeypatch):
                 assert job["session_id"] == (selected or a)
             rows = (await client.get("/api/sessions")).json()["items"]
             assert len(rows) == 2
+            bootstrap = (await client.get("/api/sessions/bootstrap?limit=100")).json()
+            assert [row["session_id"] for row in bootstrap["items"]][0] == bootstrap["session_id"]
+            assert bootstrap["latest_job"]["session_id"] == bootstrap["session_id"]
+            assert bootstrap["has_older_jobs"] is False
             history = (await client.get(f"/api/sessions/{b}/jobs")).json()["items"]
             assert history[0]["request_text"] == "서 있는 자세"
             before = await pool.fetchval("SELECT last_activity_at FROM sessions WHERE session_id=$1", uuid.UUID(b))

@@ -245,6 +245,7 @@ frontend 개발 서버도 해당 PowerShell 창에서 `Ctrl+C`로 중지합니�
 | [경쟁 서비스 분석](./docs/domains/illustration-reference/competitive-analysis.md) | 실제 시작 흐름 비교, 차별점과 조사 한계 |
 | [설계 문서](./docs/domains/illustration-reference/design.md) | LLM·결정론 코드·MCP의 책임 분리와 폴백 설계 |
 | [API 계약](./docs/specs/api-contract.md) | `POST /api/agent`, 비동기 job 상태, 완료 결과, worker 실패·재시도 및 LLM JSON 계약 |
+| [세션 복원 레이턴시 개선](./docs/specs/session-restore-latency.md) | 초기 세션 bootstrap, 지연 이력 복원, 묶음 조회 및 Pinterest HTTP 연결 재사용 |
 | [로컬 개발 재현](./docs/specs/local-development-reproduction.md) | clone 뒤 API·migration·frontend를 현재 구현 범위까지 시작하는 절차 |
 | [로컬 Langfuse Compose](./docs/specs/local-langfuse-compose.md) | 로컬 Langfuse와 필수 저장 서비스 구성 |
 | [로컬 SearXNG Compose](./docs/specs/local-searxng-compose.md) | 로컬 SearXNG 서비스·JSON API 설정 |
@@ -288,4 +289,4 @@ git push -u origin feat/<작업내용>
 
 ## 대화 기억 변경
 
-대화 기억 백엔드: 익명 쿠키 소유자와 여러 대화를 분리하고, /api/sessions 생성·목록·열람·이력 조회를 제공한다. /api/agent는 선택적 session_id를 받는다. 최근 6개 기록·현재 조건·요약을 전달하고 과거 기록 기반 회상 답변에 원본 job 출처를 붙인다. 적용 전 003_conversation_owners.sql migration이 필요하며 startup에서 자동 적용하지 않는다. 운영 적용·실제 모델 품질 평가는 별도이고 UI는 이번 범위에 포함하지 않는다.
+대화 기억 백엔드: 익명 쿠키 소유자와 여러 대화를 분리하고, `/api/sessions/bootstrap` 한 번으로 세션 목록·최신 세션의 최신 Job을 초기 복원한다. 과거 대화는 세션 이력 API를 페이지 단위로 요청하며 각 페이지에서 소유권 확인·Job 조회를 묶어 처리하고 Pin 미리보기를 응답에 보강한다. 세션 사이드바는 생성 시각 최신순으로 유지된다. Pinterest widget 요청은 앱 프로세스의 공유 HTTP 연결 풀을 재사용한다. `/api/agent`는 선택적 `session_id`를 받는다. 최근 6개 기록·현재 조건·요약을 전달하고 과거 기록 기반 회상 답변에 원본 job 출처를 붙인다. 적용 전 003_conversation_owners.sql migration이 필요하며 startup에서 자동 적용하지 않는다.
