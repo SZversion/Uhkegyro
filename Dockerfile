@@ -12,7 +12,9 @@ COPY docs/domains/illustration-reference/term-cards/ ./term-cards/
 COPY prompts/uhkegryo-interpreter-v0.md /app/prompts/uhkegryo-interpreter-v0.md
 COPY prompts/uhkegryo-interpreter-v1.md /app/prompts/uhkegryo-interpreter-v1.md
 COPY prompts/uhkegryo-interpreter-v4.md /app/prompts/uhkegryo-interpreter-v4.md
+COPY skills/SKILL.md /app/skills/SKILL.md
 COPY skills/structured-output/SKILL.md /app/skills/structured-output/SKILL.md
+COPY skills/clarification-response/SKILL.md /app/skills/clarification-response/SKILL.md
 
 EXPOSE 8000
 CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
