@@ -30,9 +30,7 @@
 - v4는 기존 JSON mode를 유지하며 validation_feedback를 다음 attempt의 user 메시지로 전달한다. 고정 system 규칙은 role_duplicate/state_rules 처리 방법을 설명한다. v0-v3의 해석 호출 형식·피드백 전달 정책은 유지한다.
 - v4 다음 attempt의 user 메시지에는 서버 고정 repair_rules도 포함해 앉기+가까운 손의 역할 분리, 복합 동작 흐름의 단일 포즈와 상충 조건 질문을 교정한다. 모델 원문을 재주입하지 않는다.
 - v4 첫 호출은 `skills/SKILL.md` 전체와 해석 프롬프트를 system message에 결합한다. JSON의 `answer_text`는 모든 상태에서 비어 있다. 코드가 JSON/schema를 검증한 뒤 두 번째 호출에서 최종 응답을 생성하며, `clarification_type`이 있으면 이때만 코드가 `skills/clarification-response/SKILL.md`를 주입한다. provider JSON Schema, 프롬프트 예시, Pydantic 검증은 기존 `selections`·`context_updates` 배열 형식을 유지하고 `ambiguous_fields`를 추가한 동일 계약을 사용한다. 활성 term ID는 resolver가 검증한다.
-- Skill은 `abstract_intent`, `insufficient_visual_evidence`, `conflicting_constraints`별 질문 원칙을 정의한다. 질문은 `ambiguous_fields`에 든 역할만 다루며, 짧은 한국어 질문 하나로 작성한다. 너무 길거나 여러 질문이거나 내부 정보 노출 또는 미요청 역할 언급이 감지되면 해당 모호 역할만 묻는 서버 질문으로 대체한다. 이전 prompt version은 기존 동작을 유지한다.
-- v4 첫 호출은 `skills/SKILL.md` 전체와 해석 프롬프트를 system message에 결합해 `answer_text=""`인 해석 JSON만 생성한다. provider JSON Schema, 프롬프트 예시, Pydantic 검증은 기존 `selections`·`context_updates` 배열 형식을 유지하고 `ambiguous_fields`를 추가한 동일 계약을 사용한다. `ambiguous_fields`는 이 첫 호출에서 요청의 의미를 보고 판단한다. 코드가 JSON/schema를 검증한 뒤 두 번째 호출은 항상 최종 답변을 생성한다. 일반 답변이면 clarification Skill은 읽지 않고 답변 지침과 검증된 JSON, 제공된 대화 맥락을 전달한다. 질문이면 `clarification_type`으로 코드가 `skills/clarification-response/SKILL.md`를 읽어 두 번째 호출에만 포함한다. 활성 term ID는 resolver가 검증한다.
-- 질문은 `ambiguous_fields`의 역할을 실제 요청 의미에 맞춰 다루며, 짧은 한국어 한 문장으로 작성한다. 코드 검증은 역할 허용값·중복·상태 규칙과 질문 길이·형식·안전성에 한정한다. 질문 속 역할 단어를 문자열 cue로 검사해 의미 범위를 추론하거나, 그 결과를 고정 질문으로 바꾸지 않는다. 질문의 의미적 관련성은 첫 JSON 생성 지침과 평가 기준으로 다룬다. 이전 prompt version은 기존 동작을 유지한다.
+- 첫 JSON 생성 LLM은 요청의 의미로 `ambiguous_fields`와 초안 질문을 판단한다. 코드는 허용 역할·중복·상태 규칙 및 질문 길이·형식·안전성만 검증하고 질문의 역할 범위를 문자열 cue로 추론하거나 고정 질문으로 대체하지 않는다. 질문 상태에서는 `clarification_type`에 맞는 Skill을 두 번째 최종 응답 호출에만 주입한다. 이전 prompt version은 기존 동작을 유지한다.
 - `CLARIFICATION_SKILL_PATH`는 기본 `skills/clarification-response/SKILL.md`를 지정하며 Docker image에 포함한다. Skill은 v4 JSON 검증 후 `clarification_type`이 있을 때만 읽는다. 이 경로의 파일 오류는 질문 응답 생성 시 설정 오류이며 일반 답변 경로는 Skill 파일을 읽지 않는다. 다른 Prompt 버전은 이 Skill 파일에 접근하지 않는다.
 - 체형 충돌 질문은 어깨·골반 폭의 동등 단서와 어깨가 골반보다 넓다는 명시적 비교 단서가 모두 있을 때만 선택한다. 시점 충돌 질문은 옆모습을 원하는 동시에 정면처럼 보이길 원하는 대조 표현이 있을 때 선택한다. 단어의 존재만으로 충돌 축을 단정하지 않는다. 두 축 모두 충돌하거나 어느 축도 확정할 수 없으면 공통 충돌 질문을 사용한다.
 - 선택·질문 기대값은 기존 dataset을 변경하지 않는다. 별도 ambiguity.jsonl에 명시/생략/부정/상충 대조 사례를 추가하고 LIVE_EVAL_INCLUDE_AMBIGUITY=1로 기존 runner에 포함한다.
@@ -52,16 +50,11 @@
 - Given v4 결과가 `needs_clarification`이고 각 허용된 `clarification_type` 중 하나, When 파이프라인이 응답을 생성, Then 첫 JSON을 검증한 뒤 질문 Skill과 대화 맥락을 포함한 최종 질문 호출을 실행해 총 두 번 호출한다.
 - Given 첫 호출의 v4 JSON이 유효하지 않음, When 해석 검증, Then 해당 attempt는 실패하고 최종 답변 호출은 실행하지 않는다.
 - Given 일반 답변 결과와 존재하지 않는 clarification Skill 경로, When v4 파이프라인 실행, Then clarification Skill은 읽지 않고 별도 최종 답변 호출의 결과를 반환한다.
-- Given Skill에 어긋나는 내부 정보 요청 질문, When resolver, Then 모델 원문을 사용자에게 전달하지 않고 안전한 질문으로 대체한다.
-- Given 포즈만 요청했고 `ambiguous_fields=["pose"]`, When resolver, Then 포즈를 구체화하는 질문만 반환하고 체형·시점 등 다른 역할은 묻지 않는다.
-- Given `ambiguous_fields`에 여러 역할이 명시됨, When resolver, Then 명시된 역할만 질문한다.
-- Given 일반 답변 결과와 존재하지 않는 Skill 경로, When v4 파이프라인 실행, Then Skill을 읽지 않고 두 번 호출을 완료한다.
-- Given 내부 정책이나 비밀을 요구하는 질문 문구, When v4 JSON schema 검증, Then 구조화 출력이 거부되어 resolver가 그 문구를 전달하지 않는다.
-- Given 사용자가 “당당한 자세”만 요청했고 모호함 상태 JSON에 `ambiguous_fields=["pose"]`, When 첫 LLM이 해석 JSON을 생성, Then `body`, `view`, `perspective`, `layout`은 추가하지 않는다.
-- Given 포즈만 요청한 평가 사례, When 질문이 체형 자체를 묻거나 범용 질문임, Then 질문 품질 평가가 실패로 판정한다. 이는 resolver의 문자열 cue 검사로 의미를 재판정한다는 뜻이 아니다.
-- Given 안전하고 형식이 유효한 v4 질문 JSON, When resolver, Then JSON의 질문을 그대로 전달하고 역할별 고정 질문으로 대체하지 않는다.
-- Given v4 질문이 길이·형식·안전성 규칙을 위반, When JSON schema 검증, Then 구조화 출력이 거부된다.
-- Given `ambiguous_fields`에 여러 역할이 명시됨, When 첫 LLM이 질문 JSON을 생성, Then 질문은 명시된 역할의 모호함을 함께 다룬다.
+- Given 사용자가 포즈만 요청했고 모호한 문구가 “당당한 자세”임, When 첫 JSON 생성 LLM이 모호함을 판단, Then `ambiguous_fields`에는 `pose`만 포함하고 질문은 체형·시점 대신 포즈를 구체화한다.
+- Given 포즈만 요청한 평가 사례, When 질문이 체형 자체를 묻거나 범용 질문임, Then 질문 품질 평가가 실패로 판정한다. 코드의 문자열 cue 검사로 의미를 재판정하지 않는다.
+- Given 질문 JSON의 역할 범위는 의미적으로 평가 대상이며 구조·형식은 유효함, When resolver가 처리, Then 모델의 질문을 고정 역할 질문으로 바꾸지 않는다.
+- Given 내부 정보나 비밀을 요구하는 질문 문구, When v4 구조화 출력 검증, Then 안전성 검증에서 거부한다.
+- Given `ambiguous_fields`에 여러 요청 역할이 명시됨, When 첫 JSON 생성 LLM이 질문을 작성, Then 질문은 명시된 모호함을 다룬다.
 - Given 명확한 앉기와 가까운 손, When 해석, Then pose_sitting과 perspective_foreshortening을 역할별 하나씩 선택한다.
 - Given 일반 결과, When 답변 검토, Then 쉬운 뜻·입력 근거·카드 관찰 지점이 있고 내부 ID·URL/Pin 추측이 없다.
 - Given 고정 회귀/전체 평가, When runner, Then 실제 최종 질문을 검사하고 실제 답변과 지문·실패 내역을 검토 산출물에 기록한다.
