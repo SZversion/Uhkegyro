@@ -107,6 +107,7 @@ class JobRetryRecovery:
                         lease_expires_at = NULL,
                         succeeded = NULL,
                         final_payload_json = NULL,
+                        progress_roles_json = '[]'::jsonb,
                         validation_feedback_json = $6::jsonb,
                         validation_failure_history_json = CASE WHEN $7::jsonb IS NULL
                             THEN validation_failure_history_json
@@ -138,6 +139,7 @@ class JobRetryRecovery:
                         lease_expires_at = NULL,
                         succeeded = FALSE,
                         final_payload_json = $4::jsonb,
+                        progress_roles_json = '[]'::jsonb,
                         validation_feedback_json = $6::jsonb,
                         validation_failure_history_json = CASE WHEN $7::jsonb IS NULL
                             THEN validation_failure_history_json
@@ -176,6 +178,7 @@ class JobRetryRecovery:
                         succeeded = FALSE,
                         final_payload_json = $1::jsonb,
                         validation_feedback_json = NULL,
+                        progress_roles_json = '[]'::jsonb,
                         completed_at = now(),
                         updated_at = now()
                     WHERE status = ANY($2::text[])
@@ -194,6 +197,7 @@ class JobRetryRecovery:
                         lease_expires_at = NULL,
                         succeeded = NULL,
                         final_payload_json = NULL,
+                        progress_roles_json = '[]'::jsonb,
                         completed_at = NULL,
                         updated_at = now()
                     WHERE status = ANY($1::text[])

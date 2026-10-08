@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { countCharacters, createSubmissionController, validateRequestText } from "../lib/agent-submit.mjs";
 import { createConversation, loadInitialConversation, orderConversations, restoreConversation, resumeConversation, RESTORE_ERROR } from "../lib/server-conversation.mjs";
 import { DEMO_JOB, DEMO_REQUEST_TEXT, uiDemoEnabled } from "../lib/demo-job.mjs";
@@ -8,7 +8,8 @@ import { HOME_TERMS } from "../lib/home-catalog.mjs";
 import { createMindMapSlots, firstSelectableTermId } from "../lib/term-mind-map.mjs";
 import { getRecommendedSearchQuery } from "../lib/recommended-query.mjs";
 import { invalidateTermModeCache, searchFixedTerm, searchTermMode, termModeCacheKey } from "../lib/term-search.mjs";
-import { createGalleryRows, renderedResultTerms, roleNotice, showThumbnail } from "../lib/result-view.mjs";
+import { takeChatAutoScrollRequest } from "../lib/chat-scroll.mjs";
+import { createGalleryRows, progressRoles, renderedResultTerms, roleNotice, showThumbnail } from "../lib/result-view.mjs";
 import { demoReplyJob, readDemoTurns, saveDemoTurns, stopTurnPolling, upsertTurn, isTurnPending } from "../lib/conversation.mjs";
 import ConversationPanel from "../components/ConversationPanel";
 import TermGuide from "../components/TermGuide.mjs";
@@ -24,6 +25,7 @@ function termCardSignature(term) {
 function hasSuccessfulDefaultSearch(term) {
   return !term.reason_codes?.length && term.pins?.some(showThumbnail);
 }
+const ROLE_LABELS = { body: "체형", pose: "포즈", view: "시점", perspective: "투시", layout: "구도" };
 
 export default function HomePage() {
   const [requestText, setRequestText] = useState("");
@@ -47,6 +49,7 @@ export default function HomePage() {
   const [restoreAttempt, setRestoreAttempt] = useState(0);
   const [storageFailed, setStorageFailed] = useState(false);
   const chatScrollRef = useRef(null);
+  const chatAutoScrollRef = useRef(null);
   const [activeGalleryRole, setActiveGalleryRole] = useState(null);
   const [failedThumbnails, setFailedThumbnails] = useState({});
   const [menuOpen, setMenuOpen] = useState(false);
@@ -85,6 +88,8 @@ export default function HomePage() {
     return replacement ? { ...row, term: replacement, pins: replacement.pins.slice(0, 8) } : row;
   }), [mindMapSlots, boardView, termSearch, sketchSearches]);
   const hasGalleryRows = galleryRows.length > 0;
+  const searchingRoles = progressRoles(job);
+  const newSearchingRoles = searchingRoles.filter((role) => !galleryRows.some((row) => row.role === role));
   const galleryTerm = galleryRows.find((row) => row.role === activeGalleryRole)?.term || galleryRows[0]?.term || null;
   const queryTerm = ["results", "term-results"].includes(boardView) && hasGalleryRows ? galleryTerm : homeTerm;
   const recommendedSearchQuery = getRecommendedSearchQuery(queryTerm);
@@ -96,7 +101,10 @@ export default function HomePage() {
     if (!uiDemoEnabled) return;
     try {
       const restored = readDemoTurns(window.localStorage);
-      if (restored) setTurns(restored);
+      if (restored) {
+        chatAutoScrollRef.current = restored.at(-1)?.id || null;
+        setTurns(restored);
+      }
     } catch { setStorageFailed(true); }
     setConversationReady(true);
   }, []);
@@ -111,6 +119,7 @@ export default function HomePage() {
       setSessions(initial.sessions);
       setSessionId(initial.sessionId);
       sessionIdRef.current = initial.sessionId;
+      chatAutoScrollRef.current = initial.turns.at(-1)?.id || null;
       setTurns(initial.turns);
       setHasOlderJobs(initial.hasOlderJobs);
       setOlderHistoryLoading(false);
@@ -140,9 +149,10 @@ export default function HomePage() {
     }));
   }, [submission, job]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (!takeChatAutoScrollRequest(chatAutoScrollRef, turns.at(-1)?.id)) return;
     if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
-  }, [turns, termGuide, mobilePanel]);
+  }, [turns]);
 
   useEffect(() => {
     if (uiDemoEnabled || !conversationReady || !pendingTurnIds) return;
@@ -335,7 +345,7 @@ export default function HomePage() {
     }
   }
 
-  async function submit(text) {
+  async function submit(text, { retry = false } = {}) {
     if (conversationBusy || submissionRef.current.isPending()) return;
 
     const validationError = validateRequestText(text);
@@ -345,16 +355,17 @@ export default function HomePage() {
     }
     termSearchControllerRef.current?.abort();
     resetSketchSearches();
-    setMobilePanel("reference");
+    if (!retry) setMobilePanel("reference");
     setTermGuide(null);
 
     if (uiDemoEnabled) {
       const demoJob = demoReplyJob(text, turns, DEMO_JOB);
       const id = crypto.randomUUID();
+      chatAutoScrollRef.current = id;
       setTurns((entries) => upsertTurn(entries, { id, request: text, job: demoJob, demo: true }));
       setJob(demoJob);
       setBoardView("results");
-      setRequestText("");
+      if (!retry) setRequestText("");
       setError("");
       setSelectedTermId(firstSelectableTermId(mindMapSlots));
       return;
@@ -380,10 +391,11 @@ export default function HomePage() {
       sessionIdRef.current = activeSession;
       const result = await submissionRef.current.submit(text, { sessionId: activeSession });
       if (result.ok) {
+        chatAutoScrollRef.current = result.jobId;
         setTurns((entries) => upsertTurn(entries, { id: result.jobId, request: text,
           job: { job_status: "queued", poll_after_ms: result.pollAfterMs }, demo: false }));
         setSubmission({ ...result, requestText: text });
-        setRequestText("");
+        if (!retry) setRequestText("");
       }
       else {
         setError(result.error);
@@ -452,6 +464,7 @@ export default function HomePage() {
     try {
       const restored = await restoreConversation({ sessionId: session.session_id });
       if (loadId !== sessionLoadRef.current) return;
+      chatAutoScrollRef.current = restored.turns.at(-1)?.id || null;
       setTurns(restored.turns);
       setJob(restored.turns.at(-1)?.job || null);
       setConversationReady(true);
@@ -502,6 +515,7 @@ export default function HomePage() {
       setSessions((items) => orderConversations([created, ...items.filter((item) => item.session_id !== created.session_id)]));
       setSessionId(created.session_id);
       sessionIdRef.current = created.session_id;
+      chatAutoScrollRef.current = null;
       setTurns([]);
       setHasOlderJobs(false);
       setOlderHistoryError("");
@@ -581,14 +595,15 @@ export default function HomePage() {
         </header>
         {!uiDemoEnabled && !conversationReady ? (
           <div className="session-restore-loading"><LoadingIndicator size="large" label="세션 대화를 불러오는 중입니다…" /></div>
-        ) : boardView === "results" && conversationBusy && conversationReady ? (
+        ) : boardView === "results" && conversationBusy && conversationReady && !hasGalleryRows ? (
           <div className="board-search-loading"><ImageSearchLoading label="요청을 처리하는 중입니다…" /></div>
         ) : ["results", "term-results"].includes(boardView) && hasGalleryRows ? (
           <div className="pin-gallery" ref={galleryRef} data-single={galleryRows.length === 1}
             aria-label="카테고리별 Pinterest 핀 썸네일" onScroll={handleGalleryScroll}>
             <button className="gallery-back-button" type="button" onClick={() => navigateBoard("home")}>← 용어 둘러보기</button>
             {galleryRows.map(({ role, roleLabel, term, pins }) => (
-              <section className="pin-gallery-row" data-gallery-role={role} key={role} aria-label={`${roleLabel} 검색 결과`}>
+              <section className="pin-gallery-row" data-gallery-role={role} key={role}
+                aria-label={`${roleLabel} 검색 결과`} aria-busy={searchingRoles.includes(role)}>
                 <div className="pin-gallery-toolbar">
                 <button className="pin-gallery-heading" type="button"
                   aria-pressed={term.term_id === galleryTerm?.term_id}
@@ -619,6 +634,7 @@ export default function HomePage() {
                   </details>
                   </div>
                 </div>
+                {searchingRoles.includes(role) && <LoadingIndicator size="small" label={`${roleLabel} 레퍼런스를 찾는 중입니다…`} />}
                 {sketchSearches[term.term_id]?.loading && <LoadingIndicator size="small" label={`${({ drawing: "일반", sketch: "스케치", mannequinization: "도형화" })[sketchSearches[term.term_id]?.pendingSuffix]} 레퍼런스를 찾는 중입니다…`} />}
                 {sketchSearches[term.term_id]?.error && <p className="sketch-search-notice" role="alert">{sketchSearches[term.term_id].error}</p>}
                 <div className="pin-gallery-items">
@@ -651,6 +667,15 @@ export default function HomePage() {
                     </button>
                   ) : <div className="pin-gallery-card pin-unavailable" key={pin.pin_id}>접근할 수 없는 Pin</div>)}
                 </div>
+              </section>
+            ))}
+            {newSearchingRoles.map((role) => (
+              <section className="pin-gallery-row" data-gallery-role={role} key={role}
+                aria-label={`${ROLE_LABELS[role] || role} 검색 결과`} aria-busy="true">
+                <div className="pin-gallery-toolbar">
+                  <strong>{ROLE_LABELS[role] || role}</strong>
+                </div>
+                <LoadingIndicator size="small" label={`${ROLE_LABELS[role] || role} 레퍼런스를 찾는 중입니다…`} />
               </section>
             ))}
           </div>
@@ -712,7 +737,8 @@ export default function HomePage() {
           {restoreError && <div role="alert"><p>{restoreError}</p>
             <button type="button" onClick={() => setRestoreAttempt((value) => value + 1)}>대화 다시 불러오기</button></div>}
           {storageFailed && <p className="form-error" role="status">브라우저 저장을 사용할 수 없어 새로고침 후 더미 대화가 유지되지 않습니다.</p>}
-          <ConversationPanel key={sessionId || "no-session"} turns={turns} onChoice={fillInput} onRetry={fillInput} retryDisabled={conversationBusy}
+          <ConversationPanel key={sessionId || "no-session"} turns={turns} onChoice={fillInput}
+            onRetry={(text) => submit(text, { retry: true })} retryDisabled={conversationBusy}
             hasOlderJobs={conversationReady && hasOlderJobs} olderHistoryLoading={olderHistoryLoading}
             olderHistoryError={olderHistoryError} onLoadOlderJobs={loadOlderHistory} />
           <TermGuide term={termGuide} />

@@ -5,11 +5,14 @@ export function resultTerms(job) {
 }
 
 export function renderedResultTerms(job, turns = []) {
-  const result = job?.job_status === "completed" ? job.result : null;
+  const displayJob = job?.job_status === "completed" ? job : [...turns].reverse()
+    .map((turn) => turn.job)
+    .find((candidate) => candidate?.job_status === "completed" && resultTerms(candidate).length);
+  const result = displayJob?.job_status === "completed" ? displayJob.result : null;
   const update = result?.reference_update;
-  if (!update) return resultTerms(job);
+  if (!update) return resultTerms(displayJob);
 
-  const currentIndex = turns.findIndex((turn) => turn.job?.job_id === job.job_id);
+  const currentIndex = turns.findIndex((turn) => turn.job?.job_id === displayJob.job_id);
   const previousJob = currentIndex < 0 ? null : [...turns.slice(0, currentIndex)]
     .reverse()
     .find((turn) => resultTerms(turn.job).length)?.job;
@@ -25,6 +28,11 @@ export function renderedResultTerms(job, turns = []) {
         : previousByRole.get(role) || currentByRole.get(role);
       return term ? [term] : [];
     });
+}
+
+export function progressRoles(job) {
+  return job?.job_status === "searching" && Array.isArray(job.progress_roles)
+    ? job.progress_roles : [];
 }
 
 export function roleNotice(term) {

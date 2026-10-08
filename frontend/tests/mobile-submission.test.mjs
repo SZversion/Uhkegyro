@@ -11,7 +11,8 @@ assert.ok(start >= 0 && end > start);
 const handler = source.slice(start, end);
 
 async function submitScenario(mode) {
-  const state = { panel: "conversation", error: "", input: "마른 캐릭터", submitting: false };
+  const state = { panel: "conversation", error: "", input: "마른 캐릭터", submitting: false,
+    chatAutoScrollRef: { current: null } };
   const noop = () => {};
   const context = {
     conversationBusy: false,
@@ -37,6 +38,7 @@ async function submitScenario(mode) {
       return { session_id: "new-session", created_at: "2026-10-07T01:00:00Z" };
     },
     setError: (value) => { state.error = value; },
+    chatAutoScrollRef: state.chatAutoScrollRef,
     setRequestText: (value) => { state.input = value; },
     setIsSubmitting: (value) => { state.submitting = value; },
     setBoardView: noop, setPollError: noop, setSubmission: noop, setJob: noop,
@@ -64,4 +66,5 @@ test("successful mobile submission keeps references and clears the input", async
   assert.equal(state.input, "");
   assert.equal(state.error, "");
   assert.equal(state.submitting, false);
+  assert.equal(state.chatAutoScrollRef.current, "test");
 });

@@ -354,6 +354,13 @@ def test_job_envelope_progress_requires_poll_after_ms():
         _job_envelope(poll_after_ms=None)
 
 
+def test_job_envelope_exposes_only_searching_role_progress():
+    job = _job_envelope(job_status="searching", progress_roles=["pose"])
+    assert job.progress_roles == [Role.POSE]
+    with pytest.raises(ValidationError):
+        _job_envelope(job_status="validating", progress_roles=["pose"])
+
+
 def test_job_envelope_progress_rejects_result_or_failure():
     with pytest.raises(ValidationError):
         _job_envelope(result=_agent_result())

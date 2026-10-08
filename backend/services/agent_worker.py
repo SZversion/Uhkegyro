@@ -152,7 +152,10 @@ class AgentJobWorker:
                         resolution = reference_update.select_searches(resolution, previous)
                 with trace.stage("searching"):
                     with self._tracer.phase("search-status-update"):
-                        if not await self._update(job_id, attempt, JobStatus.SEARCHING):
+                        if not await self._update(
+                            job_id, attempt, JobStatus.SEARCHING,
+                            progress_roles=[term.selection.role for term in resolution.terms],
+                        ):
                             trace.stale()
                             return
                     if search_outcomes is None:
@@ -514,6 +517,7 @@ class AgentJobWorker:
         status: JobStatus,
         *,
         result: Any | None = None,
+        progress_roles: list[Role] | None = None,
     ) -> bool:
         try:
             await self._jobs.update_status(

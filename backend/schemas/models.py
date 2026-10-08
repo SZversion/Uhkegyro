@@ -268,6 +268,7 @@ class JobEnvelope(BaseModel):
     attempt: Annotated[int, Field(ge=1)]
     max_attempts: Annotated[int, Field(ge=1, le=RETRY_COUNT_MAX)]
     poll_after_ms: int | None = None
+    progress_roles: list[Role] = Field(default_factory=list)
     result: AgentResult | None = None
     failure: Failure | None = None
 
@@ -275,6 +276,8 @@ class JobEnvelope(BaseModel):
     def _validate_status_consistency(self) -> "JobEnvelope":
         if self.attempt > self.max_attempts:
             raise ValueError("attempt는 max_attempts보다 클 수 없다")
+        if self.progress_roles and self.job_status is not JobStatus.SEARCHING:
+            raise ValueError("progress_roles는 searching 상태에서만 제공한다")
         if self.job_status in (JobStatus.COMPLETED, JobStatus.FAILED):
             if self.poll_after_ms is not None:
                 raise ValueError("종결 상태는 poll_after_ms=null이어야 한다")
