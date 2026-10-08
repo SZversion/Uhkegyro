@@ -13,13 +13,16 @@ function sessionId(value) {
   if (typeof value !== "string" || !/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value)) throw new Error(RESTORE_ERROR);
   return value;
 }
+export function orderConversations(items) {
+  return [...items].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+}
 function validateSessions(items) {
   if (!Array.isArray(items)) throw new Error(RESTORE_ERROR);
-  return items.map((item) => {
+  return orderConversations(items.map((item) => {
     sessionId(item?.session_id);
     if (typeof item.created_at !== "string" || Number.isNaN(Date.parse(item.created_at))) throw new Error(RESTORE_ERROR);
     return item;
-  });
+  }));
 }
 export async function listConversations(options = {}) {
   const response = await (options.fetchImpl || globalThis.fetch)("/api/sessions?limit=100&offset=0", {
@@ -29,6 +32,19 @@ export async function listConversations(options = {}) {
   if (!response.ok) throw new Error(RESTORE_ERROR);
   const list = await response.json();
   return validateSessions(list?.items);
+}
+export async function loadInitialConversation(options = {}) {
+  try {
+    const [sessions, restored] = await Promise.all([
+      listConversations(options),
+      restoreConversation(options),
+    ]);
+    return { ready: true, sessions, ...restored, restoreError: "" };
+  } catch {
+    return {
+      ready: true, sessions: [], sessionId: null, turns: [], restoreError: RESTORE_ERROR,
+    };
+  }
 }
 export async function createConversation(options = {}) {
   const created = await read("/api/sessions", options, "POST");

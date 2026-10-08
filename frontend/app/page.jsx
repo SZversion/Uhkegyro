@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { countCharacters, createSubmissionController, validateRequestText } from "../lib/agent-submit.mjs";
-import { createConversation, listConversations, restoreConversation, resumeConversation, RESTORE_ERROR } from "../lib/server-conversation.mjs";
+import { createConversation, loadInitialConversation, orderConversations, restoreConversation, resumeConversation, RESTORE_ERROR } from "../lib/server-conversation.mjs";
 import { DEMO_JOB, DEMO_REQUEST_TEXT, uiDemoEnabled } from "../lib/demo-job.mjs";
 import { HOME_TERMS } from "../lib/home-catalog.mjs";
 import { createMindMapSlots, firstSelectableTermId } from "../lib/term-mind-map.mjs";
@@ -92,15 +92,21 @@ export default function HomePage() {
     const controller = new AbortController();
     setRestoreError("");
     setConversationReady(false);
-    Promise.all([listConversations({ signal: controller.signal }), restoreConversation({ signal: controller.signal, sessionId: sessionIdRef.current || undefined })]).then(([items, restored]) => {
+    loadInitialConversation({ signal: controller.signal, sessionId: sessionIdRef.current || undefined }).then((initial) => {
       if (controller.signal.aborted) return;
-      setSessions(items);
-      setSessionId(restored.sessionId);
-      sessionIdRef.current = restored.sessionId;
-      setTurns(restored.turns);
-      setJob(restored.turns.at(-1)?.job || null);
-      setConversationReady(true);
-    }).catch(() => { if (!controller.signal.aborted) setRestoreError(RESTORE_ERROR); });
+      setSessions(initial.sessions);
+      setSessionId(initial.sessionId);
+      sessionIdRef.current = initial.sessionId;
+      setTurns(initial.turns);
+      setJob(initial.turns.at(-1)?.job || null);
+      setRestoreError(initial.restoreError);
+      setConversationReady(initial.ready);
+    }).catch(() => {
+      if (!controller.signal.aborted) {
+        setRestoreError(RESTORE_ERROR);
+        setConversationReady(true);
+      }
+    });
     return () => controller.abort();
   }, [restoreAttempt]);
 
@@ -317,16 +323,12 @@ export default function HomePage() {
       if (!activeSession) {
         const created = await createConversation();
         activeSession = created.session_id;
-        setSessions((items) => [created, ...items.filter((item) => item.session_id !== created.session_id)]);
+        setSessions((items) => orderConversations([created, ...items.filter((item) => item.session_id !== created.session_id)]));
       }
       setSessionId(activeSession);
       sessionIdRef.current = activeSession;
       const result = await submissionRef.current.submit(text, { sessionId: activeSession });
       if (result.ok) {
-        setSessions((items) => {
-          const selected = items.find((item) => item.session_id === activeSession);
-          return selected ? [selected, ...items.filter((item) => item.session_id !== activeSession)] : items;
-        });
         setTurns((entries) => upsertTurn(entries, { id: result.jobId, request: text,
           job: { job_status: "queued", poll_after_ms: result.pollAfterMs }, demo: false }));
         setSubmission({ ...result, requestText: text });
@@ -381,6 +383,7 @@ export default function HomePage() {
     const loadId = ++sessionLoadRef.current;
     setTermGuide(null);
     setMenuOpen(false);
+    setMobilePanel("reference");
     resetSketchSearches();
     termSearchControllerRef.current?.abort();
     pollerRef.current?.stop();
@@ -390,7 +393,6 @@ export default function HomePage() {
     setPollError("");
     setSessionId(session.session_id);
     sessionIdRef.current = session.session_id;
-    setSessions((items) => [session, ...items.filter((item) => item.session_id !== session.session_id)]);
     setTurns([]);
     setJob(null);
     try {
@@ -419,7 +421,7 @@ export default function HomePage() {
     try {
       const created = await createConversation();
       if (loadId !== sessionLoadRef.current) return;
-      setSessions((items) => [created, ...items.filter((item) => item.session_id !== created.session_id)]);
+      setSessions((items) => orderConversations([created, ...items.filter((item) => item.session_id !== created.session_id)]));
       setSessionId(created.session_id);
       sessionIdRef.current = created.session_id;
       setTurns([]);
@@ -497,7 +499,9 @@ export default function HomePage() {
             </div>
           )}
         </header>
-        {boardView === "results" && conversationBusy && conversationReady ? (
+        {!uiDemoEnabled && !conversationReady ? (
+          <div className="session-restore-loading"><LoadingIndicator size="large" label="세션 대화를 불러오는 중입니다…" /></div>
+        ) : boardView === "results" && conversationBusy && conversationReady ? (
           <div className="board-search-loading"><ImageSearchLoading label="요청을 처리하는 중입니다…" /></div>
         ) : ["results", "term-results"].includes(boardView) && hasGalleryRows ? (
           <div className="pin-gallery" ref={galleryRef} data-single={galleryRows.length === 1}

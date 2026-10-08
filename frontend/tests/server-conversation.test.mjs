@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { restoreConversation, createConversation, listConversations, resumeConversation, createHistoryLoader } from "../lib/server-conversation.mjs";
+import { restoreConversation, createConversation, listConversations, loadInitialConversation, resumeConversation, createHistoryLoader } from "../lib/server-conversation.mjs";
 import { showThumbnail } from "../lib/result-view.mjs";
 import { submitAgentRequest } from "../lib/agent-submit.mjs";
 import { answerForJob, upsertTurn, stopTurnPolling } from "../lib/conversation.mjs";
@@ -80,14 +80,14 @@ test("미인증·빈 목록은 빈 대화이며 새 ID를 후속 제출에 명�
 test("세션 목록 복원과 선택한 세션의 대화만 복원", async () => {
   const calls = [];
   const sessions = [
-    { session_id: sid2, created_at: "2026-10-07T01:00:00Z" },
     { session_id: sid, created_at: "2026-10-06T01:00:00Z" },
+    { session_id: sid2, created_at: "2026-10-07T01:00:00Z" },
   ];
   const items = [job("selected", "completed")].map((entry) => ({ ...entry, session_id: sid }));
   const fetchImpl = async (url) => {
     calls.push(url);
     if (url === "/api/sessions?limit=100&offset=0") return response({ items: sessions });
-    if (url === `/api/sessions/${sid}`) return response(sessions[1]);
+    if (url === `/api/sessions/${sid}`) return response(sessions[0]);
     if (url === `/api/sessions/${sid}/jobs?limit=100&offset=0`) return response({ items });
     if (url === "/api/jobs/selected") return response(items[0]);
     throw new Error(`unexpected request ${url}`);
@@ -106,6 +106,28 @@ test("세션 소유 쿠키가 없으면 세션 목록은 빈 목록으로 시작
     return response({}, 401);
   } });
   assert.deepEqual(listed, []);
+});
+
+test("초기 복원 실패는 오류를 표시하되 새 대화를 시작할 수 있게 준비 상태로 반환", async () => {
+  const failed = await loadInitialConversation({
+    fetchImpl: async () => { throw new Error("offline"); },
+  });
+  assert.equal(failed.ready, true);
+  assert.deepEqual(failed.sessions, []);
+  assert.equal(failed.sessionId, null);
+  assert.deepEqual(failed.turns, []);
+  assert.equal(failed.restoreError, "대화를 복원하지 못했습니다. 다시 불러온 뒤 요청해 주세요.");
+});
+
+test("세션 쿠키가 없는 초기 진입은 오류 없이 빈 대화로 준비 완료", async () => {
+  const state = await loadInitialConversation({
+    fetchImpl: async () => response({}, 401),
+  });
+  assert.equal(state.ready, true);
+  assert.deepEqual(state.sessions, []);
+  assert.equal(state.sessionId, null);
+  assert.deepEqual(state.turns, []);
+  assert.equal(state.restoreError, "");
 });
 
 test("새 세션 생성 뒤 목록에서 해당 세션을 추가할 수 있는 메타데이터 반환", async () => {
