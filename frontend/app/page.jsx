@@ -37,6 +37,9 @@ export default function HomePage() {
     ? [{ id: "demo-initial", request: DEMO_REQUEST_TEXT, job: DEMO_JOB, demo: true }] : []);
   const [conversationReady, setConversationReady] = useState(false);
   const [sessionId, setSessionId] = useState(null);
+  const [hasOlderJobs, setHasOlderJobs] = useState(false);
+  const [olderHistoryLoading, setOlderHistoryLoading] = useState(false);
+  const [olderHistoryError, setOlderHistoryError] = useState("");
   const sessionIdRef = useRef(null);
   const sessionLoadRef = useRef(0);
   const [sessions, setSessions] = useState([]);
@@ -109,6 +112,9 @@ export default function HomePage() {
       setSessionId(initial.sessionId);
       sessionIdRef.current = initial.sessionId;
       setTurns(initial.turns);
+      setHasOlderJobs(initial.hasOlderJobs);
+      setOlderHistoryLoading(false);
+      setOlderHistoryError("");
       setJob(initial.turns.at(-1)?.job || null);
       setRestoreError(initial.restoreError);
       setConversationReady(initial.ready);
@@ -438,6 +444,9 @@ export default function HomePage() {
     setRestoreError("");
     setSubmission(null);
     setPollError("");
+    setHasOlderJobs(false);
+    setOlderHistoryLoading(false);
+    setOlderHistoryError("");
     setSessionId(session.session_id);
     sessionIdRef.current = session.session_id;
     setTurns([]);
@@ -459,10 +468,34 @@ export default function HomePage() {
     }
   }
 
+  async function loadOlderHistory() {
+    if (!hasOlderJobs || olderHistoryLoading || !sessionIdRef.current) return;
+    const selectedSessionId = sessionIdRef.current;
+    const loadId = sessionLoadRef.current;
+    setOlderHistoryLoading(true);
+    setOlderHistoryError("");
+    try {
+      const restored = await restoreConversation({ sessionId: selectedSessionId });
+      if (loadId !== sessionLoadRef.current || sessionIdRef.current !== selectedSessionId) return;
+      setTurns(restored.turns);
+      setJob(restored.turns.at(-1)?.job || null);
+      setHasOlderJobs(false);
+    } catch {
+      if (loadId === sessionLoadRef.current && sessionIdRef.current === selectedSessionId) {
+        setOlderHistoryError("이전 대화를 불러오지 못했습니다. 다시 시도해 주세요.");
+      }
+    } finally {
+      if (loadId === sessionLoadRef.current && sessionIdRef.current === selectedSessionId) {
+        setOlderHistoryLoading(false);
+      }
+    }
+  }
+
   async function startNewSession() {
     if (isSubmitting) return;
     const loadId = ++sessionLoadRef.current;
     pollerRef.current?.stop();
+    setOlderHistoryLoading(false);
     setConversationReady(false);
     setRestoreError("");
     try {
@@ -472,6 +505,8 @@ export default function HomePage() {
       setSessionId(created.session_id);
       sessionIdRef.current = created.session_id;
       setTurns([]);
+      setHasOlderJobs(false);
+      setOlderHistoryError("");
       setJob(null);
       setSubmission(null);
       setPollError("");
@@ -679,7 +714,9 @@ export default function HomePage() {
           {restoreError && <div role="alert"><p>{restoreError}</p>
             <button type="button" onClick={() => setRestoreAttempt((value) => value + 1)}>대화 다시 불러오기</button></div>}
           {storageFailed && <p className="form-error" role="status">브라우저 저장을 사용할 수 없어 새로고침 후 더미 대화가 유지되지 않습니다.</p>}
-          <ConversationPanel key={sessionId || "no-session"} turns={turns} onChoice={fillInput} onRetry={fillInput} retryDisabled={conversationBusy} />
+          <ConversationPanel key={sessionId || "no-session"} turns={turns} onChoice={fillInput} onRetry={fillInput} retryDisabled={conversationBusy}
+            hasOlderJobs={conversationReady && hasOlderJobs} olderHistoryLoading={olderHistoryLoading}
+            olderHistoryError={olderHistoryError} onLoadOlderJobs={loadOlderHistory} />
           <TermGuide term={termGuide} />
           {((!conversationReady && !restoreError) || isSubmitting) && <div className="receipt"><LoadingIndicator
             label={!conversationReady ? "대화를 불러오는 중…" : "요청을 보내는 중…"} /></div>}

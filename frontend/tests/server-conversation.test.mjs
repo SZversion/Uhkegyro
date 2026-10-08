@@ -10,19 +10,20 @@ const job = (id, status = "completed") => ({ job_id: id, session_id: sid, job_st
   request_text: `요청 ${id}`, result: status === "completed" ? { agent_status: "partial_result", answer_text: "통합 설명", reason_codes: ["PIN_SEARCH_UNAVAILABLE"] } : null });
 const response = (body, status = 200) => ({ ok: status < 400, status, json: async () => body });
 
-test("완료된 모든 기록을 복원 시 재조회해 썸네일을 표시하고 더미는 즉시 연다", async () => {
+test("세션 이력 한 번의 페이지 응답으로 대화를 복원하고 더미는 즉시 연다", async () => {
   const pin = { status: "available", pin_url: "https://www.pinterest.com/pin/123/" };
   const stored = [job("old"), job("latest")].map((j) => ({ ...j, result: { reference_plan: { terms: [{ pins: [pin] }] } } }));
   const enriched = (j) => ({ ...j, result: { reference_plan: { terms: [{ pins: [{ ...pin, thumbnail_url: "https://i.pinimg.com/fixture.jpg" }] }] } } });
   const calls = [], fetchImpl = async (url, options) => {
     calls.push(url); assert.equal(options.credentials, "include"); assert.equal(options.cache, "no-store");
-    return response(url.includes("offset=") ? { items: stored } : url.includes("/api/jobs/")
-      ? enriched(stored.find((j) => url.endsWith(j.job_id))) : { items: [{ session_id: sid }], session_id: sid });
+    if (url === `/api/sessions/${sid}/jobs?limit=100&offset=0`) return response({ items: stored.map(enriched) });
+    if (url === "/api/jobs/old") return response(enriched(stored[0]));
+    throw new Error(`unexpected request ${url}`);
   };
-  const { turns } = await restoreConversation({ fetchImpl });
+  const { turns } = await restoreConversation({ sessionId: sid, fetchImpl });
   assert.equal(showThumbnail(turns[0].job.result.reference_plan.terms[0].pins[0]), true);
   assert.equal(showThumbnail(turns[1].job.result.reference_plan.terms[0].pins[0]), true);
-  assert.ok(calls.includes("/api/jobs/old")); assert.ok(calls.includes("/api/jobs/latest"));
+  assert.deepEqual(calls, [`/api/sessions/${sid}/jobs?limit=100&offset=0`]);
   let selected; const states = [];
   const loader = createHistoryLoader({ fetchImpl, onJob: (j) => { selected = j; }, onState: (s) => states.push(s) });
   await loader.open(turns[0]); assert.equal(calls.at(-1), "/api/jobs/old");
@@ -45,29 +46,26 @@ test("기록 조회 오류는 Pin 상태를 바꾸지 않고 다른 선택·정�
   assert.equal(signals[3].aborted, true); assert.deepEqual(selected, ["next"]);
 });
 
-test("서버 페이지 전체 복원, 중복 제거, 완료 Job enrichment, 쿠키와 취소 signal", async () => {
+test("서버 페이지 복원은 Job별 상세 요청 없이 페이지 단위로 완료된다", async () => {
   const calls = [], controller = new AbortController();
   const restored = await restoreConversation({ signal: controller.signal, fetchImpl: async (url, options) => {
     calls.push(url);
     assert.equal(options.credentials, "include"); assert.equal(options.cache, "no-store");
     assert.equal(options.signal, controller.signal);
-    if (url === "/api/sessions?limit=1") return response({ items: [{ session_id: sid }] });
     if (url.endsWith("offset=0")) return response({ items: Array.from({ length: 100 }, (_, i) => job(`${i}`, i === 0 ? "completed" : "failed")) });
     if (url.endsWith("offset=100")) return response({ items: [job("99", "failed"), job("100")] });
-    if (url.endsWith("/jobs/0")) return response({ ...job("0"), enriched: true });
-    if (url.endsWith("/jobs/100")) return response({ ...job("100"), enriched: true });
-    return response({ session_id: sid });
-  } });
+    throw new Error(`unexpected request ${url}`);
+  }, sessionId: sid });
   assert.equal(restored.sessionId, sid); assert.equal(restored.turns.length, 101);
   assert.deepEqual(restored.turns.map((turn) => turn.id), Array.from({ length: 101 }, (_, i) => `${i}`));
-  assert.equal(restored.turns[0].job.enriched, true);
-  assert.equal(restored.turns.at(-1).job.enriched, true);
+  assert.equal(restored.turns[0].job.enriched, undefined);
+  assert.equal(restored.turns.at(-1).job.enriched, undefined);
   assert.equal(answerForJob(restored.turns[0].job), "통합 설명");
-  assert.equal(calls.length, 6);
+  assert.equal(calls.length, 2);
 });
 
-test("미인증·빈 목록은 빈 대화이며 새 ID를 후속 제출에 명시", async () => {
-  for (const r of [response({}, 401), response({ items: [] })]) {
+test("미인증·빈 bootstrap은 빈 대화이며 새 ID를 후속 제출에 명시", async () => {
+  for (const r of [response({}, 401), response({ items: [], session_id: null, latest_job: null, has_older_jobs: false })]) {
     assert.deepEqual(await restoreConversation({ fetchImpl: async () => r }), { sessionId: null, turns: [] });
   }
   const created = await createConversation({ fetchImpl: async (url, options) => {
@@ -134,6 +132,20 @@ test("세션 쿠키가 없는 초기 진입은 오류 없이 빈 대화로 준�
   assert.equal(state.restoreError, "");
 });
 
+test("초기 복원은 bootstrap 한 번으로 세션 목록과 최신 Job만 가져온다", async () => {
+  const calls = [];
+  const latest = { ...job("latest"), created_at: "2026-10-08T00:00:00Z" };
+  const result = await loadInitialConversation({ fetchImpl: async (url) => {
+    calls.push(url);
+    return response({ items: [{ session_id: sid, created_at: latest.created_at }],
+      session_id: sid, latest_job: latest, has_older_jobs: true });
+  } });
+  assert.deepEqual(calls, ["/api/sessions/bootstrap?limit=100"]);
+  assert.equal(result.sessionId, sid);
+  assert.deepEqual(result.turns.map((turn) => turn.id), ["latest"]);
+  assert.equal(result.hasOlderJobs, true);
+});
+
 test("새 세션 생성 뒤 목록에서 해당 세션을 추가할 수 있는 메타데이터 반환", async () => {
   const created = { session_id: sid2, created_at: "2026-10-07T01:00:00Z" };
   const result = await createConversation({ fetchImpl: async (url, options) => {
@@ -149,8 +161,7 @@ test("목록 장애·이력 권한 오류·손상 데이터는 복원 실패하�
     await assert.rejects(restoreConversation({ fetchImpl: async () => bad }));
   }
   for (const bad of [response({}, 401), response({}, 404), response({ items: [job("x", "invalid")] })]) {
-    await assert.rejects(restoreConversation({ fetchImpl: async (url) => url.includes("limit=1")
-      && !url.includes("offset=") ? response({ items: [{ session_id: sid }] }) : url.includes("offset=") ? bad : response({}) }));
+    await assert.rejects(restoreConversation({ sessionId: sid, fetchImpl: async () => bad }));
   }
   await assert.rejects(restoreConversation({ fetchImpl: async () => { throw new Error("offline"); } }));
 });
