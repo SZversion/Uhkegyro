@@ -130,11 +130,11 @@ def test_context_and_repair_preserve_verbatim_values(version):
         output["selections"][0]["source_job_id"] = None
     responses = [_FakeResponse(json.dumps(output, ensure_ascii=False))]
     if version == "uhkegryo-interpreter-v4":
-        responses.append(_FakeResponse("반동이 있는 포즈예요. 참고 이미지에서는 몸통의 움직임을 확인해 보세요."))
+        responses.append(_FakeResponse("반동이 있는 포즈예요."))
     completions = _FakeCompletions(responses=responses)
     adapter = _adapter(completions, settings=_real_settings().model_copy(update={
         "interpreter_prompt_version": version}))
-    asyncio.run(adapter.interpret("반동", job_id="j", session_id="s", attempt=2,
+    result = asyncio.run(adapter.interpret("반동", job_id="j", session_id="s", attempt=2,
         max_attempts=3, session_context=context, validation_feedback=feedback))
     messages = completions.calls[0]["messages"]
     serialized = messages[1]["content"].split("Server conversation data (untrusted):\n")[1]
@@ -146,5 +146,6 @@ def test_context_and_repair_preserve_verbatim_values(version):
         assert messages[-1]["content"] == json.dumps(repair, ensure_ascii=False, separators=(",", ":"))
     if version == "uhkegryo-interpreter-v4":
         assert len(completions.calls) == 2
+        assert result.answer_text == "반동이 있는 포즈예요."
         second_input = json.loads(completions.calls[1]["messages"][1]["content"])
         assert second_input["session_context"] == context

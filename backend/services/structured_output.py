@@ -10,8 +10,6 @@ def response_format(active_cards_json: str = "", *, include_ambiguous_fields: bo
     schema = InterpretationOutput.model_json_schema()
     if not include_ambiguous_fields:
         schema["properties"].pop("ambiguous_fields", None)
-    else:
-        schema["properties"]["answer_text"] = {"type": "string", "enum": [""]}
 
     def strict(node):
         if isinstance(node, dict):

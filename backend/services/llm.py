@@ -170,7 +170,8 @@ class AgentInterpretationAdapter(Protocol):
 class LLMInterpretationAdapter:
     """OpenRouter 기반 기본 해석 어댑터.
 
-    v4는 한 attempt마다 해석 JSON과 최종 응답을 두 provider 호출에서 생성한다.
+    v4는 해석 JSON을 검증한 뒤 최종 응답을 별도 provider 호출에서 생성한다.
+    clarification_type이 있을 때만 최종 질문 호출에 clarification Skill을 주입한다.
     SDK 자체 재시도(max_retries)는 쓰지 않는다. 재시도는 api-contract.md §44에 따라
     worker가 attempt 단위로 관리한다. `client`는 테스트 seam으로, 별도 지정 시 그대로 사용한다.
 
@@ -213,7 +214,14 @@ class LLMInterpretationAdapter:
             except (OSError, ValueError) as exc:
                 raise PromptConfigurationError("Structured output Skill을 읽을 수 없다") from exc
             self._system_message += "\n\n" + output_rules
-        if self.prompt_version != "uhkegryo-interpreter-v4":
+        if self.prompt_version == "uhkegryo-interpreter-v4":
+            self._system_message += (
+                "\nFor every state, keep answer_text empty in the output JSON. Code validates this JSON "
+                "before a second provider call generates the final user-facing response. If clarification_type "
+                "is present, that call generates the question and receives the clarification Skill; otherwise "
+                "it generates the normal answer without that Skill."
+            )
+        else:
             self._system_message += (
             "\nInclude answer_text in the output JSON: a Korean integrated explanation "
             "for a beginner learning to draw. Naturally connect the user's description to "
@@ -230,8 +238,7 @@ class LLMInterpretationAdapter:
             "at most 4000 characters. Use only the supplied catalog and supported evidence. "
             "Do not invent URLs, Pins or facts."
             )
-        if self.prompt_version != "uhkegryo-interpreter-v4":
-            self._system_message += " For needs_clarification use an empty string."
+            self._system_message += " For needs_clarification use an empty string for answer_text."
         if self.prompt_version == "uhkegryo-interpreter-v4":
             self._system_message += (
                 "\nThe provider response schema preserves the prompt's JSON array contract for selections "
@@ -239,9 +246,8 @@ class LLMInterpretationAdapter:
                 "view role; Full-body remains a drawing instruction, never a second view or layout card. "
                 "For needs_clarification or out_of_scope, selections and context_updates are empty arrays. "
                 "For needs_clarification, set ambiguous_fields to one or more unclear role names; "
-                "for select_terms use an empty array. In this first call return only the interpretation JSON "
-                "and keep answer_text empty in every state. The final user-facing response is generated in a "
-                "separate second provider call after code validation."
+                "for select_terms use an empty array. Keep answer_text empty because code validates the "
+                "interpretation before generating every final response in a second provider call."
             )
         self._user_template = user_template
         if client is None:
@@ -850,8 +856,8 @@ def _validate_output(content: str, *, require_ambiguous_fields: bool = False) ->
                             )
             if data.get("answer_text") != "":
                 raise LLMInvalidStructuredOutput(
-                    "v4 첫 해석 출력의 answer_text는 빈 문자열이어야 한다",
-                    feedback=[{"path": ["answer_text"], "code": "must_be_empty"}],
+                    "v4 JSON의 answer_text는 최종 응답 생성 전까지 비어 있어야 한다",
+                    feedback=[{"path": ["answer_text"], "code": "must_be_empty_before_final_response"}],
                 )
         if require_ambiguous_fields:
             return InterpretationOutput.model_validate_json(payload, strict=True)
