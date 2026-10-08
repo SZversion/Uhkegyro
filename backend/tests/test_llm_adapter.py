@@ -82,6 +82,7 @@ class _FakeMessage:
 class _FakeChoice:
     def __init__(self, content):
         self.message = _FakeMessage(content)
+        self.finish_reason = "stop"
 
 
 class _FakeResponse:
@@ -236,11 +237,12 @@ def test_interpret_needs_clarification_valid():
 
 def test_interpret_passes_system_and_user_messages():
     completions = _FakeCompletions(responses=[_FakeResponse(SELECT_JSON)])
-    adapter = _adapter(completions)
+    settings = _real_settings().model_copy(update={"interpreter_prompt_version": "uhkegryo-interpreter-v0"})
+    adapter = _adapter(completions, settings=settings)
     _run(adapter.interpret("반동", job_id="r1", session_id="session-1", attempt=1, max_attempts=3, active_cards_json='{"active_cards": []}'))
     assert len(completions.calls) == 1
     call = completions.calls[0]
-    assert call["model"] == "openai/gpt-4o-mini"
+    assert call["model"] == adapter.settings.llm_model
     assert call["response_format"] == {"type": "json_object"}
     assert "extra_body" not in call
     messages = call["messages"]
@@ -281,15 +283,23 @@ def test_interpretation_validation_feedback_is_never_added_as_system_message():
 _REQUEST_TEXT = "한쪽 다리에 힘 주고 상체가 살짝 틀어진 마른 캐릭터"
 
 
-def _langfuse_generation_kwargs(monkeypatch, *, with_keys=True):
+def _langfuse_generation_kwargs(monkeypatch, *, with_keys=True, finish_reason="stop"):
     """가짜 langfuse 모듈로 trace 전송 내용을 캡처한다. 네트워크는 호출하지 않는다."""
     recorded = {}
 
     class _FakeGeneration:
         def update(self, **kwargs):
-            recorded.setdefault("generation_update", {}).update(kwargs)
-            recorded["generation"].update({k: v for k, v in kwargs.items()
-                                          if k in ("input", "metadata")})
+            generation_update = recorded.setdefault("generation_update", {})
+            if "metadata" in kwargs:
+                kwargs = {**kwargs, "metadata": {
+                    **generation_update.get("metadata", {}), **kwargs["metadata"]
+                }}
+            generation_update.update(kwargs)
+            updates = {k: v for k, v in kwargs.items() if k in ("input", "metadata")}
+            if "metadata" in updates:
+                updates["metadata"] = {**recorded["generation"].get("metadata", {}),
+                                       **updates["metadata"]}
+            recorded["generation"].update(updates)
 
     class _FakeLangfuse:
         def __init__(self, **kwargs):
@@ -316,6 +326,7 @@ def _langfuse_generation_kwargs(monkeypatch, *, with_keys=True):
         monkeypatch.setattr(settings, "langfuse_secret_key", "", raising=False)
 
     completions = _FakeCompletions(responses=[_FakeResponse(SELECT_JSON)])
+    completions._responses[0].choices[0].finish_reason = finish_reason
     adapter = _adapter(completions, settings=settings)
     _run(adapter.interpret(_REQUEST_TEXT, job_id="job-42", session_id="session-42", attempt=2, max_attempts=3, active_cards_json="{}"))
     return recorded, adapter
@@ -368,6 +379,56 @@ def test_langfuse_metadata_keeps_job_id(monkeypatch):
     assert recorded["generation_update"]["usage_details"] == {
         "input_tokens": 10, "output_tokens": 5, "total_tokens": 15
     }
+    assert recorded["generation_update"]["metadata"]["finish_reason"] == "stop"
+    assert recorded["generation_update"]["metadata"]["job_id"] == "job-42"
+
+
+def test_langfuse_records_finish_reason_when_output_is_truncated(monkeypatch):
+    """중단 응답도 adapter가 거부하기 전에 finish_reason을 Langfuse에 남긴다."""
+    recorded = {}
+
+    class _FakeGeneration:
+        def update(self, **kwargs):
+            generation_update = recorded.setdefault("generation_update", {})
+            if "metadata" in kwargs:
+                kwargs = {**kwargs, "metadata": {
+                    **generation_update.get("metadata", {}), **kwargs["metadata"]
+                }}
+            generation_update.update(kwargs)
+            updates = {k: v for k, v in kwargs.items() if k in ("input", "metadata")}
+            if "metadata" in updates:
+                updates["metadata"] = {**recorded["generation"].get("metadata", {}),
+                                       **updates["metadata"]}
+            recorded["generation"].update(updates)
+
+    class _FakeLangfuse:
+        def __init__(self, **kwargs):
+            pass
+
+        def get_current_trace_id(self):
+            return "worker-owned-trace"
+
+        def start_as_current_observation(self, **kwargs):
+            recorded["generation"] = kwargs
+            return contextlib.nullcontext(_FakeGeneration())
+
+    fake_module = type(sys)("langfuse")
+    fake_module.Langfuse = _FakeLangfuse
+    monkeypatch.setitem(sys.modules, "langfuse", fake_module)
+    settings = _real_settings()
+    monkeypatch.setattr(settings, "langfuse_public_key", "pk-test", raising=False)
+    monkeypatch.setattr(settings, "langfuse_secret_key", "sk-test", raising=False)
+    response = _FakeResponse(SELECT_JSON)
+    response.choices[0].finish_reason = "length"
+    adapter = _adapter(_FakeCompletions(responses=[response]), settings=settings)
+
+    with pytest.raises(llm.LLMIncompleteResponse):
+        _run(adapter.interpret(_REQUEST_TEXT, job_id="job-42", session_id="session-42",
+                               attempt=1, max_attempts=3, active_cards_json="{}"))
+
+    assert recorded["generation_update"]["metadata"]["finish_reason"] == "length"
+    assert recorded["generation_update"]["metadata"]["error_type"] == "incomplete_or_unclassified_upstream"
+    assert recorded["generation_update"]["usage_details"]["output_tokens"] == 5
 
 
 def test_langfuse_keeps_prompt_version(monkeypatch):
