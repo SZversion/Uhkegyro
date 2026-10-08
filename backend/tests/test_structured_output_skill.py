@@ -16,20 +16,6 @@ ROOT = Path(__file__).resolve().parents[2]
 PROMPT = ROOT / "prompts" / "uhkegryo-interpreter-v1.md"
 
 
-def test_v4_first_json_call_injects_domain_skill_and_docker_includes_it():
-    settings = _real_settings().model_copy(update={
-        "interpreter_prompt_version": "uhkegryo-interpreter-v4",
-    })
-    completions = _FakeCompletions(responses=[_FakeResponse(SELECT_JSON)])
-    adapter = _adapter(completions, settings=settings)
-    asyncio.run(adapter.interpret("당당한 자세", job_id="j", session_id="s", attempt=1, max_attempts=3))
-
-    system = completions.calls[0]["messages"][0]["content"]
-    domain_skill = (ROOT / "skills" / "SKILL.md").read_text(encoding="utf-8")
-    assert domain_skill in system
-    assert "COPY skills/SKILL.md /app/skills/SKILL.md" in (ROOT / "Dockerfile").read_text(encoding="utf-8")
-
-
 def test_catalog_schema_limits_term_ids_to_their_role():
     cards = json.dumps({"active_cards": [
         {"role": "view", "term_id": "view_front"},

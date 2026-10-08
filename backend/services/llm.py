@@ -201,13 +201,6 @@ class LLMInterpretationAdapter:
                 )
         self._structured_output = self.prompt_version in ("uhkegryo-interpreter-v1", "uhkegryo-interpreter-v4")
         self._system_message = system_message
-        if self.prompt_version == "uhkegryo-interpreter-v4":
-            skill_path = Path(__file__).resolve().parents[2] / "skills" / "SKILL.md"
-            try:
-                domain_skill = skill_path.read_text(encoding="utf-8")
-            except OSError as exc:
-                raise PromptConfigurationError("도메인 Skill을 읽을 수 없다") from exc
-            self._system_message += "\n\n" + domain_skill
         if self.prompt_version == "uhkegryo-interpreter-v1":
             try:
                 output_rules = load_skill(self.settings.structured_output_skill_path)

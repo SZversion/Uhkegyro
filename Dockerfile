@@ -12,7 +12,6 @@ COPY docs/domains/illustration-reference/term-cards/ ./term-cards/
 COPY prompts/uhkegryo-interpreter-v0.md /app/prompts/uhkegryo-interpreter-v0.md
 COPY prompts/uhkegryo-interpreter-v1.md /app/prompts/uhkegryo-interpreter-v1.md
 COPY prompts/uhkegryo-interpreter-v4.md /app/prompts/uhkegryo-interpreter-v4.md
-COPY skills/SKILL.md /app/skills/SKILL.md
 COPY skills/structured-output/SKILL.md /app/skills/structured-output/SKILL.md
 
 EXPOSE 8000
