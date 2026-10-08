@@ -12,7 +12,7 @@ import pytest
 
 from backend.db.migrate import migrate
 from backend.schemas import AgentResult, Failure
-from backend.schemas.enums import AgentStatus, FailureCode, JobStatus, ReasonCode
+from backend.schemas.enums import AgentStatus, FailureCode, JobStatus, ReasonCode, Role
 from backend.services.job_repository import (
     IdempotencyConflict,
     InvalidJobTransition,
@@ -74,6 +74,7 @@ class FakeConnection:
             row["status"] = args[1]
             row["succeeded"] = args[1] == "completed" if args[1] in ("completed", "failed") else None
             row["final_payload_json"] = args[2] if args[1] == "completed" else args[3] if args[1] == "failed" else None
+            row["progress_roles_json"] = json.loads(args[7]) if args[1] == "searching" else []
             return row
         if query.lstrip().startswith("SELECT status, attempt FROM jobs"):
             return {"status": self.status, "attempt": self.attempt} if self.status is not None else None
@@ -112,6 +113,7 @@ def _job_row(args):
         "idempotency_expires_at": datetime.now(timezone.utc), "status": args[6],
         "attempt": args[7], "max_attempts": args[8], "next_retry_at": None,
         "succeeded": None, "final_payload_json": None,
+        "progress_roles_json": [],
     }
 
 
@@ -223,6 +225,16 @@ def test_update_status_persists_terminal_payload_without_thumbnail():
     assert "completed_at = CASE" in update_query
     assert job.job_status is JobStatus.COMPLETED
     assert job.result == result
+
+
+def test_update_status_persists_searching_roles():
+    connection = FakeConnection(status=JobStatus.VALIDATING.value)
+    job = _run(JobRepository(FakePool(connection)).update_status(
+        job_id=JOB_ID, status=JobStatus.SEARCHING, attempt=1, progress_roles=[Role.POSE]
+    ))
+
+    assert job.progress_roles == [Role.POSE]
+    assert json.loads(connection.calls[0][1][7]) == ["pose"]
 
 
 @pytest.mark.parametrize(

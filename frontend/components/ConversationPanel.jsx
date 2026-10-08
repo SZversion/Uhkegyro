@@ -26,7 +26,7 @@ export default function ConversationPanel({ turns, onChoice, onRetry, retryDisab
           <MarkdownAnswer text={answerForJob(turn.job)} />
           {turn.job?.job_status === "failed" && onRetry && <div className="result-actions">
             <button type="button" disabled={retryDisabled} onClick={() => onRetry(turn.request)}
-              title="원래 요청을 입력란에 복원합니다. 확인 후 Enter로 전송하세요.">재시도</button>
+              title="원래 요청을 바로 다시 보냅니다.">재시도</button>
           </div>}
           {turn.job?.result?.agent_status === "needs_clarification" && <div className="result-actions">
             {clarificationChoices(turn.job.result).map((choice) =>

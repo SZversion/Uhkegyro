@@ -16,6 +16,17 @@ test("결과는 완료된 success/partial_result에만 노출한다", () => {
   assert.deepEqual(view.resultTerms({ job_status: "searching" }), []);
 });
 
+test("처리 중인 후속 job은 이전 결과판을 유지하고 검색 역할만 로딩 대상으로 노출한다", async () => {
+  const body = term("body", { pins: [{ pin_id: "body-pin", status: "available" }] });
+  const pose = term("pose", { pins: [{ pin_id: "pose-pin", status: "available" }] });
+  const turns = [{ job: completed("success", { reference_plan: { terms: [body, pose] } }) }];
+  const pending = { job_status: "searching", progress_roles: ["pose"] };
+
+  assert.deepEqual(view.renderedResultTerms(pending, turns), [body, pose]);
+  assert.deepEqual(view.progressRoles(pending), ["pose"]);
+  assert.deepEqual(view.progressRoles({ job_status: "validating", progress_roles: [] }), []);
+});
+
 test("역할 부분 갱신은 유지 역할의 이전 검색 데이터와 Pin을 보존한다", () => {
   const previousBody = term("body", { term_id: "old-body", pins: [{ pin_id: "body-pin", status: "available" }] });
   const previousPose = term("pose", { term_id: "old-pose", pins: [{ pin_id: "old-pose-pin", status: "available" }] });

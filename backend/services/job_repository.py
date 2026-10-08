@@ -7,7 +7,7 @@ import uuid
 from typing import Any
 
 from backend.schemas import AgentResult, Failure, JobEnvelope
-from backend.schemas.enums import AgentStatus, JobStatus
+from backend.schemas.enums import AgentStatus, JobStatus, Role
 from backend.schemas.models import PROGRESS_POLL_AFTER_MS, RETRY_COUNT_MAX
 from backend.services.session_repository import SessionRepository
 
@@ -224,6 +224,7 @@ class JobRepository:
         attempt: int,
         result: AgentResult | None = None,
         failure: Failure | None = None,
+        progress_roles: list[Role] | None = None,
     ) -> JobEnvelope:
         allowed_previous = _ALLOWED_PREVIOUS_STATUSES.get(status)
         if allowed_previous is None:
@@ -251,7 +252,8 @@ class JobRepository:
                 updated_at = now(),
                 completed_at = CASE WHEN $5 THEN now() ELSE NULL END,
                 validation_feedback_json = CASE WHEN $5 THEN NULL ELSE validation_feedback_json END,
-                lease_expires_at = CASE WHEN $5 THEN NULL ELSE lease_expires_at END
+                lease_expires_at = CASE WHEN $5 THEN NULL ELSE lease_expires_at END,
+                progress_roles_json = CASE WHEN $2 = 'searching' THEN $8::jsonb ELSE '[]'::jsonb END
             WHERE job_id = $1::uuid
               AND status = ANY($6::text[])
               AND attempt = $7
@@ -264,6 +266,7 @@ class JobRepository:
             terminal,
             allowed_previous,
             attempt,
+            json.dumps([role.value if isinstance(role, Role) else role for role in progress_roles or []]),
         )
         if row is None:
             current = await self._pool.fetchrow(
@@ -336,6 +339,9 @@ def _to_envelope(row: Any) -> JobEnvelope:
     result = AgentResult.model_validate(payload) if succeeded is True else None
     failure = Failure.model_validate(payload) if succeeded is False else None
     terminal = status in (JobStatus.COMPLETED, JobStatus.FAILED)
+    progress_roles = row.get("progress_roles_json", [])
+    if isinstance(progress_roles, str):
+        progress_roles = json.loads(progress_roles)
     return JobEnvelope(
         job_id=str(row["job_id"]),
         session_id=str(row["session_id"]),
@@ -343,6 +349,7 @@ def _to_envelope(row: Any) -> JobEnvelope:
         attempt=max(1, row["attempt"]),
         max_attempts=row["max_attempts"],
         poll_after_ms=None if terminal else PROGRESS_POLL_AFTER_MS,
+        progress_roles=progress_roles if status is JobStatus.SEARCHING else [],
         result=result,
         failure=failure,
     )

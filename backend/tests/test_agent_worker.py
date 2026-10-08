@@ -51,6 +51,7 @@ class FakeJobs:
         self.stale_status = stale_status
         self.stale_heartbeat = stale_heartbeat
         self.writes = []
+        self.progress_writes = []
         self.heartbeats = 0
 
     async def claim_next(self):
@@ -62,12 +63,13 @@ class FakeJobs:
         if self.stale_heartbeat:
             raise StaleJobAttempt
 
-    async def update_status(self, *, job_id, status, attempt, result=None, failure=None):
+    async def update_status(self, *, job_id, status, attempt, result=None, failure=None, progress_roles=None):
         assert job_id == self.job["job_id"]
         assert attempt == self.job["attempt"]
         if status is self.stale_status:
             raise StaleJobAttempt
         self.writes.append((status, result, failure))
+        self.progress_writes.append(progress_roles)
 
 
 class FakeRecovery:
@@ -185,6 +187,8 @@ def test_worker_runs_claimed_job_through_assembler(monkeypatch, snapshot_factory
         JobStatus.RENDERING,
         JobStatus.COMPLETED,
     ]
+    assert jobs.progress_writes[1] == [Role.POSE]
+    assert jobs.progress_writes[-1] is None
     assert jobs.writes[-1][1].agent_status is AgentStatus.SUCCESS
     actual = dict(adapter.calls[0][1])
     actual["active_cards_json"] = json.loads(actual["active_cards_json"])
