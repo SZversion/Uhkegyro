@@ -448,9 +448,7 @@ def test_worker_rejects_unapproved_search_fragments_before_mcp(monkeypatch, snap
         {"id": "bad-search", "name": "search_pinterest_pins", "arguments": {
             "role": "pose", "query_fragments": ["invented phrase"]
         }}
-    ], [{"id": "valid-search", "name": "search_pinterest_pins", "arguments": {
-        "role": "pose", "query_fragments": ["weight shift"]
-    }}]])
+    ]])
     gateway = FakeMcpGateway([{"role": "pose", "pins": [good_pin.model_dump()], "code": None}])
     jobs, recovery = FakeJobs(), FakeRecovery()
     snapshot = snapshot_factory([card_factory(
@@ -464,27 +462,31 @@ def test_worker_rejects_unapproved_search_fragments_before_mcp(monkeypatch, snap
     assert gateway.calls == [("search_pinterest_pins", {
         "role": "pose", "query_fragments": ["weight shift"]
     })]
-    assert adapter.tool_requests[1][0][-1]["role"] == "tool"
+    assert len(adapter.tool_requests) == 1
     assert jobs.writes[-1][1].reference_plan.terms[0].pins[0].pin_id == "789"
     assert recovery.failures == []
 
 
-def test_worker_fails_when_model_never_selects_approved_search(monkeypatch, snapshot_factory, card_factory):
-    from backend.services.failure_mapping import classify_failure
-
+def test_worker_searches_approved_terms_when_model_omits_search_selection(monkeypatch, snapshot_factory, card_factory):
     adapter = FakeAdapter(tool_calls=[[
         {"id": "card", "name": "get_active_term_card", "arguments": {"term_id": "pose_shift"}}
     ], []])
-    gateway = FakeMcpGateway([{"term_id": "pose_shift"}])
-    recovery = FakeRecovery()
+    pin = PinResult(pin_id="789", pin_url="https://www.pinterest.com/pin/789/", status="available")
+    gateway = FakeMcpGateway([{"term_id": "pose_shift"}, {
+        "role": "pose", "pins": [pin.model_dump()], "code": None
+    }])
+    jobs, recovery = FakeJobs(), FakeRecovery()
     _run(_worker(
-        monkeypatch, FakeJobs(), recovery,
+        monkeypatch, jobs, recovery,
         snapshot_factory([card_factory("pose_shift", role="pose")]), adapter,
         mcp_gateway=gateway,
     ).run_once())
 
-    assert [name for name, _ in gateway.calls] == ["get_active_term_card"]
-    assert classify_failure(recovery.failures[0]["error"]) is FailureCode.LLM_INVALID_STRUCTURED_OUTPUT
+    assert [name for name, _ in gateway.calls] == ["get_active_term_card", "search_pinterest_pins"]
+    assert gateway.calls[1][1] == {"role": "pose", "query_fragments": ["pose shift"]}
+    assert len(adapter.tool_requests) == 1
+    assert jobs.writes[-1][1].reference_plan.terms[0].pins[0].pin_id == "789"
+    assert recovery.failures == []
 
 
 def test_worker_preserves_mcp_configuration_failure(monkeypatch, snapshot_factory, card_factory):
