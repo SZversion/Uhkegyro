@@ -1,6 +1,5 @@
 """Read only this conversation; commit memory with the authoritative job attempt."""
 import json
-from datetime import datetime
 from uuid import UUID
 
 from backend.schemas.enums import JobStatus
@@ -54,7 +53,8 @@ class ConversationMemory:
                AND status IN ('completed','failed') ORDER BY created_at DESC,job_id DESC LIMIT 6""",
             job["session_id"], job["created_at"], job["job_id"],
         )
-        state = decode(memory)
+        stored = decode(memory)
+        state = {key: stored[key] for key in ("constraints", "pending_question") if key in stored}
         pinned = [value["source_job_id"] for value in state.get("constraints", {}).values()]
         sources = await self.records(job, pinned) if pinned else []
         previous = await self.pool.fetchval(
@@ -66,8 +66,7 @@ class ConversationMemory:
             job["session_id"], job["created_at"], job["job_id"],
         )
         return {"state": state, "recent": [record(r) for r in reversed(rows)],
-                "sources": sources, "oldest_recent": rows[-1] if rows else None,
-                "previous_result": decode(previous)}
+                "sources": sources, "previous_result": decode(previous)}
 
     async def records(self, job, ids):
         rows = await self.pool.fetch(
@@ -79,20 +78,6 @@ class ConversationMemory:
         if len(rows) != len(set(str(value) for value in ids)):
             raise LLMInvalidStructuredOutput("기억의 출처가 현재 대화의 선행 기록에 없습니다")
         return [record(row) for row in rows]
-
-    async def older(self, job, context):
-        boundary = context["oldest_recent"]
-        if boundary is None:
-            return []
-        mark = context["state"].get("summarized_through")
-        return await self.pool.fetch(
-            """SELECT * FROM jobs WHERE session_id=$1 AND (created_at,job_id)<($2,$3)
-               AND status IN ('completed','failed')
-               AND ($4::timestamptz IS NULL OR (created_at,job_id)>($4,$5::uuid))
-               ORDER BY created_at,job_id LIMIT 6""",
-            job["session_id"], boundary["created_at"], boundary["job_id"],
-            datetime.fromisoformat(mark[0]) if mark else None, UUID(mark[1]) if mark else None,
-        )
 
     async def search(self, job, query):
         if query.source_job_ids:
@@ -129,24 +114,16 @@ class ConversationMemory:
         async with self.pool.acquire() as connection:
             async with connection.transaction():
                 live = await connection.fetchval(
-                    """SELECT memory_json FROM sessions WHERE session_id=$1
+                    """SELECT session_id FROM sessions WHERE session_id=$1
                        AND last_activity_at + interval '3 months' > now() FOR UPDATE""",
                     job["session_id"],
                 )
                 if live is None:
                     raise StaleJobAttempt
-                state = dict(state)
-                current = decode(live)
-                mark, proposed = current.get("summarized_through"), state.get("summarized_through")
-                if mark and (not proposed or
-                             (datetime.fromisoformat(mark[0]), UUID(mark[1])) >=
-                             (datetime.fromisoformat(proposed[0]), UUID(proposed[1]))):
-                    for key in ("summary", "summary_sources", "summarized_through"):
-                        if key in current:
-                            state[key] = current[key]
+                state = {key: state[key] for key in ("constraints", "pending_question") if key in state}
                 await JobRepository(connection).update_status(
                     job_id=str(job["job_id"]), attempt=job["attempt"],
                     status=JobStatus.COMPLETED, result=result,
                 )
-                await connection.execute("UPDATE sessions SET memory_json=$2::jsonb WHERE session_id=$1",
+                await connection.execute("UPDATE sessions SET memory_json=memory_json || $2::jsonb WHERE session_id=$1",
                                          job["session_id"], json.dumps(state, ensure_ascii=False))

@@ -118,7 +118,7 @@ def test_compact_catalog_preserves_every_card_field_and_order(catalog):
 @pytest.mark.parametrize("version", ["uhkegryo-interpreter-v0", "uhkegryo-interpreter-v1", "uhkegryo-interpreter-v4"])
 def test_context_and_repair_preserve_verbatim_values(version):
     context = {"constraints": {"pose": '  Low Angle 한글 "원문"\n다음 줄  '},
-               "recent": [], "sources": [], "summary_incomplete": True}
+               "recent": [], "sources": []}
     feedback = [{"path": ["selections", 0, "evidence"], "code": "string_too_short"}]
     completions = _FakeCompletions(responses=[_FakeResponse(SELECT_JSON)])
     adapter = _adapter(completions, settings=_real_settings().model_copy(update={

@@ -4,6 +4,29 @@ export function resultTerms(job) {
     ? result.reference_plan?.terms || [] : [];
 }
 
+export function renderedResultTerms(job, turns = []) {
+  const result = job?.job_status === "completed" ? job.result : null;
+  const update = result?.reference_update;
+  if (!update) return resultTerms(job);
+
+  const currentIndex = turns.findIndex((turn) => turn.job?.job_id === job.job_id);
+  const previousJob = currentIndex < 0 ? null : [...turns.slice(0, currentIndex)]
+    .reverse()
+    .find((turn) => resultTerms(turn.job).length)?.job;
+  const previousTerms = resultTerms(previousJob);
+  const previousByRole = new Map(previousTerms.map((term) => [term.role, term]));
+  const currentTerms = result?.reference_plan?.terms || [];
+  const currentByRole = new Map(currentTerms.map((term) => [term.role, term]));
+
+  return [...new Set([...update.preserved_roles, ...update.replaced_roles])]
+    .flatMap((role) => {
+      const term = update.replaced_roles.includes(role)
+        ? currentByRole.get(role)
+        : previousByRole.get(role) || currentByRole.get(role);
+      return term ? [term] : [];
+    });
+}
+
 export function roleNotice(term) {
   if (term?.reason_codes?.includes("PIN_SEARCH_UNAVAILABLE")) return "검색 결과를 가져오지 못했습니다.";
   if (term?.reason_codes?.includes("PIN_RESULTS_EMPTY")) return "검색 결과가 없습니다.";

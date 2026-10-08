@@ -31,12 +31,16 @@ async function submitScenario(mode) {
     setTermGuide: noop, uiDemoEnabled: false,
     pollerRef: { current: null }, pendingRequestRef: { current: "" }, selectedJobRef: { current: null },
     sessionId: mode === "create_exception" ? null : "test",
-    createConversation: async () => { throw new Error("network test"); },
+    sessionIdRef: { current: mode === "create_exception" ? null : "test" },
+    createConversation: async () => {
+      if (mode === "create_exception") throw new Error("network test");
+      return { session_id: "new-session", created_at: "2026-10-07T01:00:00Z" };
+    },
     setError: (value) => { state.error = value; },
     setRequestText: (value) => { state.input = value; },
     setIsSubmitting: (value) => { state.submitting = value; },
     setBoardView: noop, setPollError: noop, setSubmission: noop, setJob: noop,
-    setSelectedTermId: noop, setSessionId: noop, setTurns: noop,
+    setSelectedTermId: noop, setSessionId: noop, setSessions: noop, setTurns: noop,
   };
   vm.createContext(context);
   vm.runInContext(handler + "\nthis.runSubmit = submit;", context);

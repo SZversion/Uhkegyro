@@ -11,6 +11,7 @@
 - 이전 조건을 출처로 선택한 동일 카드는 재검색하지 않는다. 현재 요청에서 명시적으로 선택·수정한 역할은 검색한다.
 - 명시적인 역할 clear는 그 역할을 제거한다. 모호한 변경은 질문하며 이전 결과·기억을 수정하지 않는다.
 - 변경 역할의 검색 실패는 해당 역할의 빈 결과·장애 안내로 표시하고 다른 역할은 유지한다.
+- 화면은 `reference_update`의 교체 역할만 현재 검색 결과로 갱신하고 유지 역할은 직전 결과의 용어·Pin 데이터를 재사용한다. 삭제 역할은 표시하지 않으며, 확인 질문은 이전 보드를 그대로 보여준다.
 
 ## How
 - 기존 POST /api/agent와 GET /api/jobs/{id}, 쿠키·session_id 계약을 유지한다.
@@ -30,6 +31,9 @@
 - Given 체형·포즈 결과, When pose clear와 새 view 선택, Then 체형은 유지하고 포즈는 제거하며 view만 검색한다.
 - Given 모호한 변경, When needs_clarification, Then 검색 없이 질문하고 기존 조건은 보존한다.
 - Given pose 검색 장애, When 완료, Then partial_result이며 체형 결과는 유지한다.
+- Given 체형·포즈 결과, When 포즈만 다시 검색, Then 체형은 이전 용어·Pin 데이터를 유지하고 포즈만 새 결과로 표시한다.
+- Given 역할 부분 갱신 결과, When 역할이 명시적으로 삭제됨, Then 해당 역할을 표시하지 않는다.
+- Given 기존 보드와 확인 질문, When clarification 결과를 받음, Then 기존 역할별 용어와 Pin을 그대로 표시한다.
 - Given 타 대화 또는 미래 job, When 이전 결과 조회, Then 재사용 대상에 포함하지 않는다.
 
 검증: 2026-10-07 리뷰 대응 후 원래 로컬 수용 기준 27개 및 PR 작업 폴더 전체 backend 647개 통과(임시 PostgreSQL 16), frontend 55개 통과. 기존 로컬 Langfuse 작업은 PR 전체 검증에서 제외했다. 실제 LLM·외부 검색은 fixture로 대체했고 실제 서비스 연동은 미검증이다.

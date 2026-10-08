@@ -507,6 +507,8 @@ class LLMInterpretationAdapter:
 
     @observed_generation
     async def memory(self, operation: str, data: dict, output_type, **trace):
+        if operation not in ("classify", "answer"):
+            raise PromptConfigurationError("지원하지 않는 메모리 작업입니다")
         path = self._resolve_prompt_path()
         source = path.read_text(encoding="utf-8")
         try:

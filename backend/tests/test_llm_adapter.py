@@ -380,7 +380,6 @@ def test_langfuse_keeps_prompt_version(monkeypatch):
 @pytest.mark.parametrize(("method_name", "arguments", "expected"), [
     ("interpret", {}, "interpreter"),
     ("memory", {"operation": "classify"}, "memory-classify"),
-    ("memory", {"operation": "summarize"}, "memory-summarize"),
     ("memory", {"operation": "answer"}, "memory-answer"),
     ("request_mcp_tool_calls", {}, "mcp-tool-selection"),
     ("request_mcp_search_decision", {}, "mcp-post-search-decision"),

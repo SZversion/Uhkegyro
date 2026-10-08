@@ -1,10 +1,7 @@
 import asyncio
 import json
-import time
 import uuid
-from contextlib import nullcontext
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -13,7 +10,7 @@ from backend.services.job_repository import JobRepository, StaleJobAttempt
 from backend.services.session_repository import SessionRepository
 from backend.schemas.models import AgentResult
 from backend.schemas.models import InterpretationOutput, InterpretationSelection
-from backend.schemas.memory import RecallQuery, SummaryOutput, RecallAnswer, ContextUpdate
+from backend.schemas.memory import RecallQuery, RecallAnswer, ContextUpdate
 from backend.tests.test_conversation_sessions import database_case
 
 
@@ -46,9 +43,9 @@ def test_context_isolated_and_completion_atomic():
         await jobs.update_status(job_id=created.job_id, status=agent_worker.JobStatus.RENDERING, attempt=1)
         answer = AgentResult(agent_status="memory_answer", memory_answer="이 대화 기록에서 해당 내용을 확인할 수 없습니다.")
         with pytest.raises(StaleJobAttempt):
-            await memory.complete(dict(job) | {"attempt": 99}, answer, {"summary": "wrong"})
+            await memory.complete(dict(job) | {"attempt": 99}, answer, {"pending_question": "wrong"})
         assert json.loads(await pool.fetchval("SELECT memory_json FROM sessions WHERE session_id=$1", uuid.UUID(a))) == {}
-        await memory.complete(job, answer, {"summary": "saved"})
+        await memory.complete(job, answer, {"pending_question": "saved"})
         assert (await jobs.get(session_id=a, job_id=created.job_id)).result.memory_answer
         await jobs.submit(session_id=b, request_text="다른 대화", idempotency_key=str(uuid.uuid4()))
         other = await jobs.claim_next()
@@ -71,70 +68,17 @@ def test_memory_adapter_keeps_history_in_user_message(monkeypatch):
     assert "untrusted_marker" in messages[1]["content"]
 
 
-def test_long_history_summary_budget_and_continuation(monkeypatch):
-    from backend.services import conversation_context
-    from backend.services.conversation_memory import ConversationMemory
-    from backend.services.llm import LLMTimeout
-
-    monkeypatch.setattr(conversation_context, "SUMMARY_BUDGET_SECONDS", 0.05)
-
-    class Adapter:
-        calls = 0
-        delay = False
-
-        async def memory(self, operation, data, output_type, **kwargs):
-            self.calls += 1
-            if self.delay:
-                await asyncio.sleep(1)
-            return SummaryOutput(text="서 있는 자세", source_job_ids=[data["records"][-1]["job_id"]])
-
-    async def case(pool):
-        session = await SessionRepository(pool).create_session("owner")
-        await pool.execute("""INSERT INTO jobs(job_id,session_id,request_text,request_text_hash,
-            idempotency_key_hash,idempotency_expires_at,status,final_payload_json,created_at)
-            SELECT gen_random_uuid(),$1::uuid,'서 있는 자세',md5(g::text),md5(g::text),
-            now()+interval '10 minutes','completed','{"agent_status":"success"}'::jsonb,
-            now()-interval '1 day'+g*interval '1 second' FROM generate_series(1,110) g""", session)
-        jobs, memory, adapter = JobRepository(pool), ConversationMemory(pool), Adapter()
-        trace = SimpleNamespace(stage=lambda *_: nullcontext())
-        await jobs.submit(session_id=session, request_text="새 요청", idempotency_key=str(uuid.uuid4()))
-        job = await jobs.claim_next()
-        context = await conversation_context.summarize(memory, job, adapter, trace)
-        assert adapter.calls == 2 and context["summary_incomplete"]
-        mark = context["state"]["summarized_through"]
-        await jobs.update_status(job_id=str(job["job_id"]), attempt=1, status=agent_worker.JobStatus.VALIDATING)
-        await jobs.update_status(job_id=str(job["job_id"]), attempt=1, status=agent_worker.JobStatus.RENDERING)
-        await memory.complete(job, AgentResult(agent_status="memory_answer",
-            memory_answer="이 대화 기록에서 해당 내용을 확인할 수 없습니다."), context["state"])
-        await jobs.submit(session_id=session, request_text="다음 요청", idempotency_key=str(uuid.uuid4()))
-        next_job = await jobs.claim_next()
-        adapter.delay = True
-        start = time.monotonic()
-        with pytest.raises(LLMTimeout):
-            await conversation_context.summarize(memory, next_job, adapter, trace)
-        assert time.monotonic() - start < 0.5
-        assert json.loads(await pool.fetchval("SELECT memory_json FROM sessions WHERE session_id=$1", uuid.UUID(session)))["summarized_through"] == mark
-        adapter.delay = False
-        before = adapter.calls
-        continued = await conversation_context.summarize(memory, next_job, adapter, trace)
-        assert adapter.calls - before == 2 and continued["summary_incomplete"]
-        assert continued["state"]["summarized_through"] != mark
-
-    asyncio.run(database_case(case))
-
-
 class MemoryAdapter:
     def __init__(self):
         self.contexts = []
         self.recall = False
-        self.summary_calls = 0
+        self.memory_operations = []
 
     async def memory(self, operation, data, output_type, **trace):
+        self.memory_operations.append(operation)
+        assert operation in ("classify", "answer")
         if operation == "classify":
             return RecallQuery(mode="recall" if self.recall else "none", role="pose", latest=True)
-        if operation == "summarize":
-            self.summary_calls += 1
-            return SummaryOutput(text="서 있는 포즈를 추천함", source_job_ids=[data["records"][-1]["job_id"]])
         item = data["records"][0]
         return RecallAnswer(answer="서 있는 자세를 추천했어요.", citations=[
             {"job_id": item["job_id"], "quote": "서 있는"}])
@@ -147,7 +91,7 @@ class MemoryAdapter:
             context_updates=[ContextUpdate(role="pose", term_id="pose_standing", evidence="서 있는")])
 
 
-def test_worker_remembers_summarizes_and_recalls(snapshot_factory, card_factory):
+def test_worker_remembers_recent_records_and_recalls(snapshot_factory, card_factory):
     async def case(pool):
         jobs, adapter = JobRepository(pool), MemoryAdapter()
         snapshot = snapshot_factory([card_factory("pose_standing", label_ko="서 있는 자세")])
@@ -158,7 +102,7 @@ def test_worker_remembers_summarizes_and_recalls(snapshot_factory, card_factory)
             assert await worker.run_once()
         assert adapter.contexts[1]["constraints"]["pose"]["term_id"] == "pose_standing"
         assert len(adapter.contexts[-1]["recent"]) == 6
-        assert adapter.summary_calls == 0
+        assert "summarize" not in adapter.memory_operations
         adapter.recall = True
         submitted, _ = await jobs.submit(session_id=session_id, request_text="아까 추천한 포즈는?", idempotency_key=str(uuid.uuid4()))
         await worker.run_once()
@@ -170,7 +114,7 @@ def test_worker_remembers_summarizes_and_recalls(snapshot_factory, card_factory)
     asyncio.run(database_case(case))
 
 
-def test_worker_bounds_summary_with_long_history(snapshot_factory, card_factory):
+def test_worker_uses_recent_records_without_summary_in_long_history(snapshot_factory, card_factory):
     async def case(pool):
         session = await SessionRepository(pool).create_session("owner")
         await pool.execute("""INSERT INTO jobs(job_id,session_id,request_text,request_text_hash,
@@ -183,8 +127,9 @@ def test_worker_bounds_summary_with_long_history(snapshot_factory, card_factory)
             card_factory("pose_standing", label_ko="서 있는 자세")]), adapter=adapter)
         new, _ = await jobs.submit(session_id=session, request_text="서 있는 자세", idempotency_key=str(uuid.uuid4()))
         assert await worker.run_once()
-        assert adapter.summary_calls == 0
-        assert adapter.contexts[0]["summary_incomplete"]
+        assert "summarize" not in adapter.memory_operations
+        assert len(adapter.contexts[0]["recent"]) == 6
+        assert set(adapter.contexts[0]) == {"constraints", "pending_question", "recent", "sources"}
         assert (await jobs.get(session_id=session, job_id=new.job_id)).job_status == "completed"
 
     asyncio.run(database_case(case))
@@ -215,37 +160,6 @@ def test_invalid_context_cannot_change_memory(snapshot_factory, card_factory, ba
             await conversation_context.validate(ConversationMemory(pool), job, output,
                 snapshot_factory([card_factory("pose_standing")]))
         assert json.loads(await pool.fetchval("SELECT memory_json FROM sessions WHERE session_id=$1", uuid.UUID(session))) == {}
-    asyncio.run(database_case(case))
-
-
-def test_summary_failure_retries_without_advancing_memory(snapshot_factory, card_factory):
-    from backend.services.llm import LLMTimeout
-    async def case(pool):
-        sessions, jobs, adapter = SessionRepository(pool), JobRepository(pool), MemoryAdapter()
-        session = await sessions.create_session("user")
-        worker = agent_worker.AgentJobWorker(pool, snapshot_factory([card_factory("pose_standing")]), adapter=adapter)
-        for i in range(7):
-            await jobs.submit(session_id=session, request_text="서 있는 자세", idempotency_key=str(uuid.uuid4()))
-            await worker.run_once()
-        before = await pool.fetchval("SELECT memory_json FROM sessions WHERE session_id=$1", uuid.UUID(session))
-        original = adapter.memory
-        async def fail(operation, *args, **kwargs):
-            if operation == "summarize":
-                raise LLMTimeout("timeout")
-            return await original(operation, *args, **kwargs)
-        adapter.memory = fail
-        new, _ = await jobs.submit(session_id=session, request_text="서 있는 자세", idempotency_key=str(uuid.uuid4()))
-        await worker.run_once()
-        assert (await jobs.get(session_id=session, job_id=new.job_id)).job_status == "completed"
-        assert adapter.summary_calls == 0
-        from backend.services.conversation_summary_worker import refresh_once
-        from backend.services.job_trace import JobTracer
-        with pytest.raises(LLMTimeout):
-            await refresh_once(pool, JobTracer(), adapter)
-        after = await pool.fetchval("SELECT memory_json FROM sessions WHERE session_id=$1", uuid.UUID(session))
-        assert json.loads(after).get("summarized_through") == json.loads(before).get("summarized_through")
-        adapter.memory = original
-        assert await refresh_once(pool, JobTracer(), adapter)
     asyncio.run(database_case(case))
 
 
