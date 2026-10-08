@@ -208,6 +208,8 @@ class AgentJobWorker:
         adapter = self._adapter
         if not hasattr(adapter, "request_mcp_tool_calls"):
             raise ValueError("해석 어댑터가 MCP tool calling을 지원하지 않습니다")
+        if not hasattr(adapter, "request_mcp_search_decision"):
+            raise ValueError("해석 어댑터가 MCP 후속 판단을 지원하지 않습니다")
         with self._tracer.phase("mcp-tools-list"):
             tools = await self._mcp_gateway.list_tools()
         approved = {
@@ -222,10 +224,9 @@ class AgentJobWorker:
                 "Use the registered MCP tools to fulfill the request. For Pinterest searches, "
                 "call search_pinterest_pins only with an approved role and that role's exact "
                 "query_fragments. Never invent or alter fragments. Use other listed tools "
-                "when needed. Select independent searches for all unfinished approved roles "
-                "together in one response, at most once per role. After tool results, retry "
-                "only unfinished roles; do not search completed roles again. "
-                "After a tool result, decide whether another tool call is needed."
+                "when needed. Select independent searches for unfinished approved roles "
+                "together in one response, at most once per role. Never search a completed role again. "
+                "Every approved role must be searched. Do not omit a pending role."
             )},
             {"role": "user", "content": json.dumps({
                 "request": request_text,
@@ -241,12 +242,30 @@ class AgentJobWorker:
         ]
         for call_round in range(1, MAX_MCP_TOOL_CALLS + 1):
             pending = [role for role in approved if role not in outcomes]
-            purpose = "tool_selection" if pending else "post_search_decision"
+            if not pending:
+                break
+            if call_round > 1:
+                with self._tracer.phase(
+                    "mcp-post-search-decision", call_round=call_round - 1,
+                    pending_roles=[role.value for role in pending],
+                ) as metrics:
+                    decision = await adapter.request_mcp_search_decision(
+                        messages, call_round=call_round - 1,
+                        purpose="post_search_decision",
+                        pending_roles=[role.value for role in pending],
+                    )
+                    metrics.update(decision=decision)
+                if decision != "continue":
+                    raise LLMInvalidStructuredOutput(
+                        "LLM이 미완료 승인 역할에 대한 검색을 중단했다",
+                        stage="mcp_search_decision",
+                    )
+            selection_purpose = "tool_selection" if call_round == 1 else "tool_reselection"
             with self._tracer.phase(
-                "mcp-tool-selection" if pending else "mcp-post-search-decision",
-                call_round=call_round, purpose=purpose, pending_roles=[role.value for role in pending],
+                "mcp-tool-selection",
+                call_round=call_round, purpose=selection_purpose, pending_roles=[role.value for role in pending],
             ) as metrics:
-                calls = await adapter.request_mcp_tool_calls(messages, tools, required=bool(pending))
+                calls = await adapter.request_mcp_tool_calls(messages, tools, required=True)
                 metrics.update(call_count=len(calls), selected_roles=sorted({
                     call["arguments"].get("role") for call in calls
                     if call["name"] == PINTEREST_SEARCH_TOOL

@@ -14,7 +14,7 @@
 
 ## What
 
-1. 검색 상태 DB 갱신, 도구 목록 조회, 검색 도구 선택 LLM, 검색 후 판단 LLM을 구분한다.
+1. 검색 상태 DB 갱신, 도구 목록 조회, 검색 도구 선택 LLM과 미완료 역할의 후속 판단 LLM을 구분한다. 모든 승인 역할 완료 후에는 판단·선택 LLM을 호출하지 않는다.
 2. 역할별 실행 자리 대기, MCP 호출, Widget 조회, 재시도 대기, 결과 조립, 대화 상태 갱신을 기록한다.
 3. 반복 Job 조회는 job-result-read 관측을 생성하지 않는다. 완료 조회의 result-widget-refresh 관측만 같은 job_id 기반 trace에 연결한다.
 4. 실패·취소도 시간을 기록하되 예외 메시지·인증 정보·이미지 URL·새 사용자 원문은 전송하지 않는다.
@@ -23,8 +23,8 @@
 ## How
 
 - 기반: PR #116 / codex/search-engine-tracing. 별도 PR로 추가 변경만 검토한다.
-- worker span: search-status-update, mcp-tools-list, mcp-tool-selection, mcp-post-search-decision, search-slot-wait, mcp-search-call, widget-enrichment, search-retry-wait, search-result-assembly, conversation-state-update.
-- LLM generation은 기존 부모 span 아래 유지한다. 판단 span metadata에 call_round, purpose, pending_roles, output에 call_count, selected_roles를 기록한다. 검색 외 도구의 인자·본문은 기록하지 않는다.
+- worker span: search-status-update, mcp-tools-list, mcp-tool-selection, mcp-post-search-decision, search-slot-wait, mcp-search-call, widget-enrichment, search-retry-wait, search-result-assembly, conversation-state-update. mcp-post-search-decision은 미완료 역할이 있는 후속 라운드에서만 생성하며 완료 후에는 생성하지 않는다. 과거 trace는 유지한다.
+- LLM generation은 기존 부모 span 아래 유지한다. 선택 span metadata에 call_round, purpose(tool_selection/tool_reselection), pending_roles, output에 call_count, selected_roles를 기록한다. 후속 판단 span은 metadata에 call_round, pending_roles, output에 decision을 기록한다. 검색 외 도구의 인자·본문은 기록하지 않는다.
 - 역할별 metadata는 role, search_attempt. Job/attempt 연결은 기존 부모 trace를 따른다. 기존 역할 span에도 search_attempt를 추가한다.
 - 공통 output: elapsed_ms(monotonic clock), status(completed/interrupted), 예외 시 error_type(클래스명만).
 - Widget output: pin_count, available_count, unavailable_count. Pin status 집계만 기록하며 Pin ID/URL은 추가로 보내지 않는다.

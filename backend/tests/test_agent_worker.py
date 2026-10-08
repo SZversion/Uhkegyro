@@ -80,12 +80,14 @@ class FakeRecovery:
 
 
 class FakeAdapter:
-    def __init__(self, output=None, error=None, tool_calls=None):
+    def __init__(self, output=None, error=None, tool_calls=None, decisions=None):
         self.output = output or _selected()
         self.error = error
         self.calls = []
         self.tool_calls = list(tool_calls or [])
         self.tool_requests = []
+        self.decisions = list(decisions or [])
+        self.decision_requests = []
 
     async def interpret(self, request_text, **kwargs):
         self.calls.append((request_text, kwargs))
@@ -102,6 +104,10 @@ class FakeAdapter:
     async def request_mcp_tool_calls(self, messages, tools, *, required):
         self.tool_requests.append((messages, tools, required))
         return self.tool_calls.pop(0) if self.tool_calls else []
+
+    async def request_mcp_search_decision(self, messages, **trace):
+        self.decision_requests.append((messages, trace))
+        return self.decisions.pop(0) if self.decisions else "continue"
 
 
 class FakeMcpGateway:
@@ -345,7 +351,8 @@ def test_worker_searches_with_validated_role_fragments_and_keeps_pin(
     assert {tool["name"] for tool in adapter.tool_requests[0][1]} == {
         "search_pinterest_pins", "get_active_term_card"
     }
-    assert adapter.tool_requests[1][0][-1] == {
+    assert len(adapter.tool_requests) == 1
+    assert adapter.tool_requests[0][0][-1] == {
         "role": "tool", "tool_call_id": "call-1",
         "content": json.dumps({"role": "pose", "pins": [pin.model_dump()], "code": None}),
     }
