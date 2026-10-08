@@ -496,6 +496,7 @@ class LLMInterpretationAdapter:
                 "MCP 후속 판단이 올바른 JSON이 아니다", stage="mcp_search_decision"
             ) from error
         if (not isinstance(payload, dict) or set(payload) != {"decision"}
+                or not isinstance(payload["decision"], str)
                 or payload["decision"] not in {"continue", "stop"}):
             raise LLMInvalidStructuredOutput(
                 "MCP 후속 판단 계약 위반", stage="mcp_search_decision"

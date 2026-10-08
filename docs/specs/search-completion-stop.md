@@ -23,7 +23,7 @@
 ## How
 
 - worker의 pending 계산 직후 빈 목록이면 break한다. execute/flush 중간에는 종료 조건을 넣지 않는다.
-- 검색 도구 선택 span은 최초 한 번 호출하고, 후속 호출은 continue 판단 뒤에만 생성한다. 각 mcp-tool-selection은 purpose=tool_selection, required=True, call_round/pending_roles/call_count/selected_roles를 유지한다. pending이 남은 라운드 경계에서만 mcp-post-search-decision span을 생성한다.
+- 검색 도구 선택 span은 최초 한 번 호출하고, 후속 호출은 continue 판단 뒤에만 생성한다. 각 mcp-tool-selection은 최초 purpose=tool_selection, 후속 purpose=tool_reselection이며 required=True, call_round/pending_roles/call_count/selected_roles를 유지한다. pending이 남은 라운드 경계에서만 mcp-post-search-decision span을 생성한다.
 - 판단 호출은 명시적 continue/stop JSON을 검증한다. 필수 승인 역할이 남아 있는 stop은 기존 LLM_INVALID_STRUCTURED_OUTPUT으로 처리한다. worker 도구 선택 프롬프트는 미완료 역할의 승인 검색에 초점을 둔다.
 - 기존 outcomes 등록 조건, Semaphore(3), 전체 MCP 16회 한도, 작업 회수와 결과 조립을 유지한다.
 - 최종 도구 결과도 messages에 원래 순서·tool_call_id로 보존하지만 완료 후 LLM에 재전송하지 않는다.

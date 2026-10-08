@@ -404,11 +404,14 @@ def test_mcp_search_decision_accepts_only_explicit_enum(decision):
 
 @pytest.mark.parametrize("content", [
     "not json", "{}", '{"decision":"maybe"}', '{"decision":"stop","extra":true}',
+    '{"decision":[]}', '{"decision":{}}', '{"decision":null}',
+    '{"decision":1}', '{"decision":true}',
 ])
 def test_mcp_search_decision_rejects_invalid_output(content):
     adapter = _adapter(_FakeCompletions(responses=[_FakeResponse(content)]))
-    with pytest.raises(llm.LLMInvalidStructuredOutput):
+    with pytest.raises(llm.LLMInvalidStructuredOutput) as error:
         _run(adapter.request_mcp_search_decision([]))
+    assert error.value.stage == "mcp_search_decision"
 
 
 def test_langfuse_disabled_sends_nothing(monkeypatch):

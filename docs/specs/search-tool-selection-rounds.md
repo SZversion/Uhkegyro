@@ -36,7 +36,7 @@
 ## How
 
 - 구현은 `backend/services/agent_worker.py`, `backend/services/llm.py`, 해당 Spec과 관련 테스트에 한정한다. API, DB, UI, 공개 해석 출력 타입은 변경하지 않는다.
-- adapter는 기존 MCP tool-call API와 별도로 `request_mcp_search_decision(messages)`를 제공한다. 출력 계약은 JSON 객체 `{"decision":"continue"}` 또는 `{"decision":"stop"}`만 허용하며 누락·추가 키·다른 값은 `LLM_INVALID_STRUCTURED_OUTPUT`로 분류한다.
+- adapter는 기존 MCP tool-call API와 별도로 `request_mcp_search_decision(messages)`를 제공한다. 출력 계약은 JSON 객체 `{"decision":"continue"}` 또는 `{"decision":"stop"}`만 허용한다. decision의 문자열 타입을 enum 검사 전에 검증하며 누락·추가 키·다른 값과 배열·객체·null·숫자·불리언은 `LLM_INVALID_STRUCTURED_OUTPUT`로 분류한다.
 - 판단 호출은 tool calling 없이 JSON mode로 실행하고 Langfuse generation 이름 `mcp-post-search-decision`을 기록한다. 도구 선택은 `mcp-tool-selection`을 기록하며 purpose와 round를 metadata로 구분한다.
 - Worker는 각 라운드 시작 시 pending을 계산한다. 빈 목록이면 판단·선택을 포함한 추가 호출 전에 종료한다. 최초 라운드에서는 판단 없이 도구 선택한다. 최초 및 후속 선택에서 반환된 호출을 전부 기존 순서 규칙으로 실행한다.
 - 선택 응답 실행 완료 뒤 pending이 남으면 판단한다. continue만 후속 도구 선택을 허용한다. stop인데 승인 역할이 남았거나 검색 재시도를 수행하지 못했다면 누락 결과를 정상 완료로 취급하지 않고 기존 structured-output 오류를 낸다.
@@ -72,9 +72,9 @@
 - THEN: 연속된 검색은 최대 3개 병렬 실행, Widget 처리가 끝날 때까지 기다리고, 검색 외 도구의 순서 경계 및 모든 tool_call_id를 보존한다.
 
 **AC-06 · adapter 출력 검증**
-- GIVEN: 판단 LLM이 continue/stop 외 값, 잘못된 JSON 또는 계약 외 필드를 반환한다.
+- GIVEN: 판단 LLM이 continue/stop 외 값, 배열·객체 등 문자열이 아닌 decision, 잘못된 JSON 또는 계약 외 필드를 반환한다.
 - WHEN: adapter가 출력을 검증한다.
-- THEN: `LLM_INVALID_STRUCTURED_OUTPUT`으로 분류한다.
+- THEN: `TypeError` 없이 `LLM_INVALID_STRUCTURED_OUTPUT`으로 분류하며 오류 stage는 `mcp_search_decision`이다.
 
 **AC-07 · 오류 및 trace**
 - GIVEN: 설정 오류, 취소 또는 모든 승인 역할 완료가 발생한다.
