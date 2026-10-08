@@ -4,8 +4,15 @@ import { clarificationChoices } from "../lib/result-view.mjs";
 import { LoadingIndicator } from "./LoadingIndicator.mjs";
 import MarkdownAnswer from "./MarkdownAnswer.mjs";
 
-export default function ConversationPanel({ turns, onChoice, onRetry, retryDisabled }) {
+export default function ConversationPanel({ turns, onChoice, onRetry, retryDisabled,
+  hasOlderJobs = false, olderHistoryLoading = false, olderHistoryError = "", onLoadOlderJobs }) {
   return <div className="conversation-thread" role="log" aria-label="캐릭터 설명 대화" aria-live="polite" aria-relevant="additions text">
+    {hasOlderJobs && <div className="result-actions">
+      <button type="button" onClick={onLoadOlderJobs} disabled={olderHistoryLoading}>
+        {olderHistoryLoading ? "이전 대화를 불러오는 중…" : "이전 대화 불러오기"}
+      </button>
+      {olderHistoryError && <p role="alert">{olderHistoryError}</p>}
+    </div>}
     {turns.map((turn) => <div className="conversation-turn" key={turn.id}>
       <article className="chat-request" aria-label="사용자 요청">
         <span>내 요청</span><p>{turn.request}</p>
