@@ -42,7 +42,6 @@ def test_parallel_phases_and_generation_purpose(monkeypatch, snapshot_factory):
         original = adapter.request_mcp_tool_calls
 
         async def generate(*args, **kwargs):
-            assert len(adapter.tool_requests) < 2, "completed searches must not request another generation"
             with client.start_as_current_observation(as_type="generation", name="existing-generation"):
                 return await original(*args, **kwargs)
 
@@ -50,15 +49,16 @@ def test_parallel_phases_and_generation_purpose(monkeypatch, snapshot_factory):
         async def execute(job_id):
             with worker._tracer.attempt(_job(1, job_id)):
                 return await worker._search_outcomes(resolution(["pose", "view"]), request_text="private request")
-        outcomes = (await asyncio.gather(execute("job-1"), execute("job-2")))[0]
+        outcomes = await asyncio.gather(execute("job-1"), execute("job-2"))
         records = client.records
         assert {r["trace_id"] for r in records} == {"trace:job-1", "trace:job-2"}
         for trace_id in ("trace:job-1", "trace:job-2"):
             assert {r["metadata"]["role"] for r in records
                     if r["trace_id"] == trace_id and r["name"] == "mcp-search-call"} == {"pose", "view"}
-        selection = next(r for r in records if r["name"] == "mcp-tool-selection")
-        assert selection["metadata"] == {"call_round": 1, "purpose": "tool_selection", "pending_roles": ["pose", "view"]}
-        assert selection["output"]["selected_roles"] == ["pose", "view"]
+            selection = next(r for r in records if r["trace_id"] == trace_id and r["name"] == "mcp-tool-selection")
+            assert selection["metadata"] == {"call_round": 1, "purpose": "tool_selection", "pending_roles": ["pose", "view"]}
+            assert selection["output"]["selected_roles"] == ["pose", "view"]
+            assert len([r for r in records if r["trace_id"] == trace_id and r["name"] == "existing-generation"]) == 1
         assert not any(r["name"] == "mcp-post-search-decision" for r in records)
         assert len(adapter.tool_requests) == 2
         assert all(required for _, _, required in adapter.tool_requests)
@@ -70,7 +70,7 @@ def test_parallel_phases_and_generation_purpose(monkeypatch, snapshot_factory):
         widgets = [r for r in records if r["name"] == "widget-enrichment"]
         assert all(r["output"]["available_count"] == r["output"]["unavailable_count"] == 1 for r in widgets)
         assert all(len(r["output"]["engine_attempts"]) == 1 for r in records if r["name"].startswith("pinterest-search-"))
-        assert len(outcomes[Role.POSE].pins) == 2
+        assert all(len(outcome[Role.POSE].pins) == 2 for outcome in outcomes)
         assert "private-thumbnail" not in json.dumps(records) and "private request" not in json.dumps(records)
         assert "_search_trace" not in json.dumps(adapter.tool_requests)
 
@@ -107,10 +107,9 @@ def test_retry_failure_and_invalid_role_do_not_break_observation(monkeypatch, sn
         assert failed["output"]["status"] == "interrupted" and failed["output"]["error_type"] == "RuntimeError"
         assert "private upstream detail" not in json.dumps(client.records) and count == 3
         names = [r["name"] for r in client.records]
-        assert names.count("mcp-post-search-decision") == 2
-        assert names.count("mcp-tool-selection") == 3
-        assert names.index("mcp-post-search-decision") < names.index("mcp-tool-selection", names.index("mcp-post-search-decision"))
-        assert len(adapter.decision_requests) == 2
+        assert "mcp-post-search-decision" not in names
+        assert names.count("mcp-tool-selection") == 1
+        assert names.count("mcp-code-search-attempt") == 2
 
     asyncio.run(run())
 

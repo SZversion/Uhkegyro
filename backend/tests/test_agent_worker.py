@@ -80,14 +80,12 @@ class FakeRecovery:
 
 
 class FakeAdapter:
-    def __init__(self, output=None, error=None, tool_calls=None, decisions=None):
+    def __init__(self, output=None, error=None, tool_calls=None):
         self.output = output or _selected()
         self.error = error
         self.calls = []
         self.tool_calls = list(tool_calls or [])
         self.tool_requests = []
-        self.decisions = list(decisions or [])
-        self.decision_requests = []
 
     async def interpret(self, request_text, **kwargs):
         self.calls.append((request_text, kwargs))
@@ -105,11 +103,6 @@ class FakeAdapter:
         self.tool_requests.append((messages, tools, required))
         return self.tool_calls.pop(0) if self.tool_calls else []
 
-    async def request_mcp_search_decision(self, messages, **trace):
-        self.decision_requests.append((messages, trace))
-        return self.decisions.pop(0) if self.decisions else "continue"
-
-
 class FakeMcpGateway:
     def __init__(self, outcomes):
         self.outcomes = list(outcomes)
@@ -123,6 +116,9 @@ class FakeMcpGateway:
                 }, "required": ["role", "query_fragments"]
             }},
             {"name": "get_active_term_card", "description": "get card", "inputSchema": {
+                "type": "object", "properties": {}, "additionalProperties": True
+            }},
+            {"name": "delete_all_data", "description": "not allowed", "inputSchema": {
                 "type": "object", "properties": {}, "additionalProperties": True
             }},
         ]
@@ -348,9 +344,7 @@ def test_worker_searches_with_validated_role_fragments_and_keeps_pin(
         "role": "pose", "query_fragments": ["weight shift", "standing"]
     })]
     assert adapter.tool_requests[0][2] is True
-    assert {tool["name"] for tool in adapter.tool_requests[0][1]} == {
-        "search_pinterest_pins", "get_active_term_card"
-    }
+    assert [tool["name"] for tool in adapter.tool_requests[0][1]] == ["search_pinterest_pins"]
     assert len(adapter.tool_requests) == 1
     assert adapter.tool_requests[0][0][-1] == {
         "role": "tool", "tool_call_id": "call-1",
@@ -455,9 +449,7 @@ def test_worker_rejects_unapproved_search_fragments_before_mcp(monkeypatch, snap
         {"id": "bad-search", "name": "search_pinterest_pins", "arguments": {
             "role": "pose", "query_fragments": ["invented phrase"]
         }}
-    ], [{"id": "valid-search", "name": "search_pinterest_pins", "arguments": {
-        "role": "pose", "query_fragments": ["weight shift"]
-    }}]])
+    ]])
     gateway = FakeMcpGateway([{"role": "pose", "pins": [good_pin.model_dump()], "code": None}])
     jobs, recovery = FakeJobs(), FakeRecovery()
     snapshot = snapshot_factory([card_factory(
@@ -471,27 +463,27 @@ def test_worker_rejects_unapproved_search_fragments_before_mcp(monkeypatch, snap
     assert gateway.calls == [("search_pinterest_pins", {
         "role": "pose", "query_fragments": ["weight shift"]
     })]
-    assert adapter.tool_requests[1][0][-1]["role"] == "tool"
+    assert len(adapter.tool_requests) == 1
     assert jobs.writes[-1][1].reference_plan.terms[0].pins[0].pin_id == "789"
     assert recovery.failures == []
 
 
-def test_worker_fails_when_model_never_selects_approved_search(monkeypatch, snapshot_factory, card_factory):
-    from backend.services.failure_mapping import classify_failure
-
+def test_worker_rejects_unlisted_mcp_tools(monkeypatch, snapshot_factory, card_factory):
     adapter = FakeAdapter(tool_calls=[[
-        {"id": "card", "name": "get_active_term_card", "arguments": {"term_id": "pose_shift"}}
-    ], []])
-    gateway = FakeMcpGateway([{"term_id": "pose_shift"}])
-    recovery = FakeRecovery()
+        {"id": "unlisted", "name": "delete_all_data", "arguments": {}}
+    ]])
+    gateway = FakeMcpGateway([])
+    jobs, recovery = FakeJobs(), FakeRecovery()
     _run(_worker(
-        monkeypatch, FakeJobs(), recovery,
+        monkeypatch, jobs, recovery,
         snapshot_factory([card_factory("pose_shift", role="pose")]), adapter,
         mcp_gateway=gateway,
     ).run_once())
 
-    assert [name for name, _ in gateway.calls] == ["get_active_term_card"]
-    assert classify_failure(recovery.failures[0]["error"]) is FailureCode.LLM_INVALID_STRUCTURED_OUTPUT
+    assert gateway.calls == []
+    assert [tool["name"] for tool in adapter.tool_requests[0][1]] == ["search_pinterest_pins"]
+    assert len(adapter.tool_requests) == 1
+    assert recovery.failures
 
 
 def test_worker_preserves_mcp_configuration_failure(monkeypatch, snapshot_factory, card_factory):

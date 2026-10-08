@@ -443,36 +443,11 @@ def test_langfuse_keeps_prompt_version(monkeypatch):
     ("memory", {"operation": "classify"}, "memory-classify"),
     ("memory", {"operation": "answer"}, "memory-answer"),
     ("request_mcp_tool_calls", {}, "mcp-tool-selection"),
-    ("request_mcp_search_decision", {}, "mcp-post-search-decision"),
 ])
 def test_generation_name_identifies_call_kind(method_name, arguments, expected):
     from backend.services.llm import _generation_name
 
     assert _generation_name(method_name, arguments) == expected
-
-
-@pytest.mark.parametrize("decision", ["continue", "stop"])
-def test_mcp_search_decision_accepts_only_explicit_enum(decision):
-    completions = _FakeCompletions(responses=[_FakeResponse(json.dumps({"decision": decision}))])
-    adapter = _adapter(completions)
-    assert _run(adapter.request_mcp_search_decision(
-        [{"role": "user", "content": "results"}], call_round=1, purpose="post_search_decision"
-    )) == decision
-    call = completions.calls[0]
-    assert call["response_format"] == {"type": "json_object"}
-    assert "continue" in call["messages"][0]["content"]
-
-
-@pytest.mark.parametrize("content", [
-    "not json", "{}", '{"decision":"maybe"}', '{"decision":"stop","extra":true}',
-    '{"decision":[]}', '{"decision":{}}', '{"decision":null}',
-    '{"decision":1}', '{"decision":true}',
-])
-def test_mcp_search_decision_rejects_invalid_output(content):
-    adapter = _adapter(_FakeCompletions(responses=[_FakeResponse(content)]))
-    with pytest.raises(llm.LLMInvalidStructuredOutput) as error:
-        _run(adapter.request_mcp_search_decision([]))
-    assert error.value.stage == "mcp_search_decision"
 
 
 def test_langfuse_disabled_sends_nothing(monkeypatch):

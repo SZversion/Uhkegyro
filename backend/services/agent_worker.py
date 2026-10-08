@@ -148,7 +148,7 @@ class AgentJobWorker:
                             **({"validation_feedback": feedback} if feedback else {}),
                         )
                         resolution = await conversation_context.validate(
-                            self._memory, job, interpretation, self._snapshot)
+                            self._memory, job, interpretation, self._snapshot, context=context)
                         resolution = reference_update.select_searches(resolution, previous)
                 with trace.stage("searching"):
                     with self._tracer.phase("search-status-update"):
@@ -208,10 +208,9 @@ class AgentJobWorker:
         adapter = self._adapter
         if not hasattr(adapter, "request_mcp_tool_calls"):
             raise ValueError("해석 어댑터가 MCP tool calling을 지원하지 않습니다")
-        if not hasattr(adapter, "request_mcp_search_decision"):
-            raise ValueError("해석 어댑터가 MCP 후속 판단을 지원하지 않습니다")
         with self._tracer.phase("mcp-tools-list"):
-            tools = await self._mcp_gateway.list_tools()
+            registered_tools = await self._mcp_gateway.list_tools()
+        tools = [tool for tool in registered_tools if tool.get("name") == PINTEREST_SEARCH_TOOL]
         approved = {
             term.selection.role: tuple(term.card["query_fragments"])
             for term in resolution.terms
@@ -221,10 +220,10 @@ class AgentJobWorker:
         tool_call_count = 0
         messages = [
             {"role": "system", "content": (
-                "Use the registered MCP tools to fulfill the request. For Pinterest searches, "
+                "Use only the search_pinterest_pins tool to fulfill the request. "
                 "call search_pinterest_pins only with an approved role and that role's exact "
-                "query_fragments. Never invent or alter fragments. Use other listed tools "
-                "when needed. Select independent searches for unfinished approved roles "
+                "query_fragments. Never invent or alter fragments or call other tools. "
+                "Select independent searches for unfinished approved roles "
                 "together in one response, at most once per role. Never search a completed role again. "
                 "Every approved role must be searched. Do not omit a pending role."
             )},
@@ -240,40 +239,22 @@ class AgentJobWorker:
                 ],
             }, ensure_ascii=False)},
         ]
-        for call_round in range(1, MAX_MCP_TOOL_CALLS + 1):
-            pending = [role for role in approved if role not in outcomes]
-            if not pending:
-                break
-            if call_round > 1:
-                with self._tracer.phase(
-                    "mcp-post-search-decision", call_round=call_round - 1,
-                    pending_roles=[role.value for role in pending],
-                ) as metrics:
-                    decision = await adapter.request_mcp_search_decision(
-                        messages, call_round=call_round - 1,
-                        purpose="post_search_decision",
-                        pending_roles=[role.value for role in pending],
-                    )
-                    metrics.update(decision=decision)
-                if decision != "continue":
-                    raise LLMInvalidStructuredOutput(
-                        "LLM이 미완료 승인 역할에 대한 검색을 중단했다",
-                        stage="mcp_search_decision",
-                    )
-            selection_purpose = "tool_selection" if call_round == 1 else "tool_reselection"
-            with self._tracer.phase(
-                "mcp-tool-selection",
-                call_round=call_round, purpose=selection_purpose, pending_roles=[role.value for role in pending],
-            ) as metrics:
-                calls = await adapter.request_mcp_tool_calls(messages, tools, required=True)
-                metrics.update(call_count=len(calls), selected_roles=sorted({
-                    call["arguments"].get("role") for call in calls
-                    if call["name"] == PINTEREST_SEARCH_TOOL
-                    and isinstance(call["arguments"].get("role"), str)
-                    and call["arguments"].get("role") in {role.value for role in approved}
-                }))
-            if not calls:
-                break
+        pending = list(approved)
+        with self._tracer.phase(
+            "mcp-tool-selection", call_round=1, purpose="tool_selection",
+            pending_roles=[role.value for role in pending],
+        ) as metrics:
+            calls = await adapter.request_mcp_tool_calls(messages, tools, required=True)
+            calls = [call for call in calls if call.get("name") == PINTEREST_SEARCH_TOOL]
+            metrics.update(call_count=len(calls), selected_roles=sorted({
+                call["arguments"].get("role") for call in calls
+                if call["name"] == PINTEREST_SEARCH_TOOL
+                and isinstance(call["arguments"].get("role"), str)
+                and call["arguments"].get("role") in {role.value for role in approved}
+            }))
+        if not calls:
+            raise LLMInvalidStructuredOutput("LLM이 Pinterest 검색 도구를 선택하지 않았다")
+        if calls:
             assistant_calls = []
             for call in calls:
                 name, arguments, call_id = call["name"], call["arguments"], call["id"]
@@ -284,10 +265,10 @@ class AgentJobWorker:
             messages.append({"role": "assistant", "content": None, "tool_calls": assistant_calls})
             batch_roles: set[Role] = set()
 
-            async def execute(call):
+            async def execute(call, *, code_dispatch=False):
                 nonlocal tool_call_count
                 name, arguments, call_id = call["name"], call["arguments"], call["id"]
-                if tool_call_count >= MAX_MCP_TOOL_CALLS:
+                if not code_dispatch and tool_call_count >= MAX_MCP_TOOL_CALLS:
                     return {
                         "role": "tool", "tool_call_id": call_id,
                         "content": json.dumps({"error": "MCP tool-call limit reached"}),
@@ -380,9 +361,28 @@ class AgentJobWorker:
                     await flush(tasks)
                     messages.append(await execute(call))
             await flush(tasks)
+            batch_roles.clear()
+        # Resolver가 승인한 검색은 선택 모델이 빠뜨려도 worker가 직접 시작한다.
+        # 이후 PIN_SEARCH_UNAVAILABLE 역할만 코드에서 최대 3회까지 재시도한다.
+        for _ in range(3):
+            pending = [role for role in approved if role not in outcomes and attempts[role] < 3]
+            if not pending:
+                break
+            with self._tracer.phase(
+                "mcp-code-search-attempt",
+                roles=[role.value for role in pending],
+                search_attempts={role.value: attempts[role] + 1 for role in pending},
+            ):
+                code_calls = [{
+                    "id": f"worker-search-{role.value}-{attempts[role] + 1}",
+                    "name": PINTEREST_SEARCH_TOOL,
+                    "arguments": {"role": role.value, "query_fragments": list(approved[role])},
+                } for role in pending]
+                await flush([asyncio.create_task(execute(call, code_dispatch=True)) for call in code_calls])
+                batch_roles.clear()
         if set(approved) - set(outcomes):
             raise LLMInvalidStructuredOutput(
-                "LLM이 모든 승인 역할에 대한 Pinterest 검색 도구를 선택하지 않았다"
+                "worker가 모든 승인 역할의 Pinterest 검색을 완료하지 못했다"
             )
         return outcomes
 
