@@ -117,6 +117,7 @@ class _FakeClient:
 
 
 def _adapter(completions, **kwargs):
+    kwargs.setdefault("settings", _real_settings())
     return llm.LLMInterpretationAdapter(
         client=_FakeClient(completions),
         system_message=SYSTEM_EXAMPLE,

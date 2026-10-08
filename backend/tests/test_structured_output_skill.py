@@ -22,7 +22,8 @@ def _v4_payload(content):
     payload = json.loads(content) if isinstance(content, str) else content
     payload.setdefault("ambiguous_fields", [])
     payload.setdefault("context_updates", [])
-    payload.setdefault("answer_text", "")
+    payload.setdefault("answer_text", "" if payload.get("clarification_type") else
+                       "한쪽 다리에 체중을 싣는 자세예요. 참고 이미지에서는 지지하는 발을 살펴보세요.")
     for selection in payload.get("selections", []):
         selection.setdefault("source_job_id", None)
     for update in payload.get("context_updates", []):
@@ -86,7 +87,6 @@ def test_v4_provider_schema_preserves_prompt_array_contract():
     payload = _v4_payload(SELECT_JSON)
     completions = _FakeCompletions(responses=[
         _FakeResponse(json.dumps(payload)),
-        _FakeResponse("한쪽 다리에 체중을 싣는 자세예요. 참고 이미지에서는 지지하는 발을 확인해 보세요."),
     ])
     adapter = _adapter(completions, settings=_real_settings().model_copy(update={
         "interpreter_prompt_version": "uhkegryo-interpreter-v4"}))
@@ -100,7 +100,9 @@ def test_v4_provider_schema_preserves_prompt_array_contract():
     assert "ambiguous_fields" in schema["required"]
     assert schema["properties"]["selections"]["type"] == "array"
     assert schema["properties"]["context_updates"]["type"] == "array"
-    assert schema["properties"]["answer_text"]["enum"] == [""]
+    assert schema["properties"]["answer_text"]["type"] == "string"
+    assert output.answer_text == payload["answer_text"]
+    assert len(completions.calls) == 1
 
 
 def test_v4_prompt_explains_ambiguous_fields():
@@ -131,7 +133,7 @@ def test_v4_schema_matches_existing_arrays_and_adds_ambiguous_fields():
     assert schema["properties"]["ambiguous_fields"]["items"]["$ref"] == "#/$defs/Role"
     assert schema["properties"]["selections"]["type"] == "array"
     assert schema["properties"]["context_updates"]["type"] == "array"
-    assert schema["properties"]["answer_text"]["enum"] == [""]
+    assert schema["properties"]["answer_text"]["type"] == "string"
     assert "ambiguous_fields" not in response_format()["json_schema"]["schema"]["properties"]
 
 
@@ -147,7 +149,10 @@ def test_v4_prompt_output_examples_match_provider_schema():
         assert set(example) == set(schema["properties"])
         assert isinstance(example["selections"], list)
         assert isinstance(example["context_updates"], list)
-        assert example["answer_text"] == ""
+        if example["clarification_type"] is not None:
+            assert example["answer_text"] == ""
+        else:
+            assert example["answer_text"]
         llm._validate_output(json.dumps(example, ensure_ascii=False), require_ambiguous_fields=True)
 
 
@@ -170,12 +175,20 @@ def test_v4_validator_requires_every_schema_field(field):
     assert raised.value.feedback == [{"path": [field], "code": "missing"}]
 
 
-def test_v4_validator_requires_empty_answer_text():
+def test_v4_validator_requires_answer_text_for_select_terms():
     payload = _v4_payload(SELECT_JSON)
-    payload["answer_text"] = "not generated in the interpretation call"
+    payload["answer_text"] = ""
     with pytest.raises(llm.LLMInvalidStructuredOutput) as raised:
         llm._validate_output(json.dumps(payload), require_ambiguous_fields=True)
-    assert raised.value.feedback == [{"path": ["answer_text"], "code": "must_be_empty"}]
+    assert raised.value.feedback == [{"path": ["answer_text"], "code": "required_for_select_terms"}]
+
+
+def test_v4_validator_requires_empty_answer_text_for_clarification():
+    payload = _v4_payload(CLARIFY_JSON)
+    payload["answer_text"] = "질문 전용 경로"
+    with pytest.raises(llm.LLMInvalidStructuredOutput) as raised:
+        llm._validate_output(json.dumps(payload), require_ambiguous_fields=True)
+    assert raised.value.feedback == [{"path": ["answer_text"], "code": "must_be_empty_for_clarification"}]
 
 
 @pytest.mark.parametrize("field", ["source_job_id", "context_term_id"])
@@ -196,7 +209,6 @@ def test_v4_select_terms_does_not_load_clarification_skill():
     payload = _v4_payload(SELECT_JSON)
     completions = _FakeCompletions(responses=[
         _FakeResponse(json.dumps(payload)),
-        _FakeResponse("이 자세는 한쪽 다리에 체중을 싣는 모습이에요. 참고 이미지에서는 지지하는 발과 몸통 중심을 확인해 보세요."),
     ])
     adapter = _adapter(completions, settings=_real_settings().model_copy(update={
         "interpreter_prompt_version": "uhkegryo-interpreter-v4",
@@ -209,16 +221,14 @@ def test_v4_select_terms_does_not_load_clarification_skill():
     ))
 
     assert output.interpretation_state.value == "select_terms"
-    assert len(completions.calls) == 2
+    assert len(completions.calls) == 1
     first_system = completions.calls[0]["messages"][0]["content"]
     assert "For abstract_intent" not in first_system
     assert "캐주얼 캐릭터 일러스트 레퍼런스 해석 Skill" in first_system
     assert "LLM은 입력의 의미를 해석하고 허용된 `term_id` 후보와 근거를 구조화한다." in first_system
     assert "COPY skills/SKILL.md /app/skills/SKILL.md" in (ROOT / "Dockerfile").read_text(encoding="utf-8")
-    assert "For abstract_intent" not in completions.calls[1]["messages"][0]["content"]
-    second_input = json.loads(completions.calls[1]["messages"][1]["content"])
-    assert "answer_text" in second_input["validated_interpretation"]
-    assert second_input["session_context"] == context
+    assert output.answer_text == payload["answer_text"]
+    assert json.dumps(context, ensure_ascii=False, separators=(",", ":")) in completions.calls[0]["messages"][1]["content"]
 
 
 def test_v4_needs_clarification_loads_skill_for_followup_call():
@@ -276,8 +286,6 @@ def test_duplicate_role_feedback_is_used_on_next_single_call(version):
         valid_output = _v4_payload(valid_output)
     payload["selections"].append(payload["selections"][0].copy())
     responses = [_FakeResponse(json.dumps(payload)), _FakeResponse(json.dumps(valid_output))]
-    if version == "uhkegryo-interpreter-v4":
-        responses.append(_FakeResponse("짧은 답변이에요. 참고 이미지에서는 지지하는 발을 확인해 보세요."))
     completions = _FakeCompletions(responses=responses)
     adapter = _adapter(completions, settings=_real_settings().model_copy(update={
         "interpreter_prompt_version": version,
@@ -287,7 +295,7 @@ def test_duplicate_role_feedback_is_used_on_next_single_call(version):
         asyncio.run(adapter.interpret("반동", attempt=1, **kwargs))
     assert raised.value.feedback == [{"path": [], "code": "role_duplicate"}]
     output = asyncio.run(adapter.interpret("반동", attempt=2, validation_feedback=raised.value.feedback, **kwargs))
-    assert len(output.selections) == 1 and len(completions.calls) == (3 if version == "uhkegryo-interpreter-v4" else 2)
+    assert len(output.selections) == 1 and len(completions.calls) == 2
     sent = completions.calls[1]["messages"]
     assert sum(item["role"] == "system" for item in sent) == 1
     repair = json.loads(sent[-1]["content"])

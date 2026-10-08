@@ -213,8 +213,7 @@ class LLMInterpretationAdapter:
             except (OSError, ValueError) as exc:
                 raise PromptConfigurationError("Structured output Skill을 읽을 수 없다") from exc
             self._system_message += "\n\n" + output_rules
-        if self.prompt_version != "uhkegryo-interpreter-v4":
-            self._system_message += (
+        self._system_message += (
             "\nInclude answer_text in the output JSON: a Korean integrated explanation "
             "for a beginner learning to draw. Naturally connect the user's description to "
             "the Korean names of selected active terms, their plain meanings and reference observation points. "
@@ -230,8 +229,7 @@ class LLMInterpretationAdapter:
             "at most 4000 characters. Use only the supplied catalog and supported evidence. "
             "Do not invent URLs, Pins or facts."
             )
-        if self.prompt_version != "uhkegryo-interpreter-v4":
-            self._system_message += " For needs_clarification use an empty string."
+        self._system_message += " For needs_clarification use an empty string for answer_text."
         if self.prompt_version == "uhkegryo-interpreter-v4":
             self._system_message += (
                 "\nThe provider response schema preserves the prompt's JSON array contract for selections "
@@ -239,9 +237,10 @@ class LLMInterpretationAdapter:
                 "view role; Full-body remains a drawing instruction, never a second view or layout card. "
                 "For needs_clarification or out_of_scope, selections and context_updates are empty arrays. "
                 "For needs_clarification, set ambiguous_fields to one or more unclear role names; "
-                "for select_terms use an empty array. In this first call return only the interpretation JSON "
-                "and keep answer_text empty in every state. The final user-facing response is generated in a "
-                "separate second provider call after code validation."
+                "for select_terms use an empty array. For select_terms, generate the final Korean answer "
+                "directly in answer_text using the supplied request and catalog. For needs_clarification, "
+                "keep answer_text empty; code validates the JSON and then generates the final question in a "
+                "second provider call with the clarification Skill."
             )
         self._user_template = user_template
         if client is None:
@@ -352,14 +351,12 @@ class LLMInterpretationAdapter:
             output=summary,
             request_text=request_text,
         )
-        if self.prompt_version == "uhkegryo-interpreter-v4":
+        if self.prompt_version == "uhkegryo-interpreter-v4" and interpretation.clarification_type:
             answer = await self._generate_v4_response(
                 request_text, interpretation, active_cards_json, session_context,
                 job_id=job_id, session_id=session_id, attempt=attempt, max_attempts=max_attempts,
             )
-            if interpretation.clarification_type:
-                return interpretation.model_copy(update={"clarifying_question": answer})
-            return interpretation.model_copy(update={"answer_text": answer})
+            return interpretation.model_copy(update={"clarifying_question": answer})
         return interpretation
 
     @observed_generation
@@ -848,10 +845,17 @@ def _validate_output(content: str, *, require_ambiguous_fields: bool = False) ->
                                 "v4 배열 항목에 필수 필드가 없다",
                                 feedback=[{"path": [field, index, item_field], "code": "missing"}],
                             )
-            if data.get("answer_text") != "":
+            expected_answer = "" if data.get("clarification_type") is not None else None
+            if expected_answer is not None and data.get("answer_text") != expected_answer:
                 raise LLMInvalidStructuredOutput(
-                    "v4 첫 해석 출력의 answer_text는 빈 문자열이어야 한다",
-                    feedback=[{"path": ["answer_text"], "code": "must_be_empty"}],
+                    "v4 확인 질문 해석의 answer_text는 빈 문자열이어야 한다",
+                    feedback=[{"path": ["answer_text"], "code": "must_be_empty_for_clarification"}],
+                )
+            if expected_answer is None and (not isinstance(data.get("answer_text"), str)
+                                            or not data["answer_text"].strip()):
+                raise LLMInvalidStructuredOutput(
+                    "v4 정상 해석에는 answer_text가 필요하다",
+                    feedback=[{"path": ["answer_text"], "code": "required_for_select_terms"}],
                 )
         if require_ambiguous_fields:
             return InterpretationOutput.model_validate_json(payload, strict=True)
