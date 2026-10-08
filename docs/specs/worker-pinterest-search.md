@@ -9,7 +9,7 @@
 
 ## Goal
 
-- resolver 검증 뒤 LLM이 등록 MCP 도구 중 필요한 도구를 선택하고 worker가 안전하게 중계한다. Pinterest 검색 인자는 승인 TERM_CARD의 `query_fragments`로 제한한다.
+- resolver 검증 뒤 LLM에는 `search_pinterest_pins` 도구만 제공한다. Pinterest 검색 인자는 승인 TERM_CARD의 `query_fragments`로 제한한다.
 - provider 결과를 `RoleSearchOutcome`으로 모아 response assembler에 전달한다.
 - 검색 장애 결과는 역할별 최대 3회 조회하며, 최종 장애는 `PIN_SEARCH_UNAVAILABLE`, 정상 빈 결과는 `PIN_RESULTS_EMPTY`로 구분한다.
 - 모든 승인 역할의 검색 호출이 없으면 도구 선택 실패로 처리하고, `PIN_SEARCH_UNAVAILABLE`로 위장하지 않는다. MCP 설정 오류는 `CONFIGURATION_ERROR`로 보존한다.
@@ -17,7 +17,7 @@
 
 ## What
 
-1. Worker가 `searching` 상태로 전환한 뒤 MCP `tools/list`의 도구 명세와 resolver 승인 term을 LLM에 제공한다. LLM이 선택한 검색 호출은 해당 역할과 카드의 `query_fragments`가 정확히 일치할 때 MCP로 전달한다.
+1. Worker가 `searching` 상태로 전환한 뒤 MCP `tools/list`에서 `search_pinterest_pins` 명세만 골라 resolver 승인 term과 함께 LLM에 제공한다. 이외 도구 호출은 실행하지 않는다. LLM이 선택한 검색 호출은 해당 역할과 카드의 `query_fragments`가 정확히 일치할 때 MCP로 전달한다.
 2. 성공한 검색의 Pin과 정상 빈 검색 결과를 각각 MCP 결과에서 보존한다. `PIN_RESULTS_EMPTY`는 재조회하지 않는다.
 3. `PIN_SEARCH_UNAVAILABLE`이면 역할을 미완료로 남긴다. 최초 선택 응답의 모든 호출을 실행한 뒤 worker가 그 역할만 코드로 재시도해 총 3회까지 시도한다. 첫 번째·두 번째 장애 뒤 각각 1초·2초 기다린다. 세 번째 장애 뒤에는 `PIN_SEARCH_UNAVAILABLE` 결과를 완료 처리하고 다른 역할 결과와 조립한다.
 4. 역할별 결과를 response assembler에 전달한다. 다른 역할에 결과가 있으면 결과는 `partial_result`가 되며 unavailable 역할의 Pin 목록은 비어 있다. 모든 역할의 정상 빈 검색은 `PIN_RESULTS_EMPTY`를 집계한다.
@@ -27,12 +27,12 @@
 
 ## How
 
-- Worker는 [공통 MCP 도구 gateway](./mcp-contract.md)를 사용해 등록 도구 명세를 LLM에 전달하고, 모델이 선택한 도구 호출을 실행한다. 검색은 기존 MCP 결과 계약과 widget 경로를 유지한다.
+- Worker는 [공통 MCP 도구 gateway](./mcp-contract.md)를 사용해 등록 도구 중 `search_pinterest_pins` 명세만 LLM에 전달하고, 모델이 선택한 승인 검색 호출만 실행한다. 등록 목록에 다른 도구가 있어도 LLM에 노출하거나 호출하지 않는다. 검색은 기존 MCP 결과 계약과 widget 경로를 유지한다.
 - 승인 검색 대상은 resolver가 반환한 카드 순서를 따른다. worker 검증 쌍은 `ValidatedTerm.selection.role` 및 `tuple(ValidatedTerm.card["query_fragments"])`다. LLM 원문이나 추가 free-text를 검색 인자로 사용하지 않는다.
 - 역할당 최대 검색 호출은 3회다. retryable outcome은 `code == ReasonCode.PIN_SEARCH_UNAVAILABLE`일 때뿐이며 worker 코드가 backoff 1,000ms, 2,000ms를 적용한다. `PIN_RESULTS_EMPTY` 및 Pin별 Widget 접근 불가(`deleted`)는 재시도하지 않는다.
 - `run_once(search_outcomes=...)`에 결과가 직접 주어진 경우 테스트 seam을 유지하고 MCP 도구를 호출하지 않는다.
 - 검색 outcome의 조립과 공개 reason code는 기존 `assemble` 및 `RoleSearchOutcome` 계약을 재사용한다. 썸네일 비저장 규칙은 작업 12를 따른다.
-- 동일 LLM 응답의 독립 역할 검색은 [병렬 검색 Spec](./parallel-role-search.md)에 따라 worker 공유 한도 3개로 실행한다. 검색 외 도구는 순서 경계를 유지하고, 동일 응답의 중복 역할은 첫 유효 호출만 실행한다. 결과는 원래 호출 순서와 `tool_call_id`로 반환한다.
+- 동일 LLM 응답의 독립 역할 검색은 [병렬 검색 Spec](./parallel-role-search.md)에 따라 worker 공유 한도 3개로 실행한다. 동일 응답의 중복 역할은 첫 유효 호출만 실행한다. 결과는 원래 호출 순서와 `tool_call_id`로 반환한다.
 
 ## AC
 
@@ -41,6 +41,7 @@
 - GIVEN: resolver가 검색 가능한 카드 하나 이상을 승인한다.
 - WHEN: Worker가 `searching` 단계에 진입한다.
 - THEN: LLM이 승인된 역할·조각으로 검색 MCP 도구를 선택할 수 있고, 그 결과를 완료 payload에 반영한다.
+- AND THEN: LLM에 제공되는 도구는 `search_pinterest_pins` 하나뿐이며, 다른 등록 MCP 도구는 실행되지 않는다.
 
 **AC-02 · 빈 결과와 검색 장애 구분**
 
@@ -60,6 +61,12 @@
 - GIVEN: resolver가 clarification 결과 또는 검색 가능한 카드를 하나도 승인하지 않는다.
 - WHEN: Worker가 Job을 처리한다.
 - THEN: MCP 도구 목록을 LLM에 제공하거나 Pinterest 검색 도구를 호출하지 않는다.
+
+**AC-07 · MCP 도구 allowlist**
+
+- GIVEN: MCP `tools/list`에 Pinterest 검색 외 도구가 포함된다.
+- WHEN: Worker가 tool selection을 수행한다.
+- THEN: LLM에는 `search_pinterest_pins`만 제공하고, 예상 밖 도구 호출은 MCP gateway로 전달하지 않는다.
 
 **AC-05 · 미검색 역할과 설정 오류 구분**
 

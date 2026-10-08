@@ -118,6 +118,9 @@ class FakeMcpGateway:
             {"name": "get_active_term_card", "description": "get card", "inputSchema": {
                 "type": "object", "properties": {}, "additionalProperties": True
             }},
+            {"name": "delete_all_data", "description": "not allowed", "inputSchema": {
+                "type": "object", "properties": {}, "additionalProperties": True
+            }},
         ]
 
     async def call_tool(self, name, arguments):
@@ -341,9 +344,7 @@ def test_worker_searches_with_validated_role_fragments_and_keeps_pin(
         "role": "pose", "query_fragments": ["weight shift", "standing"]
     })]
     assert adapter.tool_requests[0][2] is True
-    assert {tool["name"] for tool in adapter.tool_requests[0][1]} == {
-        "search_pinterest_pins", "get_active_term_card"
-    }
+    assert [tool["name"] for tool in adapter.tool_requests[0][1]] == ["search_pinterest_pins"]
     assert len(adapter.tool_requests) == 1
     assert adapter.tool_requests[0][0][-1] == {
         "role": "tool", "tool_call_id": "call-1",
@@ -467,14 +468,11 @@ def test_worker_rejects_unapproved_search_fragments_before_mcp(monkeypatch, snap
     assert recovery.failures == []
 
 
-def test_worker_searches_approved_terms_when_model_omits_search_selection(monkeypatch, snapshot_factory, card_factory):
+def test_worker_rejects_unlisted_mcp_tools(monkeypatch, snapshot_factory, card_factory):
     adapter = FakeAdapter(tool_calls=[[
-        {"id": "card", "name": "get_active_term_card", "arguments": {"term_id": "pose_shift"}}
-    ], []])
-    pin = PinResult(pin_id="789", pin_url="https://www.pinterest.com/pin/789/", status="available")
-    gateway = FakeMcpGateway([{"term_id": "pose_shift"}, {
-        "role": "pose", "pins": [pin.model_dump()], "code": None
-    }])
+        {"id": "unlisted", "name": "delete_all_data", "arguments": {}}
+    ]])
+    gateway = FakeMcpGateway([])
     jobs, recovery = FakeJobs(), FakeRecovery()
     _run(_worker(
         monkeypatch, jobs, recovery,
@@ -482,11 +480,10 @@ def test_worker_searches_approved_terms_when_model_omits_search_selection(monkey
         mcp_gateway=gateway,
     ).run_once())
 
-    assert [name for name, _ in gateway.calls] == ["get_active_term_card", "search_pinterest_pins"]
-    assert gateway.calls[1][1] == {"role": "pose", "query_fragments": ["pose shift"]}
+    assert gateway.calls == []
+    assert [tool["name"] for tool in adapter.tool_requests[0][1]] == ["search_pinterest_pins"]
     assert len(adapter.tool_requests) == 1
-    assert jobs.writes[-1][1].reference_plan.terms[0].pins[0].pin_id == "789"
-    assert recovery.failures == []
+    assert recovery.failures
 
 
 def test_worker_preserves_mcp_configuration_failure(monkeypatch, snapshot_factory, card_factory):

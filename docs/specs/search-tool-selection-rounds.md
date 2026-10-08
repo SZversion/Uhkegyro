@@ -17,8 +17,8 @@
 ## What
 
 **정상 흐름**
-1. LLM이 등록된 MCP 도구 호출을 한 번 선택한다.
-2. worker가 선택된 호출을 기존 순서 규칙으로 모두 실행한다. 독립 검색은 최대 3개 병렬 실행하며 각 Widget 처리를 마친다.
+1. LLM이 `search_pinterest_pins` 호출을 한 번 선택한다. MCP 등록 목록에 다른 도구가 있어도 selection에 제공하지 않는다.
+2. worker가 선택된 승인 검색을 실행한다. 독립 검색은 최대 3개 병렬 실행하며 각 Widget 처리를 마친다.
 3. 선택에서 누락된 승인 Pinterest 역할은 worker가 정확한 resolver 승인 조각으로 검색한다.
 4. `PIN_SEARCH_UNAVAILABLE` 역할만 worker가 최대 3회까지 재시도한다. 첫 두 장애 뒤 1초·2초 기다린다.
 5. 모든 역할이 완료되거나 재시도가 소진되면 기존 assembler가 결과를 조립한다.
@@ -30,13 +30,13 @@
 | 장애 세 번 소진 | `PIN_SEARCH_UNAVAILABLE`로 역할 완료하고 부분 결과 조립 |
 | 검색 도구 선택 누락 | 누락된 승인 역할을 worker가 직접 검색 |
 | 잘못된 인자·중복 역할 | 기존 검증·오류 복구 규칙 유지 |
-| 검색 외 도구 포함 | 선택 응답에 있는 도구를 기존 순서대로 실행 |
+| 비허용 MCP 도구 선택 | MCP로 전달하지 않고 도구 선택 실패 처리 |
 | 설정 오류·취소 | 기존 오류 분류, task 정리 및 검색 실행 자리 반환 |
 
 ## How
 
 - 검색 tool selection은 `request_mcp_tool_calls` 한 번만 호출한다. post-search decision API, LLM 호출, Langfuse generation은 사용하지 않는다.
-- 선택 호출에 포함된 모든 MCP 도구를 실행한다. Pinterest 인자는 resolver의 승인 역할과 `query_fragments`가 정확히 일치해야 한다.
+- MCP `tools/list`에서 `search_pinterest_pins`만 LLM에 제공한다. 선택 호출에 포함된 검색만 실행하며, 예상 밖 도구 호출은 MCP gateway에 전달하지 않는다. Pinterest 인자는 resolver의 승인 역할과 `query_fragments`가 정확히 일치해야 한다.
 - 최초 선택 이후 미검색 역할 및 `PIN_SEARCH_UNAVAILABLE` 역할은 worker 코드가 직접 호출한다. 임의 텍스트·승인되지 않은 query fragment는 검색에 전달하지 않는다.
 - 역할별 총 검색 호출은 최대 3회, 재시도 대기는 1,000ms와 2,000ms다. `PIN_RESULTS_EMPTY`와 Widget `deleted`는 재시도하지 않는다.
 - 기존 검색 span, Widget span, retry-wait, semaphore(3), LLM 선택 호출의 MCP 도구 한도, outcome 조립을 유지한다. 코드 검색은 역할당 최대 3회로 제한하고 `mcp-code-search-attempt` span으로 기록한다.
@@ -63,10 +63,11 @@
 - WHEN: worker가 결과를 처리한다.
 - THEN: 해당 역할은 `PIN_RESULTS_EMPTY`로 완료하고 재시도하지 않는다.
 
-**AC-05 · 병렬 검색과 순서**
-- GIVEN: 한 도구 응답에 여러 독립 검색과 검색 외 도구가 있다.
-- WHEN: worker가 응답을 실행한다.
-- THEN: 연속된 독립 검색은 최대 3개 병렬 실행, Widget 처리가 끝날 때까지 기다리고 검색 외 도구의 순서 경계를 유지한다.
+**AC-05 · 병렬 검색과 도구 allowlist**
+- GIVEN: MCP 도구 목록에 Pinterest 검색과 다른 도구가 있고 모델이 검색 외 도구를 반환한다.
+- WHEN: worker가 응답을 처리한다.
+- THEN: LLM에는 Pinterest 검색만 제공하고, 검색 외 호출은 실행하지 않으며 누락된 승인 검색은 worker가 코드로 실행한다.
+- AND THEN: 승인된 독립 검색은 최대 3개 병렬 실행하고 각 Widget 처리가 끝날 때까지 기다린다.
 
 **AC-06 · 재시도 소진 및 오류**
 - GIVEN: 검색 장애가 세 번 발생하거나 MCP 설정 오류·취소가 발생한다.
