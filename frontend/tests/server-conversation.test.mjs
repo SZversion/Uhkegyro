@@ -10,7 +10,7 @@ const job = (id, status = "completed") => ({ job_id: id, session_id: sid, job_st
   request_text: `요청 ${id}`, result: status === "completed" ? { agent_status: "partial_result", answer_text: "통합 설명", reason_codes: ["PIN_SEARCH_UNAVAILABLE"] } : null });
 const response = (body, status = 200) => ({ ok: status < 400, status, json: async () => body });
 
-test("완료 2건 복원 후 이전 기록만 재조회해 정상 썸네일을 표시하고 더미는 즉시 연다", async () => {
+test("완료된 모든 기록을 복원 시 재조회해 썸네일을 표시하고 더미는 즉시 연다", async () => {
   const pin = { status: "available", pin_url: "https://www.pinterest.com/pin/123/" };
   const stored = [job("old"), job("latest")].map((j) => ({ ...j, result: { reference_plan: { terms: [{ pins: [pin] }] } } }));
   const enriched = (j) => ({ ...j, result: { reference_plan: { terms: [{ pins: [{ ...pin, thumbnail_url: "https://i.pinimg.com/fixture.jpg" }] }] } } });
@@ -20,7 +20,9 @@ test("완료 2건 복원 후 이전 기록만 재조회해 정상 썸네일을 �
       ? enriched(stored.find((j) => url.endsWith(j.job_id))) : { items: [{ session_id: sid }], session_id: sid });
   };
   const { turns } = await restoreConversation({ fetchImpl });
-  assert.equal(showThumbnail(turns[0].job.result.reference_plan.terms[0].pins[0]), false);
+  assert.equal(showThumbnail(turns[0].job.result.reference_plan.terms[0].pins[0]), true);
+  assert.equal(showThumbnail(turns[1].job.result.reference_plan.terms[0].pins[0]), true);
+  assert.ok(calls.includes("/api/jobs/old")); assert.ok(calls.includes("/api/jobs/latest"));
   let selected; const states = [];
   const loader = createHistoryLoader({ fetchImpl, onJob: (j) => { selected = j; }, onState: (s) => states.push(s) });
   await loader.open(turns[0]); assert.equal(calls.at(-1), "/api/jobs/old");
@@ -43,23 +45,25 @@ test("기록 조회 오류는 Pin 상태를 바꾸지 않고 다른 선택·정�
   assert.equal(signals[3].aborted, true); assert.deepEqual(selected, ["next"]);
 });
 
-test("서버 페이지 전체 복원, 중복 제거, 마지막 결과 enrichment, 쿠키와 취소 signal", async () => {
+test("서버 페이지 전체 복원, 중복 제거, 완료 Job enrichment, 쿠키와 취소 signal", async () => {
   const calls = [], controller = new AbortController();
   const restored = await restoreConversation({ signal: controller.signal, fetchImpl: async (url, options) => {
     calls.push(url);
     assert.equal(options.credentials, "include"); assert.equal(options.cache, "no-store");
     assert.equal(options.signal, controller.signal);
     if (url === "/api/sessions?limit=1") return response({ items: [{ session_id: sid }] });
-    if (url.endsWith("offset=0")) return response({ items: Array.from({ length: 100 }, (_, i) => job(`${i}`)) });
-    if (url.endsWith("offset=100")) return response({ items: [job("99"), job("100")] });
+    if (url.endsWith("offset=0")) return response({ items: Array.from({ length: 100 }, (_, i) => job(`${i}`, i === 0 ? "completed" : "failed")) });
+    if (url.endsWith("offset=100")) return response({ items: [job("99", "failed"), job("100")] });
+    if (url.endsWith("/jobs/0")) return response({ ...job("0"), enriched: true });
     if (url.endsWith("/jobs/100")) return response({ ...job("100"), enriched: true });
     return response({ session_id: sid });
   } });
   assert.equal(restored.sessionId, sid); assert.equal(restored.turns.length, 101);
   assert.deepEqual(restored.turns.map((turn) => turn.id), Array.from({ length: 101 }, (_, i) => `${i}`));
+  assert.equal(restored.turns[0].job.enriched, true);
   assert.equal(restored.turns.at(-1).job.enriched, true);
   assert.equal(answerForJob(restored.turns[0].job), "통합 설명");
-  assert.equal(calls.length, 5);
+  assert.equal(calls.length, 6);
 });
 
 test("미인증·빈 목록은 빈 대화이며 새 ID를 후속 제출에 명시", async () => {

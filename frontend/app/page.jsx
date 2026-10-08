@@ -7,7 +7,7 @@ import { DEMO_JOB, DEMO_REQUEST_TEXT, uiDemoEnabled } from "../lib/demo-job.mjs"
 import { HOME_TERMS } from "../lib/home-catalog.mjs";
 import { createMindMapSlots, firstSelectableTermId } from "../lib/term-mind-map.mjs";
 import { getRecommendedSearchQuery } from "../lib/recommended-query.mjs";
-import { searchFixedTerm, searchTermMode } from "../lib/term-search.mjs";
+import { invalidateTermModeCache, searchFixedTerm, searchTermMode, termModeCacheKey } from "../lib/term-search.mjs";
 import { createGalleryRows, renderedResultTerms, roleNotice, showThumbnail } from "../lib/result-view.mjs";
 import { demoReplyJob, readDemoTurns, saveDemoTurns, stopTurnPolling, upsertTurn, isTurnPending } from "../lib/conversation.mjs";
 import ConversationPanel from "../components/ConversationPanel";
@@ -15,6 +15,15 @@ import TermGuide from "../components/TermGuide.mjs";
 import { ImageSearchLoading, LoadingImage, LoadingIndicator } from "../components/LoadingIndicator.mjs";
 
 const homeSlots = createMindMapSlots(HOME_TERMS);
+const TERM_CARD_FIELDS = ["role", "term_id", "label_ko", "label_en", "plain_meaning_ko", "selection_reason", "reference_checkpoints", "search_url"];
+
+function termCardSignature(term) {
+  return JSON.stringify(TERM_CARD_FIELDS.map((field) => term[field] ?? null));
+}
+
+function hasSuccessfulDefaultSearch(term) {
+  return !term.reason_codes?.length && term.pins?.some(showThumbnail);
+}
 
 export default function HomePage() {
   const [requestText, setRequestText] = useState("");
@@ -44,6 +53,8 @@ export default function HomePage() {
   const termSearchControllerRef = useRef(null);
   const [sketchSearches, setSketchSearches] = useState({});
   const sketchControllersRef = useRef(new Map());
+  const sketchSearchCacheRef = useRef(new Map());
+  const previousTermCardsRef = useRef(null);
   const [previewPin, setPreviewPin] = useState(null);
   const [previewFailed, setPreviewFailed] = useState(false);
   const previewDialogRef = useRef(null);
@@ -166,13 +177,37 @@ export default function HomePage() {
   }, [previewPin]);
 
   useEffect(() => {
+    const currentTermCards = new Map(mindMapSlots
+      .filter((slot) => slot.terms.length)
+      .map((slot) => [slot.role, new Map(slot.terms.map((term) => [term.term_id, termCardSignature(term)]))]));
+    const previousTermCards = previousTermCardsRef.current;
+    if (previousTermCards && currentTermCards.size) {
+      const roles = new Set([...previousTermCards.keys(), ...currentTermCards.keys()]);
+      for (const role of roles) {
+        const previous = previousTermCards.get(role) || new Map();
+        const current = currentTermCards.get(role) || new Map();
+        const termIds = new Set([...previous.keys(), ...current.keys()]);
+        for (const termId of termIds) {
+          if (previous.get(termId) !== current.get(termId)) {
+            invalidateTermModeCache(sketchSearchCacheRef.current, termId);
+          }
+        }
+      }
+    }
+    if (currentTermCards.size) previousTermCardsRef.current = currentTermCards;
+    const defaultSearchTerms = mindMapSlots.flatMap((slot) => slot.terms);
+    if (boardView === "term-results" && termSearch?.term) defaultSearchTerms.push(termSearch.term);
+    for (const term of defaultSearchTerms) {
+      const drawingKey = termModeCacheKey(term.term_id, "drawing");
+      if (hasSuccessfulDefaultSearch(term)) sketchSearchCacheRef.current.set(drawingKey, term);
+    }
     if (job !== selectedJobRef.current) {
       selectedJobRef.current = job;
       setSelectedTermId(firstSelectableTermId(mindMapSlots));
       setFailedThumbnails({});
       resetSketchSearches();
     }
-  }, [job, mindMapSlots]);
+  }, [job, mindMapSlots, boardView, termSearch]);
 
   useEffect(() => {
     setActiveGalleryRole((current) => (
@@ -265,11 +300,21 @@ export default function HomePage() {
 
   async function searchCategory(term, suffix) {
     if (sketchControllersRef.current.has(term.term_id)) return;
+    const cacheKey = termModeCacheKey(term.term_id, suffix);
+    const cached = sketchSearchCacheRef.current.get(cacheKey);
+    if (cached) {
+      setSketchSearches((current) => ({ ...current, [term.term_id]: { term: cached, suffix } }));
+      setFailedThumbnails((current) => Object.fromEntries(Object.entries(current)
+        .filter(([key]) => !key.startsWith(`${term.term_id}:`))));
+      return;
+    }
     const controller = new AbortController();
     sketchControllersRef.current.set(term.term_id, controller);
     setSketchSearches((current) => ({ ...current, [term.term_id]: { ...current[term.term_id], loading: true, pendingSuffix: suffix, error: null } }));
     try {
-      const updatedTerm = await searchTermMode(term, suffix, { signal: controller.signal });
+      const updatedTerm = await searchTermMode(term, suffix, {
+        signal: controller.signal, cache: sketchSearchCacheRef.current,
+      });
       if (!controller.signal.aborted) {
         setSketchSearches((current) => ({ ...current, [term.term_id]: { term: updatedTerm, suffix } }));
         setFailedThumbnails((current) => Object.fromEntries(Object.entries(current)

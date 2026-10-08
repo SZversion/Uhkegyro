@@ -78,12 +78,22 @@ export async function restoreConversation(options = {}) {
     if (page.items.length < 100) break;
   }
   const latest = turns.at(-1);
-  if (latest) {
-    const job = await read(`/api/jobs/${encodeURIComponent(latest.id)}`, options);
-    if (job.job_id !== latest.id || job.session_id !== id
-      || !Object.hasOwn(STATUS_LABELS, job.job_status)) throw new Error(RESTORE_ERROR);
-    turns = upsertTurn(turns, { ...latest, job });
-  }
+  const refreshIds = new Set(turns.filter((turn) => turn.job.job_status === "completed").map((turn) => turn.id));
+  if (latest) refreshIds.add(latest.id);
+  const indexes = new Map(turns.map((turn, index) => [turn.id, index]));
+  const queue = [...refreshIds];
+  let nextIndex = 0;
+  const refreshNext = async () => {
+    while (nextIndex < queue.length) {
+      const jobId = queue[nextIndex++];
+      const job = await read(`/api/jobs/${encodeURIComponent(jobId)}`, options);
+      if (job.job_id !== jobId || job.session_id !== id
+        || !Object.hasOwn(STATUS_LABELS, job.job_status)) throw new Error(RESTORE_ERROR);
+      const index = indexes.get(jobId);
+      turns[index] = { ...turns[index], job };
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(4, queue.length) }, refreshNext));
   return { sessionId: id, turns };
 }
 export function resumeConversation(turns, options) {
