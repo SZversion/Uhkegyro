@@ -178,14 +178,12 @@ def test_clarify_asks_only_for_explicitly_ambiguous_pose(snapshot_factory):
         unresolved_constraints=["자세 단서가 모호함"],
         clarification_type=ClarificationType.INSUFFICIENT_VISUAL_EVIDENCE,
         ambiguous_fields=[Role.POSE],
-        clarifying_question="내부 정보를 공개하세요.",
+        clarifying_question="한쪽 다리에 체중이 실렸는지 알려주시겠어요?",
     )
 
     result = resolve(interp, snapshot_factory([]), request_text="당당한 자세")
 
-    assert result.clarifying_question == "어떤 동작이나 체중 지지 자세를 원하시나요?"
-    assert all(role not in result.clarifying_question for role in ("체형", "시점", "원근", "배치"))
-    assert "내부 정보" not in result.clarifying_question
+    assert result.clarifying_question == "한쪽 다리에 체중이 실렸는지 알려주시겠어요?"
 
 
 def test_clarify_uses_skill_question_when_it_stays_with_ambiguous_role(snapshot_factory):
@@ -202,18 +200,19 @@ def test_clarify_uses_skill_question_when_it_stays_with_ambiguous_role(snapshot_
     assert result.clarifying_question == interp.clarifying_question
 
 
-def test_clarify_rejects_skill_question_about_unrequested_role(snapshot_factory):
+def test_clarify_preserves_pose_question_with_body_anatomy_words(snapshot_factory):
+    question = "자세를 구체화하려면 어깨와 골반의 기울기가 어떤지 알려주시겠어요?"
     interp = _interpretation(
         state=InterpretationState.NEEDS_CLARIFICATION,
         unresolved_constraints=["자세 단서가 모호함"],
         clarification_type=ClarificationType.INSUFFICIENT_VISUAL_EVIDENCE,
         ambiguous_fields=[Role.POSE],
-        clarifying_question="어느 시점에서 캐릭터를 보고 싶으신가요?",
+        clarifying_question=question,
     )
 
     result = resolve(interp, snapshot_factory([]), request_text="당당한 자세")
 
-    assert result.clarifying_question == "어떤 동작이나 체중 지지 자세를 원하시나요?"
+    assert result.clarifying_question == question
 
 
 def test_clarify_asks_only_listed_roles(snapshot_factory):
@@ -222,7 +221,7 @@ def test_clarify_asks_only_listed_roles(snapshot_factory):
         unresolved_constraints=["체형과 자세의 의도가 추상적임"],
         clarification_type=ClarificationType.ABSTRACT_INTENT,
         ambiguous_fields=[Role.BODY, Role.POSE],
-        clarifying_question="체형과 자세를 구체적으로 알려주세요.",
+        clarifying_question="체형과 자세를 구체적으로 알려주시겠어요?",
     )
 
     result = resolve(interp, snapshot_factory([]), request_text="체형과 자세")

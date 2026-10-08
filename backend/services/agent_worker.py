@@ -209,7 +209,8 @@ class AgentJobWorker:
         if not hasattr(adapter, "request_mcp_tool_calls"):
             raise ValueError("해석 어댑터가 MCP tool calling을 지원하지 않습니다")
         with self._tracer.phase("mcp-tools-list"):
-            tools = await self._mcp_gateway.list_tools()
+            registered_tools = await self._mcp_gateway.list_tools()
+        tools = [tool for tool in registered_tools if tool.get("name") == PINTEREST_SEARCH_TOOL]
         approved = {
             term.selection.role: tuple(term.card["query_fragments"])
             for term in resolution.terms
@@ -219,10 +220,10 @@ class AgentJobWorker:
         tool_call_count = 0
         messages = [
             {"role": "system", "content": (
-                "Use the registered MCP tools to fulfill the request. For Pinterest searches, "
+                "Use only the search_pinterest_pins tool to fulfill the request. "
                 "call search_pinterest_pins only with an approved role and that role's exact "
-                "query_fragments. Never invent or alter fragments. Use other listed tools "
-                "when needed. Select independent searches for unfinished approved roles "
+                "query_fragments. Never invent or alter fragments or call other tools. "
+                "Select independent searches for unfinished approved roles "
                 "together in one response, at most once per role. Never search a completed role again. "
                 "Every approved role must be searched. Do not omit a pending role."
             )},
@@ -244,6 +245,7 @@ class AgentJobWorker:
             pending_roles=[role.value for role in pending],
         ) as metrics:
             calls = await adapter.request_mcp_tool_calls(messages, tools, required=True)
+            calls = [call for call in calls if call.get("name") == PINTEREST_SEARCH_TOOL]
             metrics.update(call_count=len(calls), selected_roles=sorted({
                 call["arguments"].get("role") for call in calls
                 if call["name"] == PINTEREST_SEARCH_TOOL
@@ -251,8 +253,8 @@ class AgentJobWorker:
                 and call["arguments"].get("role") in {role.value for role in approved}
             }))
         if not calls:
-            raise LLMInvalidStructuredOutput("LLM이 필수 MCP 도구를 호출하지 않았다")
-        else:
+            raise LLMInvalidStructuredOutput("LLM이 Pinterest 검색 도구를 선택하지 않았다")
+        if calls:
             assistant_calls = []
             for call in calls:
                 name, arguments, call_id = call["name"], call["arguments"], call["id"]
