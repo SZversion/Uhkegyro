@@ -11,6 +11,7 @@ import json
 import hashlib
 import time
 import uuid
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import asyncpg
@@ -41,6 +42,23 @@ class FakeSessionRepository:
     async def has_owner(self, token):
         return bool(await self.resolve_session(token))
 
+    async def bootstrap(self, token, limit=100):
+        session_id = await self.resolve_session(token)
+        if session_id is None:
+            return {"owner_exists": False, "items": [], "session_id": None,
+                    "latest_job": None, "has_older_jobs": False}
+        latest = next((row for row in reversed(list(self._jobs.jobs.values()))
+                       if row["session_id"] == session_id), None) if hasattr(self, "_jobs") else None
+        return {"owner_exists": True,
+                "items": [{"session_id": session_id, "created_at": datetime.now(timezone.utc).isoformat(),
+                           "last_activity_at": datetime.now(timezone.utc).isoformat(),
+                           "expires_at": datetime.now(timezone.utc).isoformat()}],
+                "session_id": session_id,
+                "latest_job": ({**FakeJobRepository._envelope(latest).model_dump(mode="json"),
+                                "request_text": latest["request_text"],
+                                "created_at": latest["created_at"]} if latest else None),
+                "has_older_jobs": False}
+
     async def session_for_job(self, token, job_id):
         session_id = await self.resolve_session(token)
         if session_id is None:
@@ -51,6 +69,7 @@ class FakeSessionRepository:
 class FakeJobRepository:
     def __init__(self, sessions):
         self.sessions = sessions
+        sessions._jobs = self
         self.jobs = {}
         self.idempotency = {}
         self.submit_error = None
@@ -72,6 +91,7 @@ class FakeJobRepository:
             "request_text": request_text, "request_text_hash": text_hash,
             "attempt": 0, "max_attempts": RETRY_COUNT_MAX,
             "status": JobStatus.QUEUED,
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
         self.jobs[row["job_id"]] = row
         self.idempotency[key] = {
@@ -97,6 +117,13 @@ class FakeJobRepository:
         if row is None or row["session_id"] != session_id:
             raise JobNotFound
         return self._envelope(row)
+
+    async def history_for_owner(self, token, session_id, limit=20, offset=0):
+        if await self.sessions.resolve_session(token) != session_id:
+            raise JobNotFound
+        rows = [row for row in self.jobs.values() if row["session_id"] == session_id]
+        return [dict(self._envelope(row).model_dump(mode="json"), request_text=row["request_text"],
+                     created_at=row["created_at"]) for row in rows[offset:offset + limit]]
 
     @staticmethod
     def _envelope(row):
@@ -169,6 +196,24 @@ def test_existing_cookie_is_reused(client: TestClient) -> None:
     first_envelope = client.get(f"/api/jobs/{first['body']['job_id']}").json()
     second_envelope = client.get(f"/api/jobs/{second['body']['job_id']}").json()
     assert first_envelope["session_id"] == second_envelope["session_id"]
+
+
+def test_session_bootstrap_returns_only_latest_job_and_history_is_batched(client: TestClient) -> None:
+    first = submit(client, "첫 요청")
+    submit(client, "최신 요청")
+
+    bootstrap = client.get("/api/sessions/bootstrap?limit=100")
+    assert bootstrap.status_code == 200
+    payload = bootstrap.json()
+    assert len(payload["items"]) == 1
+    assert payload["session_id"] == payload["items"][0]["session_id"]
+    assert payload["latest_job"]["request_text"] == "최신 요청"
+    assert payload["has_older_jobs"] is False
+
+    history = client.get(f"/api/sessions/{payload['session_id']}/jobs")
+    assert history.status_code == 200
+    assert [item["request_text"] for item in history.json()["items"]] == ["첫 요청", "최신 요청"]
+    assert first["status"] == 202
 
 
 # --- session-job-persistence:25 · 활동마다 쿠키 갱신 -------------------------

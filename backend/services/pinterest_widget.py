@@ -29,8 +29,19 @@ class PinterestWidgetProvider:
 
 
 class PinterestWidgetClient:
-    def __init__(self, *, json_loader: JsonLoader | None = None) -> None:
-        self._json_loader = json_loader or _load_widget_json
+    def __init__(self, *, json_loader: JsonLoader | None = None,
+                 http_client: httpx.AsyncClient | None = None) -> None:
+        self._json_loader = json_loader
+        self._http_client = http_client
+        self._owns_http_client = False
+        if json_loader is None and http_client is None:
+            self._http_client = httpx.AsyncClient(timeout=10.0)
+            self._owns_http_client = True
+
+    async def aclose(self) -> None:
+        if self._owns_http_client and self._http_client is not None:
+            await self._http_client.aclose()
+            self._http_client = None
 
     async def enrich_outcome(self, outcome: RoleSearchOutcome) -> RoleSearchOutcome:
         """Return at most eight Pins in their original order without changing the input."""
@@ -42,6 +53,14 @@ class PinterestWidgetClient:
 
     async def enrich_job(self, envelope: JobEnvelope) -> JobEnvelope:
         """Re-query persisted Pin IDs for one completed API response."""
+        return await self._enrich_job(envelope, asyncio.Semaphore(8))
+
+    async def enrich_jobs(self, envelopes: list[JobEnvelope]) -> list[JobEnvelope]:
+        """Re-query a batch of completed jobs with one shared concurrency limit."""
+        semaphore = asyncio.Semaphore(8)
+        return await asyncio.gather(*(self._enrich_job(envelope, semaphore) for envelope in envelopes))
+
+    async def _enrich_job(self, envelope: JobEnvelope, semaphore: asyncio.Semaphore) -> JobEnvelope:
         if envelope.job_status is not JobStatus.COMPLETED or envelope.result is None:
             return envelope
         result = envelope.model_copy(deep=True)
@@ -49,7 +68,6 @@ class PinterestWidgetClient:
             return result
         terms = result.result.reference_plan.terms
         locations = [(term, index, pin) for term in terms for index, pin in enumerate(term.pins)]
-        semaphore = asyncio.Semaphore(8)
         enriched = await asyncio.gather(
             *(self._lookup(pin, semaphore) for _, _, pin in locations)
         )
@@ -62,7 +80,13 @@ class PinterestWidgetClient:
         if pin.pin_id.isascii() and pin.pin_id.isdigit():
             try:
                 async with semaphore:
-                    payload = await self._json_loader(WIDGET_URL.format(pin_id=pin.pin_id))
+                    widget_url = WIDGET_URL.format(pin_id=pin.pin_id)
+                    if self._json_loader is not None:
+                        payload = await self._json_loader(widget_url)
+                    else:
+                        response = await self._http_client.get(widget_url)
+                        response.raise_for_status()
+                        payload = response.json()
                 url = _largest_image(payload, pin.pin_id)
             except Exception:
                 pass
@@ -74,11 +98,21 @@ class PinterestWidgetClient:
         )
 
 
-async def _load_widget_json(url: str) -> object:
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.get(url)
-        response.raise_for_status()
-        return response.json()
+_shared_widget_client: PinterestWidgetClient | None = None
+
+
+def get_shared_widget_client() -> PinterestWidgetClient:
+    global _shared_widget_client
+    if _shared_widget_client is None:
+        _shared_widget_client = PinterestWidgetClient()
+    return _shared_widget_client
+
+
+async def close_shared_widget_client() -> None:
+    global _shared_widget_client
+    client, _shared_widget_client = _shared_widget_client, None
+    if client is not None:
+        await client.aclose()
 
 
 def _largest_image(payload: object, pin_id: str) -> str | None:

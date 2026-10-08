@@ -19,6 +19,7 @@ from backend.shared.config import get_settings, resolve_term_cards_dir
 from backend.services.agent_worker import run_worker
 from backend.services.failure_mapping import public_failure
 from backend.schemas.enums import FailureCode
+from backend.services.pinterest_widget import close_shared_widget_client, get_shared_widget_client
 
 settings = get_settings()
 
@@ -30,12 +31,14 @@ async def lifespan(app: FastAPI):
     except CatalogLoadError as error:
         raise RuntimeError(f"CATALOG_INVALID_AT_STARTUP: {error}") from error
     app.state.term_search_slots = asyncio.Semaphore(2)
+    get_shared_widget_client()
     worker_task = asyncio.create_task(run_worker(app.state.catalog))
     try:
         yield
     finally:
         worker_task.cancel()
         await asyncio.gather(worker_task, return_exceptions=True)
+        await close_shared_widget_client()
         await asyncio.to_thread(close_result_tracer)
 
 app = FastAPI(title="2차 프로젝트 API", lifespan=lifespan)
