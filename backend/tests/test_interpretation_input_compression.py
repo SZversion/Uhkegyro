@@ -126,9 +126,11 @@ def test_context_and_repair_preserve_verbatim_values(version):
     feedback = [{"path": ["selections", 0, "evidence"], "code": "string_too_short"}]
     output = json.loads(SELECT_JSON)
     if version == "uhkegryo-interpreter-v4":
-        output.update(ambiguous_fields=[], context_updates=[], answer_text="반동이 있는 포즈예요.")
+        output.update(ambiguous_fields=[], context_updates=[], answer_text="")
         output["selections"][0]["source_job_id"] = None
     responses = [_FakeResponse(json.dumps(output, ensure_ascii=False))]
+    if version == "uhkegryo-interpreter-v4":
+        responses.append(_FakeResponse("반동이 있는 포즈예요."))
     completions = _FakeCompletions(responses=responses)
     adapter = _adapter(completions, settings=_real_settings().model_copy(update={
         "interpreter_prompt_version": version}))
@@ -143,5 +145,7 @@ def test_context_and_repair_preserve_verbatim_values(version):
         assert repair["validation_feedback"] == feedback
         assert messages[-1]["content"] == json.dumps(repair, ensure_ascii=False, separators=(",", ":"))
     if version == "uhkegryo-interpreter-v4":
-        assert len(completions.calls) == 1
+        assert len(completions.calls) == 2
         assert result.answer_text == "반동이 있는 포즈예요."
+        second_input = json.loads(completions.calls[1]["messages"][1]["content"])
+        assert second_input["session_context"] == context
