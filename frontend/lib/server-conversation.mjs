@@ -33,16 +33,37 @@ export async function listConversations(options = {}) {
   const list = await response.json();
   return validateSessions(list?.items);
 }
+
+async function fetchSessionBootstrap(options = {}) {
+  const response = await (options.fetchImpl || globalThis.fetch)("/api/sessions/bootstrap?limit=100", {
+    credentials: "include", cache: "no-store", signal: options.signal,
+  });
+  if (response.status === 401) {
+    return { sessions: [], sessionId: null, turns: [], hasOlderJobs: false };
+  }
+  if (!response.ok) throw new Error(RESTORE_ERROR);
+  const data = await response.json();
+  const sessions = validateSessions(data?.items);
+  const activeId = data?.session_id == null ? null : sessionId(data.session_id);
+  if (activeId && !sessions.some((entry) => entry.session_id === activeId)) throw new Error(RESTORE_ERROR);
+  if (typeof data?.has_older_jobs !== "boolean") throw new Error(RESTORE_ERROR);
+  let turns = [];
+  if (data?.latest_job != null) {
+    const job = data.latest_job;
+    if (!activeId || job.session_id !== activeId || !job.job_id
+      || typeof job.request_text !== "string" || typeof job.created_at !== "string"
+      || !Object.hasOwn(STATUS_LABELS, job.job_status)) throw new Error(RESTORE_ERROR);
+    turns = upsertTurn([], { id: job.job_id, request: job.request_text, job, demo: false });
+  }
+  return { sessions, sessionId: activeId, turns, hasOlderJobs: data.has_older_jobs };
+}
+
 export async function loadInitialConversation(options = {}) {
   try {
-    const [sessions, restored] = await Promise.all([
-      listConversations(options),
-      restoreConversation(options),
-    ]);
-    return { ready: true, sessions, ...restored, restoreError: "" };
+    return { ready: true, ...await fetchSessionBootstrap(options), restoreError: "" };
   } catch {
     return {
-      ready: true, sessions: [], sessionId: null, turns: [], restoreError: RESTORE_ERROR,
+      ready: true, sessions: [], sessionId: null, turns: [], hasOlderJobs: false, restoreError: RESTORE_ERROR,
     };
   }
 }
@@ -55,17 +76,10 @@ export async function restoreConversation(options = {}) {
   let id = options.sessionId;
   if (id) sessionId(id);
   else {
-    const response = await (options.fetchImpl || globalThis.fetch)("/api/sessions?limit=1", {
-      credentials: "include", cache: "no-store", signal: options.signal,
-    });
-    if (response.status === 401) return { sessionId: null, turns: [] };
-    if (!response.ok) throw new Error(RESTORE_ERROR);
-    const list = await response.json();
-    if (!Array.isArray(list?.items)) throw new Error(RESTORE_ERROR);
-    if (!list.items.length) return { sessionId: null, turns: [] };
-    id = sessionId(list.items[0]?.session_id);
+    const initial = await fetchSessionBootstrap(options);
+    id = initial.sessionId;
+    if (!id) return { sessionId: null, turns: [] };
   }
-  await read(`/api/sessions/${id}`, options);
   let turns = [];
   for (let offset = 0; ; offset += 100) {
     const page = await read(`/api/sessions/${id}/jobs?limit=100&offset=${offset}`, options);
@@ -77,23 +91,6 @@ export async function restoreConversation(options = {}) {
     }
     if (page.items.length < 100) break;
   }
-  const latest = turns.at(-1);
-  const refreshIds = new Set(turns.filter((turn) => turn.job.job_status === "completed").map((turn) => turn.id));
-  if (latest) refreshIds.add(latest.id);
-  const indexes = new Map(turns.map((turn, index) => [turn.id, index]));
-  const queue = [...refreshIds];
-  let nextIndex = 0;
-  const refreshNext = async () => {
-    while (nextIndex < queue.length) {
-      const jobId = queue[nextIndex++];
-      const job = await read(`/api/jobs/${encodeURIComponent(jobId)}`, options);
-      if (job.job_id !== jobId || job.session_id !== id
-        || !Object.hasOwn(STATUS_LABELS, job.job_status)) throw new Error(RESTORE_ERROR);
-      const index = indexes.get(jobId);
-      turns[index] = { ...turns[index], job };
-    }
-  };
-  await Promise.all(Array.from({ length: Math.min(4, queue.length) }, refreshNext));
   return { sessionId: id, turns };
 }
 export function resumeConversation(turns, options) {
