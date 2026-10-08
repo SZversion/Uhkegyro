@@ -195,13 +195,11 @@ export default function HomePage() {
       }
     }
     if (currentTermCards.size) previousTermCardsRef.current = currentTermCards;
-    for (const slot of mindMapSlots) {
-      for (const term of slot.terms) {
-        const drawingKey = termModeCacheKey(term.term_id, "drawing");
-        if (hasSuccessfulDefaultSearch(term) && !sketchSearchCacheRef.current.has(drawingKey)) {
-          sketchSearchCacheRef.current.set(drawingKey, term);
-        }
-      }
+    const defaultSearchTerms = mindMapSlots.flatMap((slot) => slot.terms);
+    if (boardView === "term-results" && termSearch?.term) defaultSearchTerms.push(termSearch.term);
+    for (const term of defaultSearchTerms) {
+      const drawingKey = termModeCacheKey(term.term_id, "drawing");
+      if (hasSuccessfulDefaultSearch(term)) sketchSearchCacheRef.current.set(drawingKey, term);
     }
     if (job !== selectedJobRef.current) {
       selectedJobRef.current = job;
@@ -209,7 +207,7 @@ export default function HomePage() {
       setFailedThumbnails({});
       resetSketchSearches();
     }
-  }, [job, mindMapSlots]);
+  }, [job, mindMapSlots, boardView, termSearch]);
 
   useEffect(() => {
     setActiveGalleryRole((current) => (
