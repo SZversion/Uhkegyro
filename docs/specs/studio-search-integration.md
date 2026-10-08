@@ -1,13 +1,13 @@
 # Studio 프론트 검색 연결 경계
 
 ## Why
-카드 클릭과 카테고리별 검색 모드 변경은 새로운 이미지를 받아야 한다.
+카드 클릭과 카테고리별 검색 모드 변경은 해당 결과를 받아야 한다. 이미 검색한 모드를 다시 선택할 때는 같은 화면 결과를 재사용해 중복 검색을 피한다.
 
 ## Goal
-프론트의 요청·응답·실패 처리를 완성한다. 검색 공급자와 FastAPI 엔드포인트 구현은 이 PR에서 제외한다.
+프론트의 요청·응답·실패 처리를 완성하고, 선택한 용어 카드의 모드별 성공 결과를 메모리 캐시해 반복 검색을 막는다. 검색 공급자와 FastAPI 엔드포인트 구현은 이 PR에서 제외한다.
 
 ## What
-POST /api/term-search에 term_id와 선택적 suffix를 보낸다. suffix는 drawing/sketch/mannequinization이다. 단일 카드 검색은 요청 기록이나 대화 turn을 추가하지 않는다. 재검색 성공 시 해당 행의 핀과 검색어만 교체한다. 실패 시 기존 이미지를 유지한다.
+POST /api/term-search에 term_id와 선택적 suffix를 보낸다. suffix는 drawing/sketch/mannequinization이다. 단일 카드 검색은 요청 기록이나 대화 turn을 추가하지 않는다. 재검색 성공 시 해당 행의 핀과 검색어만 교체한다. 실패 시 기존 이미지를 유지한다. 일반(drawing)은 기본 선택 모드이므로 용어 카드가 로드될 때 이미 표시 중인 성공 결과를 drawing 캐시에 넣는다. 용어 카드에서 같은 suffix의 성공 결과가 이미 있으면 API를 다시 호출하지 않고 캐시 결과를 선택한다. 실패 결과는 캐시하지 않는다. 용어 카드가 바뀌면 바뀐 카드에 해당하는 캐시만 비우며, 다른 역할 카드의 캐시는 유지한다. 페이지를 새로고침하면 메모리 캐시 전체가 초기화된다. Job·세션·화면 전환만으로 캐시를 비우지 않는다.
 
 ## How
 팀 백엔드는 활성 카드를 조회해 TermResult를 반환해야 한다. 최소 term_id, role, pins, search_url, reason_codes와 카드 설명 필드가 필요하다. 각 Pin은 pin_id, pin_url, thumbnail_url, status를 제공한다. 실시간 공급자 동작이나 우회는 구현하지 않는다. 개발 더미의 홈 클릭은 fixture를 사용하지만 카테고리 재검색은 실제 API를 호출한다.
@@ -16,7 +16,13 @@ POST /api/term-search에 term_id와 선택적 suffix를 보낸다. suffix는 dra
 - Given 카드 클릭, When 실제 모드, Then /api/term-search만 호출하고 /api/agent는 호출하지 않는다.
 - Given 검색 모드 변경, When 성공, Then 해당 카드의 검색어·핀만 교체한다.
 - Given 잘못된 카드·HTTP 오류·썸네일 없음, When 응답, Then 성공으로 표시하지 않고 기존 재검색 결과를 유지한다.
-- Given 같은 모드 재클릭, When 대기 중이 아님, Then 새 API 요청을 보낸다.
+- Given 같은 용어 카드에서 해당 suffix의 검색이 성공함, When 같은 모드를 다시 선택, Then 캐시 결과를 표시하고 추가 API 요청은 보내지 않는다.
+- Given 성공한 일반 검색 결과가 포함된 용어 카드가 로드됨, When 사용자가 일반 모드를 처음 눌러도, Then 기존 결과를 표시하고 /api/term-search를 호출하지 않는다.
+- Given 같은 용어 카드에서 모드 검색이 실패함, When 해당 모드를 다시 선택, Then 캐시를 사용하지 않고 API를 다시 호출한다.
+- Given pose 용어 카드가 바뀌고 view 용어 카드는 유지됨, When 이전에 검색한 모드를 선택, Then pose의 모드 캐시만 비우고 view의 캐시를 유지한다.
+- Given 같은 역할의 카드 내용이 바뀌거나 카드가 교체됨, When 변경된 카드의 이전 검색 모드를 선택, Then 변경된 카드 캐시를 사용하지 않고 새 검색을 요청한다.
+- Given 페이지를 새로고침함, When 이전에 검색한 모드를 선택, Then 메모리 캐시가 초기화되어 새 검색을 요청한다.
+- Given 같은 용어 카드, When Job·세션·화면만 바뀌면, Then 메모리 캐시는 유지한다.
 - Given 화면 전환·새 입력, When 이전 요청이 진행 중, Then 취소하고 늦은 응답을 반영하지 않는다.
 
 ## 백엔드 의존성

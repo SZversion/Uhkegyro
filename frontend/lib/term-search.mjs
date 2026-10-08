@@ -20,8 +20,25 @@ export function applySketchResult(term, result) {
 }
 
 export async function searchTermMode(term, suffix, options = {}) {
+  const cacheKey = termModeCacheKey(term.term_id, suffix);
+  if (options.cache?.has(cacheKey)) return options.cache.get(cacheKey);
   const result = await searchFixedTerm(term, { ...options, suffix });
-  return applySketchResult(term, result);
+  const updated = applySketchResult(term, result);
+  if (!options.signal?.aborted) options.cache?.set(cacheKey, updated);
+  return updated;
+}
+
+export function termModeCacheKey(termId, suffix) {
+  return JSON.stringify([termId, suffix]);
+}
+
+export function invalidateTermModeCache(cache, termId) {
+  if (!cache || !termId) return;
+  for (const key of cache.keys()) {
+    try {
+      if (JSON.parse(key)?.[0] === termId) cache.delete(key);
+    } catch {}
+  }
 }
 
 export function restoreOriginalSearch(searches, termId) {
