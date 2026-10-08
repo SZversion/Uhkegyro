@@ -15,8 +15,11 @@ async def prepare(memory, job, adapter, trace):
 
 def prompt_context(context):
     state = context["state"]
-    return {"constraints": state.get("constraints", {}), "pending_question": state.get("pending_question"),
-            "recent": context["recent"], "sources": context["sources"]}
+    result = {"constraints": state.get("constraints", {}), "pending_question": state.get("pending_question"),
+              "recent": context["recent"], "sources": context["sources"]}
+    if state.get("pending_clarification"):
+        result["pending_clarification"] = state["pending_clarification"]
+    return result
 
 
 def trace_args(job):
@@ -25,6 +28,12 @@ def trace_args(job):
 
 
 async def recall(memory, job, context, adapter, trace):
+    if context["state"].get("pending_clarification"):
+        # A reply to an outstanding clarification completes the original reference request.
+        # Do not let the memory classifier route this short answer to historical recall.
+        context["reference_action"] = "update"
+        context["refresh_roles"] = []
+        return None, False
     if is_clear_new_request(job["request_text"], context):
         return None, False
     with trace.stage("memory-recall"):
@@ -73,7 +82,7 @@ def is_clear_new_request(text, context):
                 and re.search(r"찾아|그려|보여|검색|\b(find|draw|show|search)\b", text))
 
 
-async def validate(memory, job, interpretation, snapshot):
+async def validate(memory, job, interpretation, snapshot, context=None):
     ids = [item.source_job_id for item in interpretation.selections if item.source_job_id]
     originals = await memory.records(job, ids) if ids else []
     by_id = {item["job_id"]: item for item in originals}
@@ -105,12 +114,24 @@ async def validate(memory, job, interpretation, snapshot):
             if resolve(candidate, snapshot, request_text=str(job["request_text"])).status == STATUS_ALL_INVALID:
                 raise LLMInvalidStructuredOutput("기억할 조건의 카드가 유효하지 않습니다", stage="conversation_validation",
                                                  feedback=[{"path": [], "code": "context_card_invalid"}])
-    resolution = resolve(interpretation, snapshot, request_text=str(job["request_text"]),
+    resolution = resolve(interpretation, snapshot, request_text=_interpretation_request_text(job, context),
                          verified_source_texts=verified_source_texts)
     if resolution.status == STATUS_ALL_INVALID or resolution.invalid_candidates:
         raise LLMInvalidStructuredOutput("선택 카드가 현재 카탈로그에서 유효하지 않습니다", stage="conversation_validation",
                                          feedback=[{"path": [], "code": "selection_card_invalid"}])
     return resolution
+
+
+def _interpretation_request_text(job, context):
+    """Use the original request and clarification exchange for semantic card validation."""
+    pending = (context or {}).get("state", {}).get("pending_clarification")
+    if not pending:
+        return str(job["request_text"])
+    parts = [str(pending.get("original_request", ""))]
+    for exchange in pending.get("answers", []):
+        parts.extend((str(exchange.get("question", "")), str(exchange.get("answer", ""))))
+    parts.extend((str(pending.get("question", "")), str(job["request_text"])))
+    return "\n".join(part for part in parts if part)
 
 
 def next_state(context, job, interpretation, result):
@@ -124,5 +145,27 @@ def next_state(context, job, interpretation, result):
         else:
             constraints[update.role.value] = {"term_id": update.term_id, "evidence": update.evidence,
                                               "source_job_id": str(job["job_id"])}
-    state["pending_question"] = result.clarifying_question
+    previous_clarification = state.get("pending_clarification")
+    if result.agent_status is AgentStatus.NEEDS_CLARIFICATION:
+        original_request = (previous_clarification or {}).get("original_request", job["request_text"])
+        source_job_id = (previous_clarification or {}).get("source_job_id", str(job["job_id"]))
+        answers = list((previous_clarification or {}).get("answers", []))[-5:]
+        if previous_clarification:
+            answers.append({"question": previous_clarification.get("question"),
+                            "answer": job["request_text"]})
+            answers = answers[-5:]
+        state["pending_clarification"] = {
+            "original_request": original_request,
+            "source_job_id": source_job_id,
+            "validated_interpretation": interpretation.model_dump(mode="json"),
+            "question": result.clarifying_question,
+            "answers": answers,
+        }
+        state["pending_question"] = result.clarifying_question
+    else:
+        if previous_clarification is not None:
+            state["pending_clarification"] = None
+        else:
+            state.pop("pending_clarification", None)
+        state["pending_question"] = None
     return state

@@ -54,8 +54,13 @@ class ConversationMemory:
             job["session_id"], job["created_at"], job["job_id"],
         )
         stored = decode(memory)
-        state = {key: stored[key] for key in ("constraints", "pending_question") if key in stored}
+        state = {key: stored[key] for key in ("constraints", "pending_question", "pending_clarification")
+                 if key in stored}
         pinned = [value["source_job_id"] for value in state.get("constraints", {}).values()]
+        pending = state.get("pending_clarification") or {}
+        if pending.get("source_job_id"):
+            pinned.append(pending["source_job_id"])
+        pinned = list(dict.fromkeys(pinned))
         sources = await self.records(job, pinned) if pinned else []
         previous = await self.pool.fetchval(
             """SELECT final_payload_json FROM jobs WHERE session_id=$1
@@ -120,7 +125,8 @@ class ConversationMemory:
                 )
                 if live is None:
                     raise StaleJobAttempt
-                state = {key: state[key] for key in ("constraints", "pending_question") if key in state}
+                state = {key: state[key] for key in ("constraints", "pending_question", "pending_clarification")
+                         if key in state}
                 await JobRepository(connection).update_status(
                     job_id=str(job["job_id"]), attempt=job["attempt"],
                     status=JobStatus.COMPLETED, result=result,

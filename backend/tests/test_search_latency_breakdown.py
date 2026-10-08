@@ -42,7 +42,7 @@ def test_parallel_phases_and_generation_purpose(monkeypatch, snapshot_factory):
         original = adapter.request_mcp_tool_calls
 
         async def generate(*args, **kwargs):
-            assert len(adapter.tool_requests) < 2, "completed searches must not request another generation"
+            assert len(adapter.tool_requests) < 1, "completed searches must not request another generation"
             with client.start_as_current_observation(as_type="generation", name="existing-generation"):
                 return await original(*args, **kwargs)
 
@@ -60,7 +60,7 @@ def test_parallel_phases_and_generation_purpose(monkeypatch, snapshot_factory):
         assert selection["metadata"] == {"call_round": 1, "purpose": "tool_selection", "pending_roles": ["pose", "view"]}
         assert selection["output"]["selected_roles"] == ["pose", "view"]
         assert not any(r["name"] == "mcp-post-search-decision" for r in records)
-        assert len(adapter.tool_requests) == 2
+        assert len(adapter.tool_requests) == 1
         assert all(required for _, _, required in adapter.tool_requests)
         assert len([r for r in records if r["name"] == "existing-generation"]) == 2
         for name in ("search-slot-wait", "mcp-search-call", "widget-enrichment"):
@@ -107,10 +107,9 @@ def test_retry_failure_and_invalid_role_do_not_break_observation(monkeypatch, sn
         assert failed["output"]["status"] == "interrupted" and failed["output"]["error_type"] == "RuntimeError"
         assert "private upstream detail" not in json.dumps(client.records) and count == 3
         names = [r["name"] for r in client.records]
-        assert names.count("mcp-post-search-decision") == 2
-        assert names.count("mcp-tool-selection") == 3
-        assert names.index("mcp-post-search-decision") < names.index("mcp-tool-selection", names.index("mcp-post-search-decision"))
-        assert len(adapter.decision_requests) == 2
+        assert "mcp-post-search-decision" not in names
+        assert names.count("mcp-tool-selection") == 1
+        assert names.count("mcp-code-search-attempt") == 2
 
     asyncio.run(run())
 
